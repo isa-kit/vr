@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>VR App Catalog · devisant</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, #16203c 0%, #0a0d18 55%, #05060d 100%);
+    color: #eef1ff; font: 15px/1.55 system-ui, -apple-system, sans-serif;
+    padding: 40px 16px 80px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  a.back { color: #ffd27f; text-decoration: none; font-size: 13px; }
+  h1 { font-size: 27px; font-weight: 650; margin: 2px 0 6px; }
+  h1 .mark { color: #ffd27f; }
+  .sub { color: rgba(238,241,255,.6); margin: 0 0 22px; max-width: 70ch; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .seg { display: inline-flex; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 3px; }
+  .seg button {
+    border: 0; background: transparent; color: rgba(238,241,255,.72); cursor: pointer;
+    font: 600 13px system-ui, sans-serif; padding: 7px 15px; border-radius: 999px; transition: .12s;
+  }
+  .seg button.on { background: #ffd27f; color: #1a1407; }
+  .seg button .n { opacity: .6; font-weight: 500; margin-left: 5px; }
+  .seg button.on .n { opacity: .55; }
+  input#q {
+    flex: 1; min-width: 180px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    color: #eef1ff; border-radius: 10px; padding: 9px 13px; font: 14px system-ui, sans-serif;
+  }
+  input#q::placeholder { color: rgba(238,241,255,.4); }
+  .count { color: rgba(238,241,255,.45); font-size: 13px; margin: 10px 2px 16px; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+  .card {
+    position: relative; display: flex; flex-direction: column;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 14px;
+    background: rgba(18,22,38,.66); padding: 16px 16px 14px; text-decoration: none; color: inherit;
+    transition: transform .13s ease, border-color .13s ease, background .13s ease;
+  }
+  .card:hover { transform: translateY(-2px); border-color: rgba(255,210,127,.45); background: rgba(24,30,52,.85); }
+  .badge { font-size: 11px; font-weight: 700; letter-spacing: .4px; padding: 3px 8px; border-radius: 6px; }
+  .webxr { background: rgba(104,132,246,.18); color: #9db4ff; }
+  .godot { background: rgba(120,200,255,.16); color: #78c8ff; }
+  .cardhead { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+  .card h2 { font-size: 16px; margin: 0; font-weight: 620; flex: 1; min-width: 0; }
+  .oss { font-size: 10.5px; font-weight: 700; color: #8ff0b4; border: 1px solid rgba(120,230,160,.4); border-radius: 5px; padding: 2px 5px; }
+  .meta { font-size: 12px; color: rgba(238,241,255,.5); margin-bottom: 8px; }
+  .card p { margin: 0 0 12px; font-size: 13px; color: rgba(238,241,255,.72); flex: 1; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tag { font-size: 11px; color: rgba(238,241,255,.55); background: rgba(255,255,255,.05); border-radius: 5px; padding: 2px 7px; }
+  .open { font-size: 12.5px; font-weight: 620; color: #ffd27f; }
+  footer { margin-top: 34px; font-size: 12px; color: rgba(238,241,255,.4); }
+  footer code { background: rgba(255,255,255,.07); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1><span class="mark">▦</span> VR App Catalog</h1>
+    </div>
+    <a class="back" href="../">← Worlds</a>
+  </div>
+  <p class="sub">Real VR apps, experiences and tools in two engine tracks — <b>WebXR / JS</b> (runs in a browser, no install) and <b>Godot</b> (free native OpenXR). Links checked when the list was built; community &amp; jam projects can move.</p>
+
+  <div class="controls">
+    <div class="seg" id="seg">
+      <button data-eng="all" class="on">All <span class="n" id="n-all"></span></button>
+      <button data-eng="webxr">WebXR / JS <span class="n" id="n-webxr"></span></button>
+      <button data-eng="godot">Godot <span class="n" id="n-godot"></span></button>
+    </div>
+    <input id="q" type="search" placeholder="Search name, type, tag…" autocomplete="off" />
+  </div>
+  <div class="count" id="count"></div>
+
+  <main class="grid" id="grid"></main>
+
+  <footer id="foot"></footer>
+</div>
+
+<script type="module">
+  const grid = document.getElementById('grid');
+  const count = document.getElementById('count');
+  let apps = [], eng = 'all', q = '';
+
+  function render() {
+    const needle = q.trim().toLowerCase();
+    const list = apps.filter(a => {
+      if (eng !== 'all' && a.engine !== eng) return false;
+      if (!needle) return true;
+      return (a.name + ' ' + a.type + ' ' + a.blurb + ' ' + (a.tags||[]).join(' ') + ' ' + a.platform)
+        .toLowerCase().includes(needle);
+    });
+    count.textContent = `${list.length} ${list.length === 1 ? 'entry' : 'entries'}`;
+    grid.innerHTML = list.map(a => `
+      <a class="card" href="${a.url}" target="_blank" rel="noopener">
+        <div class="cardhead">
+          <span class="badge ${a.engine}">${a.engine === 'webxr' ? 'WebXR · JS' : 'Godot'}</span>
+          <h2>${a.name}</h2>
+          ${a.oss ? '<span class="oss">OSS</span>' : ''}
+        </div>
+        <div class="meta">${a.type} · ${a.platform}</div>
+        <p>${a.blurb}</p>
+        <div class="tags">${(a.tags||[]).map(t => `<span class="tag">${t}</span>`).join('')}</div>
+        <span class="open">Open ↗</span>
+      </a>`).join('') || '<p style="color:rgba(238,241,255,.5)">No matches.</p>';
+  }
+
+  document.getElementById('seg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    eng = b.dataset.eng;
+    [...e.currentTarget.children].forEach(c => c.classList.toggle('on', c === b));
+    render();
+  });
+  document.getElementById('q').addEventListener('input', e => { q = e.target.value; render(); });
+
+  try {
+    const data = await (await fetch('apps.json', { cache: 'no-store' })).json();
+    apps = data.apps || [];
+    document.getElementById('n-all').textContent = apps.length;
+    document.getElementById('n-webxr').textContent = apps.filter(a => a.engine === 'webxr').length;
+    document.getElementById('n-godot').textContent = apps.filter(a => a.engine === 'godot').length;
+    document.getElementById('foot').innerHTML =
+      `Updated ${data.updated}. Want to add or fix an entry? Edit <code>catalog/apps.json</code> — the page builds itself from it.`;
+    render();
+  } catch (e) {
+    grid.innerHTML = '<p style="color:#ff9f6b">Could not load apps.json.</p>';
+  }
+</script>
+</body>
+</html>
