@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Worlds · devisant</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #1a2340 0%, #0a0d18 55%, #05060d 100%);
+    color: #eef1ff; font: 16px/1.55 system-ui, -apple-system, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 56px 16px 72px;
+  }
+  header { text-align: center; max-width: 640px; margin-bottom: 40px; }
+  h1 { font-size: 30px; font-weight: 650; letter-spacing: .3px; margin: 0 0 8px; }
+  h1 .mark { color: #ffd27f; }
+  header p { margin: 0; color: rgba(238,241,255,.62); }
+  .grid {
+    display: grid; gap: 18px; width: 100%; max-width: 880px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+  .card {
+    position: relative; display: block; text-decoration: none; color: inherit;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 18px;
+    background: rgba(18,22,38,.7); padding: 22px 20px 20px; overflow: hidden;
+    transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .card .thumb { height: 108px; border-radius: 12px; margin-bottom: 16px; }
+  .card h2 { font-size: 18px; margin: 0 0 6px; font-weight: 620; }
+  .card p { margin: 0; font-size: 13.5px; color: rgba(238,241,255,.6); min-height: 58px; }
+  .badge {
+    position: absolute; top: 16px; right: 16px; font-size: 11px; font-weight: 650;
+    letter-spacing: .4px; text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+  }
+  .live   { cursor: pointer; }
+  .live:hover   { transform: translateY(-3px); border-color: rgba(255,210,127,.5); background: rgba(24,30,52,.85); }
+  .live   .badge { background: rgba(120,230,160,.16); color: #8ff0b4; }
+  .soon   { opacity: .62; cursor: default; }
+  .soon   .badge { background: rgba(255,255,255,.1); color: rgba(238,241,255,.7); }
+  .enter { margin-top: 14px; font-size: 13px; font-weight: 620; color: #ffd27f; }
+  .soon .enter { color: rgba(238,241,255,.4); }
+  footer { margin-top: 44px; font-size: 12.5px; color: rgba(238,241,255,.4); text-align: center; }
+  footer a { color: rgba(238,241,255,.6); }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="mark">✦</span> Worlds</h1>
+    <p>Calm, immersive places. Open one in your browser, or tap <b>Enter VR</b> on a headset. No install.</p>
+  </header>
+
+  <main class="grid" id="grid" aria-busy="true"></main>
+
+  <footer>Best in a Quest / Android browser for VR &amp; AR · works flat on desktop.</footer>
+
+  <script type="module">
+    const THUMBS = {
+      infinity:      'radial-gradient(120px 90px at 30% 30%, #ffd27f55, transparent), radial-gradient(140px 110px at 75% 65%, #8a7dff55, transparent), #0b0f1d',
+      'nature-glade':'linear-gradient(#8fc7f0, #cfe6c0 62%, #4a6b3a)',
+      sandcastle:    'linear-gradient(#9fd2f0, #fdf4dc 58%, #e4c98a)',
+    };
+    const grid = document.getElementById('grid');
+    try {
+      const { worlds } = await (await fetch('scenes/index.json')).json();
+      const scenes = await Promise.all(
+        worlds.map(id => fetch(`scenes/${id}.json`).then(r => r.json()))
+      );
+      grid.innerHTML = scenes.map(s => {
+        const live = s.status === 'live';
+        const tag = live ? 'a' : 'div';
+        const href = live ? ` href="${s.id}/"` : '';
+        return `<${tag} class="card ${live ? 'live' : 'soon'}"${href}>
+          <div class="thumb" style="background:${THUMBS[s.id] || '#0b0f1d'}"></div>
+          <span class="badge">${live ? 'Ready' : 'Soon'}</span>
+          <h2>${s.name}</h2>
+          <p>${s.blurb}</p>
+          <div class="enter">${live ? 'Enter →' : 'In the works'}</div>
+        </${tag}>`;
+      }).join('');
+    } catch (e) {
+      grid.innerHTML = '<p style="color:#ff9f6b">Could not load worlds. Check scenes/index.json.</p>';
+    }
+    grid.removeAttribute('aria-busy');
+  </script>
+</body>
+</html>

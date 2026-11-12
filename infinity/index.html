@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Infinity Lights</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 12px; left: 14px; z-index: 10;
+    font: 13px/1.5 system-ui, sans-serif; color: rgba(255,255,255,.78);
+    text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; max-width: 70vw;
+  }
+  #hud b { color: #ffe9c2; font-weight: 600; }
+  /* WebXR buttons are injected by three.js at the bottom-center */
+</style>
+</head>
+<body>
+  <a href="../" style="position:fixed;top:12px;right:14px;z-index:11;font:13px system-ui,sans-serif;color:#ffd27f;text-decoration:none;text-shadow:0 1px 3px rgba(0,0,0,.8)">← Worlds</a>
+  <div id="hud">
+    <b>Infinity Lights</b> — pattern: <b id="pat">random</b><br>
+    <span id="help">Move mouse → point at the panel, click a button · Esc frees the mouse · WASD fly · Q/E down-up · Shift boost · C panel · R randomize</span>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

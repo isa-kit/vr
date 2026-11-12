@@ -1,0 +1,21 @@
+{
+  "id": "sandcastle",
+  "name": "Sand Castle",
+  "kind": "sandbox",
+  "status": "soon",
+  "blurb": "Drag sand together to build castles; fill cups and tip them out. Simple cheated physics, light enough for any headset.",
+  "environment": {
+    "sky": { "type": "gradient", "top": "#9fd2f0", "bottom": "#fdf4dc" },
+    "fog": { "color": "#f2e6c4", "near": 30, "far": 260 },
+    "ambientLight": 0.9,
+    "audio": { "src": "audio/beach-waves.ogg", "volume": 0.4, "loop": true }
+  },
+  "locomotion": { "type": "seated" },
+  "sandbox": {
+    "material": "sand",
+    "tools": ["grab", "cup", "pat"],
+    "physics": "cheated",
+    "goal": "build"
+  },
+  "controls": { "panel": [] }
+}
