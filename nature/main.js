@@ -20,7 +20,7 @@ const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
 const fwd = new THREE.Vector3(), right = new THREE.Vector3();
 const camWorld = new THREE.Vector3();
-const sunDir = new THREE.Vector3(0.25, 0.5, -1).normalize();
+const sunDir = new THREE.Vector3(0.33, 0.28, -1).normalize();  // low, golden-hour
 
 // ---------- value-noise terrain ----------
 function hash(x, z) { const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return h - Math.floor(h); }
@@ -36,7 +36,8 @@ function smoothstep(e0, e1, x) { const t = Math.min(1, Math.max(0, (x - e0) / (e
 // height of the land at (x,z): rolling hills, flattened glade at origin,
 // dropping off a cliff into the sea on the north (−z) side.
 function terrainH(x, z) {
-  let hills = (fbm(x * 0.012 + 11, z * 0.012 + 7) - 0.5) * 15;
+  let hills = (fbm(x * 0.012 + 11, z * 0.012 + 7) - 0.5) * 12
+            + (fbm(x * 0.006 + 3, z * 0.006 + 9) - 0.5) * 11;   // detail + gentle rolling swells
   const d = Math.hypot(x, z);
   hills *= (0.18 + 0.82 * smoothstep(4, 34, d));   // flatten the glade
   const land = smoothstep(-74, -44, z);             // 1 = land, 0 = sea
@@ -55,7 +56,7 @@ async function init() {
   } catch (e) {}
 
   scene = new THREE.Scene();
-  const horizon = new THREE.Color(0xcfe6f2);
+  const horizon = new THREE.Color(0xeadcc0);   // warm hazy horizon
   scene.background = horizon.clone();
   scene.fog = new THREE.Fog(horizon, 60, 300);
 
@@ -74,8 +75,8 @@ async function init() {
   yaw = 0;                          // default camera faces −z (toward the cliff & sea)
 
   // lights
-  scene.add(new THREE.HemisphereLight(0xdcecff, 0x5a6b45, 1.0));
-  const sun = new THREE.DirectionalLight(0xfff2d8, 1.15);
+  scene.add(new THREE.HemisphereLight(0xe9f0e2, 0x55663c, 0.92));
+  const sun = new THREE.DirectionalLight(0xffe6bf, 1.2);
   sun.position.copy(sunDir).multiplyScalar(100);
   scene.add(sun);
 
@@ -83,7 +84,11 @@ async function init() {
   buildTerrain();
   buildWater();
   buildTrees();
+  buildBroadleaf();
+  buildRocks();
+  buildFlowers();
   buildSheep();
+  buildDeer();
   buildMountains();
   buildClouds();
   buildBirds();
@@ -109,7 +114,7 @@ async function init() {
 function buildSky() {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(0x4f93d8) }, mid: { value: new THREE.Color(0xcfe6f2) }, bot: { value: new THREE.Color(0xdfeede) } },
+    uniforms: { top: { value: new THREE.Color(0x4b7fc0) }, mid: { value: new THREE.Color(0xf0dcb8) }, bot: { value: new THREE.Color(0xf7ead2) } },
     vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `varying vec3 vP; uniform vec3 top,mid,bot;
       void main(){ float h=normalize(vP).y;
@@ -141,14 +146,14 @@ function buildTerrain() {
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const col = new Float32Array(pos.count * 3);
-  const sand = new THREE.Color(0xd8c89c), grass = new THREE.Color(0x4f7a3e),
-        grass2 = new THREE.Color(0x3c6233), rock = new THREE.Color(0x6f7363), tmp = new THREE.Color();
+  const sand = new THREE.Color(0xd8c89c), grass = new THREE.Color(0x579139),
+        grass2 = new THREE.Color(0x3f6f33), rock = new THREE.Color(0x6f7363), tmp = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), h = terrainH(x, z);
     pos.setY(i, h);
-    if (h < WL + 0.6) tmp.copy(sand);
-    else if (h < 3) tmp.copy(grass).lerp(grass2, Math.random() * 0.5);
-    else if (h < 7) tmp.copy(grass2).lerp(rock, smoothstep(3, 9, h) * 0.7);
+    if (h < WL + 0.5) tmp.copy(sand);
+    else if (h < 5) tmp.copy(grass).lerp(grass2, Math.random() * 0.5);
+    else if (h < 10) tmp.copy(grass2).lerp(rock, smoothstep(5, 13, h) * 0.6);
     else tmp.copy(rock);
     tmp.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
     col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
@@ -165,7 +170,7 @@ function buildWater() {
     transparent: true, fog: true,
     uniforms: {
       time: { value: 0 }, cam: { value: new THREE.Vector3() }, sun: { value: sunDir },
-      deep: { value: new THREE.Color(0x12506b) }, shallow: { value: new THREE.Color(0x3f93b0) }, sky: { value: new THREE.Color(0xcfe6f2) },
+      deep: { value: new THREE.Color(0x154f66) }, shallow: { value: new THREE.Color(0x4a9db2) }, sky: { value: new THREE.Color(0xf0dcb8) },
       fogColor: { value: scene.fog.color }, fogNear: { value: scene.fog.near }, fogFar: { value: scene.fog.far },
     },
     vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; vec4 mv=viewMatrix*w; gl_Position=projectionMatrix*mv; }`,
@@ -213,6 +218,82 @@ function buildTrees() {
   mesh.count = n; scene.add(mesh);
 }
 
+// ---------- broadleaf trees (mixed into the forest for variety) ----------
+function makeBroadleafGeo() {
+  const trunk = paint(new THREE.CylinderGeometry(0.17, 0.3, 2.0, 6).translate(0, 1.0, 0), 0x6a4a2b);
+  const c1 = paint(new THREE.SphereGeometry(1.35, 7, 6).translate(0, 2.7, 0), 0x567f3d);
+  const c2 = paint(new THREE.SphereGeometry(1.0, 7, 6).translate(0.75, 3.2, 0.3), 0x6a9a4c);
+  const c3 = paint(new THREE.SphereGeometry(0.95, 7, 6).translate(-0.7, 3.05, -0.25), 0x4c7338);
+  return mergeGeometries([trunk, c1, c2, c3], false);
+}
+function buildBroadleaf() {
+  const mesh = new THREE.InstancedMesh(makeBroadleafGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), 55);
+  const d = new THREE.Object3D(); let n = 0, tries = 0;
+  while (n < 55 && tries++ < 3000) {
+    const a = Math.random() * Math.PI * 2, r = 24 + Math.random() * 150;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (z < -40) continue;
+    const h = terrainH(x, z); if (h < WL + 0.6 || h > 7) continue;
+    d.position.set(x, h - 0.1, z); d.rotation.set(0, Math.random() * Math.PI * 2, 0);
+    d.scale.setScalar(0.75 + Math.random() * 1.1); d.updateMatrix(); mesh.setMatrixAt(n++, d.matrix);
+  }
+  mesh.count = n; scene.add(mesh);
+}
+
+// ---------- rocks ----------
+function buildRocks() {
+  const geo = paint(new THREE.DodecahedronGeometry(0.6, 0).scale(1, 0.68, 1), 0x7c766a);
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), 46);
+  const d = new THREE.Object3D(); let n = 0, tries = 0;
+  while (n < 46 && tries++ < 2500) {
+    const a = Math.random() * Math.PI * 2, r = 12 + Math.random() * 150;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (z < -42) continue;
+    const h = terrainH(x, z); if (h < WL + 0.2 || h > 8) continue;
+    d.position.set(x, h + 0.1, z); d.rotation.set(Math.random(), Math.random() * 6, Math.random());
+    d.scale.setScalar(0.35 + Math.random() * 1.5); d.updateMatrix(); mesh.setMatrixAt(n++, d.matrix);
+  }
+  mesh.count = n; scene.add(mesh);
+}
+
+// ---------- wildflower patches (camera-facing sprites) ----------
+function buildFlowers() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d');
+  const cols = ['#f6d64a', '#ef6f8b', '#f4f6f8', '#b98ef0', '#f29b4a'];
+  for (let i = 0; i < 20; i++) { g.fillStyle = cols[i % cols.length]; g.beginPath(); g.arc(8 + Math.random() * 48, 10 + Math.random() * 48, 3 + Math.random() * 3, 0, 7); g.fill(); }
+  const tex = new THREE.CanvasTexture(cv);
+  let placed = 0, tries = 0;
+  while (placed < 38 && tries++ < 2500) {
+    const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 120;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (z < -40) continue;
+    const h = terrainH(x, z); if (h < WL + 0.5 || h > 6) continue;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, fog: true }));
+    s.position.set(x, h + 0.35, z); s.scale.setScalar(0.55 + Math.random() * 0.5); scene.add(s); placed++;
+  }
+}
+
+// ---------- distant deer ----------
+function makeDeerGeo() {
+  const body = paint(new THREE.SphereGeometry(0.5, 7, 6).scale(1.5, 0.85, 0.7).translate(0, 1.15, 0), 0x8a6a46);
+  const neck = paint(new THREE.CylinderGeometry(0.12, 0.17, 0.75, 5).rotateZ(-0.55).translate(0.62, 1.55, 0), 0x8a6a46);
+  const head = paint(new THREE.SphereGeometry(0.22, 6, 5).scale(1.3, 0.8, 0.8).translate(1.0, 1.85, 0), 0x7a5a3a);
+  const legs = [[-0.42, 0.28], [0.42, 0.28], [-0.42, -0.28], [0.42, -0.28]].map(([lx, lz]) =>
+    paint(new THREE.CylinderGeometry(0.06, 0.06, 1.1, 4).translate(lx, 0.55, lz), 0x5a4228));
+  return mergeGeometries([body, neck, head, ...legs], false);
+}
+function buildDeer() {
+  const mesh = new THREE.InstancedMesh(makeDeerGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), 6);
+  const d = new THREE.Object3D(); let n = 0, tries = 0;
+  while (n < 6 && tries++ < 500) {
+    const x = (Math.random() - 0.5) * 170, z = 45 + Math.random() * 95;
+    const h = terrainH(x, z); if (h < WL + 0.6 || h > 7) continue;
+    d.position.set(x, h, z); d.rotation.set(0, Math.random() * 6, 0); d.scale.setScalar(0.9 + Math.random() * 0.3);
+    d.updateMatrix(); mesh.setMatrixAt(n++, d.matrix);
+  }
+  mesh.count = n; scene.add(mesh);
+}
+
 // ---------- sheep ----------
 function makeSheepGeo() {
   const body = paint(new THREE.SphereGeometry(0.5, 8, 6).scale(1.35, 0.95, 0.95).translate(0, 0.78, 0), 0xf1ede4);
@@ -225,7 +306,7 @@ function buildSheep() {
   sheepMesh = new THREE.InstancedMesh(makeSheepGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), cfg.sheep);
   const d = new THREE.Object3D(); let n = 0, tries = 0;
   while (n < cfg.sheep && tries++ < cfg.sheep * 60) {
-    const x = (Math.random() - 0.5) * 120, z = 6 + Math.random() * 95;   // on the hills behind the glade
+    const x = (Math.random() - 0.5) * 165, z = 6 + Math.random() * 130;   // spread across the rolling hills behind the glade
     const h = terrainH(x, z); if (h < WL + 0.6 || h > 7) continue;
     d.position.set(x, h, z); d.rotation.set(0, Math.random() * Math.PI * 2, 0); d.scale.setScalar(0.85 + Math.random() * 0.4);
     d.updateMatrix(); sheepMesh.setMatrixAt(n++, d.matrix);
@@ -314,6 +395,13 @@ function startAudio() {
     // slow swell
     const lfo = actx.createOscillator(), lg = actx.createGain();
     lfo.frequency.value = 0.07; lg.gain.value = 0.05; lfo.connect(lg).connect(gain.gain); lfo.start();
+    // distant sea lapping: a second, deeper noise layer with a slow tide swell
+    const sea = actx.createBufferSource(); sea.buffer = buf; sea.loop = true;
+    const lp2 = actx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 190;
+    const sg = actx.createGain(); sg.gain.value = 0.05;
+    sea.connect(lp2).connect(sg).connect(actx.destination); sea.start();
+    const tide = actx.createOscillator(), tg = actx.createGain();
+    tide.frequency.value = 0.16; tg.gain.value = 0.035; tide.connect(tg).connect(sg.gain); tide.start();
     chirp();
   } catch (e) {}
 }

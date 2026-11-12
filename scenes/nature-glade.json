@@ -16,8 +16,8 @@
     "skybox": "glade-day",
     "ground": { "type": "hills", "color": "#4a6b3a", "roughness": 0.9 },
     "props": [
-      { "type": "tree", "count": 140, "spread": 90 },
-      { "type": "sheep", "count": 14, "spread": 45 },
+      { "type": "tree", "count": 168, "spread": 90 },
+      { "type": "sheep", "count": 20, "spread": 55 },
       { "type": "mountain", "count": 6, "spread": 300 }
     ],
     "water": { "type": "fake-reflective", "level": -3, "color": "#2f6f8f" },
