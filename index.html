@@ -74,7 +74,7 @@
       grid.innerHTML = scenes.map(s => {
         const live = s.status === 'live';
         const tag = live ? 'a' : 'div';
-        const href = live ? ` href="${s.id}/"` : '';
+        const href = live ? ` href="${s.path || s.id}/"` : '';
         return `<${tag} class="card ${live ? 'live' : 'soon'}"${href}>
           <div class="thumb" style="background:${THUMBS[s.id] || '#0b0f1d'}"></div>
           <span class="badge">${live ? 'Ready' : 'Soon'}</span>

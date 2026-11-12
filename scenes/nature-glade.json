@@ -2,7 +2,8 @@
   "id": "nature-glade",
   "name": "Nature — Glade & Cliffs",
   "kind": "vista",
-  "status": "soon",
+  "status": "live",
+  "path": "nature",
   "blurb": "Forests, a clearing in a glade, a cliffside over rolling hills with sheep, distant mountains, birds, and sky.",
   "environment": {
     "sky": { "type": "gradient", "top": "#8fc7f0", "bottom": "#e9f4ff" },
