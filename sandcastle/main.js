@@ -20,7 +20,7 @@ import { createWater, createShoreline } from '../procgen/water.js?v=20261115d';
 import { makeMaterialMaps } from '../procgen/textures.js?v=20261114g';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 
-let sky, ocean, shore, fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
+let sky, ocean, shore, shores, fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
 const sandMats = [];
 let quality = 'auto';
 try { quality = localStorage.getItem('oortia-sand-quality') || 'auto'; } catch (e) { /* ignore */ }
@@ -174,7 +174,7 @@ async function init() {
       { label: 'Quality', cells: [['Auto', 'auto'], ['High', 'high'], ['Med', 'medium'], ['Light', 'light']].map(([t, id]) => ({ text: t, active: () => quality === id, action: () => { quality = id; try { localStorage.setItem('oortia-sand-quality', id); } catch (e) { /* ignore */ } applyQuality(); } })) },
       { label: 'Tide', cells: [
         { text: () => (tide.on ? 'On' : 'Off'), action: () => { tide.on = !tide.on; if (tide.on) restartTide(); }, active: () => tide.on, w: 0.9 },
-        { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; }, w: 1.2 },
+        { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; syncShore(); }, w: 1.2 },
         { text: 'Restart', action: restartPicnic, tone: 'accent', w: 1.1 } ] },
       ...comfort.rows({ movement: true, teleport: true }),
     ],
@@ -210,7 +210,7 @@ async function init() {
   enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
-  if (location.hash === '#debug') window.__sc = { scene, sky, tide, orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
+  if (location.hash === '#debug') window.__sc = { scene, sky, tide, wt: () => wt, reach: () => Array.from(reachCol).reduce((a, v) => (v > a ? v : a), -9), orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
   renderer.setAnimationLoop(animate);
 }
 
@@ -286,8 +286,9 @@ function buildBeach() {
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2)); geo.setAttribute('aWet', new THREE.BufferAttribute(new Float32Array(pos.count), 1));
   const beachMat = sandMaterial(true);
   // waves that run up the sloped beach and retreat: water film, foam lace at the leading edge, wet darkening and a tide mark (procgen/water.js)
-  shore = createShoreline({ base: { x: 0, z: -9.1 }, land: [0, 1], runup: 3.2, period: 12, groundH: (x, z) => groundH(x, z) });
-  shore.patchMaterial(beachMat);
+  shores = RUNUPS.map((r) => createShoreline({ base: { x: 0, z: SHORE_BASE_Z }, land: [0, 1], runup: r, period: SHORE_PERIOD, groundH: (x, z) => groundH(x, z) }));
+  shore = shores[1]; shore.patchMaterial(beachMat);           // the visible swash. Strength changes only its run-up number; the game reads the SAME function
+  syncShore();
   const beach = new THREE.Mesh(geo, beachMat);   // cut out under the patch so holes are real
   beach.receiveShadow = true; env.add(beach);
 
@@ -675,49 +676,63 @@ function buildPicnic() {
 }
 
 // ---------- tide ----------
-const STRENGTH_NAMES = ['Calm', 'Normal', 'Wild'], STRENGTH_K = [0.8, 1.0, 1.25];
-const tide = { on: true, strength: 1, wave: 0, waves: 8, phase: 'grace', t: 0, grace: 25, surgeDur: 10, rest: 7,
-               reachMax: 0, lvl: 0.07, reach: 0, health: 1, state: 'play', acc: 0, nextCheck: 0 };
+// ---------- the tide IS the shoreline: the visible foam front (procgen/water.js createShoreline) decides what floods ----------
+const STRENGTH_NAMES = ['Calm', 'Normal', 'Wild'];
+const RUNUPS = [5.2, 7.0, 8.6];                         // metres the biggest swash reaches up the beach from the waterline
+const SHORE_BASE_Z = -9.1, SHORE_PERIOD = 12;
+const PATCH_D0 = (TRAY_C.z - HALF) - SHORE_BASE_Z;     // 3.6 m from the waterline to the sculpting patch
+const tide = { on: true, strength: 1, wave: 0, waves: 8, grace: 25, start: 25, lvl: 0.05, health: 1, state: 'play', acc: 0, lastN: -1 };
 const fd = new Float32Array(GN * GN);        // flood depth per cell
 const fdist = new Int16Array(GN * GN);
 const fq = new Int32Array(GN * GN);
+const reachCol = new Float32Array(GN);       // how far into the patch the visible front has reached, per column (m)
 let waterDirty = true, waterAcc = 0;
+function syncShore() { shore.uniforms.uShoreP.value.y = RUNUPS[tide.strength]; }     // the shader's run-up follows the chosen strength
 
-function restartTide() { tide.wave = 0; tide.phase = 'grace'; tide.t = 0; tide.reach = 0; tide.state = 'play'; fd.fill(0); waterDirty = true; }
+function restartTide() { tide.state = 'play'; tide.start = wt + tide.grace; tide.lastN = -1; fd.fill(0); waterDirty = true; }
 function restartPicnic() {
   tide.health = 1;
   for (const it of picnicItems) { it.gone = false; it.t = 0; it.mesh.visible = true; it.mesh.scale.setScalar(1); it.mesh.position.z = it.z0; it.mesh.position.y = it.y0; }
   restartTide();
 }
 
-function computeFlood(reachM, lvl, dtEro) {
+// Flood fill driven by the shoreline's own front: a patch cell is reached iff the visible foam line has got that far up the beach
+// at that cell's lateral position, and every cell on the way is lower than the water surface (so walls block, holes fill).
+function computeFlood(dtEro) {
   fd.fill(0);
-  if (reachM < 0.02) return;
-  const S = BASE + lvl, maxSteps = reachM / CELL;
+  const sh = shores[tide.strength], t = wt, zEdge = TRAY_C.z - HALF;
+  let any = false, mid = null;
+  for (let i = 0; i < GN; i++) {
+    const u = sh.coords(i * CELL - HALF + TRAY_C.x, zEdge).u, f = sh.front(u, t);
+    reachCol[i] = f.s - PATCH_D0; if (reachCol[i] > 0.02) any = true;
+    if (i === GN >> 1) mid = f;
+  }
+  if (!any) return false;
+  const surgeK = mid.surging ? 1 : Math.max(0.35, 1 - (mid.tau - 0.3) / 0.7);
+  tide.lvl = 0.02 + 0.07 * (mid.smax / RUNUPS[tide.strength]) * surgeK;      // a stronger wave piles the water a little higher
+  const S = BASE + tide.lvl;
   fdist.fill(-1);
   let qh = 0, qt = 0;
-  for (let i = 0; i < GN; i++) for (let j = 0; j < 3; j++) { const c = gi(i, j); if (sand[c] <= S) { fdist[c] = 0; fq[qt++] = c; } }
+  for (let i = 0; i < GN; i++) for (let j = 0; j < 3; j++) { const c = gi(i, j); if (reachCol[i] > j * CELL && sand[c] <= S) { fdist[c] = 0; fq[qt++] = c; } }
   let e0 = GN, e1 = 0, f0 = GN, f1 = 0, changed = false;
   const touch = (c) => { const ci = c % GN, cj = (c / GN) | 0; e0 = Math.min(e0, ci); e1 = Math.max(e1, ci); f0 = Math.min(f0, cj); f1 = Math.max(f1, cj); changed = true; };
   while (qh < qt) {
-    const c = fq[qh++], d = fdist[c], h = sand[c];
-    const depthRaw = S - h, front = (maxSteps - d) * CELL * 0.35;
+    const c = fq[qh++], h = sand[c], ci = c % GN, cj = (c / GN) | 0;
+    const depthRaw = S - h, lead = Math.max(0, reachCol[ci] - cj * CELL) * 0.35;      // thin wedge right at the foam line
     const hole = h < BASE - 0.004;
-    const dep = Math.max(0, hole ? depthRaw : Math.min(depthRaw, front));      // holes fill all the way to the water line
+    const dep = Math.max(0, hole ? depthRaw : Math.min(depthRaw, lead));            // holes fill all the way to the water line
     fd[c] = dep;
-    if (hole && dep > pw[c]) pw[c] = dep;                                         // …and keep that water after the sea draws back
+    if (hole && dep > pw[c]) pw[c] = dep;                                           // …and keep that water after the sea draws back
     if (dep > 0.005 && wet[c] < 1) { wet[c] = 1; touch(c); }
-    if (dep > 0.01 && h > BASE + 0.003 && !PROT[c]) {                            // the sea nibbles at low mounds (dry ones fastest)
+    if (dep > 0.01 && h > BASE + 0.003 && !PROT[c]) {                              // the sea nibbles at low mounds (dry ones fastest)
       sand[c] -= (h - BASE) * 0.6 * dtEro * (1 - 0.85 * wet[c]); touch(c);
     }
-    if (d >= maxSteps) continue;
-    const ci = c % GN, cj = (c / GN) | 0;
     for (let q = 0; q < 4; q++) {
       if ((q === 0 && ci === 0) || (q === 1 && ci === GN - 1) || (q === 2 && cj === 0) || (q === 3 && cj === GN - 1)) continue;
-      const n = c + (q === 0 ? -1 : q === 1 ? 1 : q === 2 ? -GN : GN);
-      if (fdist[n] >= 0) continue;
-      if (sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; }
-      else if (!PROT[n] && sand[n] > S) {                                         // water lapping at a wall: wet walls shrug it off, dry ones crumble
+      const n = c + (q === 0 ? -1 : q === 1 ? 1 : q === 2 ? -GN : GN), ni = n % GN, nj = (n / GN) | 0;
+      if (fdist[n] >= 0 || nj * CELL > reachCol[ni]) continue;                       // the front has not got there yet
+      if (sand[n] <= S) { fdist[n] = 1; fq[qt++] = n; }
+      else if (!PROT[n]) {                                                           // water lapping at a wall: wet walls shrug it off, dry ones crumble
         sand[n] -= (sand[n] - BASE) * 0.05 * dtEro * (1 - 0.88 * wet[n]);
         if (wet[n] < 0.6) wet[n] = Math.min(1, wet[n] + 0.1);
         touch(n);
@@ -725,6 +740,7 @@ function computeFlood(reachM, lvl, dtEro) {
     }
   }
   if (changed) markDirty(e0 - 1, e1 + 1, f0 - 1, f1 + 1);
+  return true;
 }
 
 // pools seep away once the sea has pulled back; wet sand slowly dries
@@ -744,31 +760,20 @@ function drainPools(step) {
   }
 }
 
-function updateTide(dt) {
+let floodActive = false, surgingNow = false;
+function updateTide(dt) {                                      // dt is 0 while paused, and the shoreline time wt is frozen too
   tide.acc += dt;
-  if (tide.on && tide.state === 'play') {
-    tide.t += dt;
-    if (tide.phase === 'grace' && tide.t >= tide.grace) { tide.phase = 'surge'; tide.t = 0; startWave(); }
-    else if (tide.phase === 'surge') {
-      const u = tide.t / tide.surgeDur;
-      tide.reach = u >= 1 ? 0 : tide.reachMax * Math.pow(Math.sin(Math.PI * u), 0.85);
-      if (u >= 1) { tide.phase = 'rest'; tide.t = 0; tide.reach = 0; }
-    } else if (tide.phase === 'rest' && tide.t >= tide.rest) {
-      tide.wave++;
-      if (tide.wave >= tide.waves) { tide.state = 'won'; tide.reach = 0; tide.phase = 'done'; setStatus(); }
-      else { tide.phase = 'surge'; tide.t = 0; startWave(); }
-    }
-  } else if (!tide.on || tide.state !== 'play') tide.reach = Math.max(0, tide.reach - dt * 0.6);
-
-  if (tide.acc >= 0.2) {                                     // flood-fill 5×/s
+  if (tide.acc >= 0.2) {                                       // flood-fill 5×/s
     const step = tide.acc; tide.acc = 0;
     drainPools(step);
-    if (tide.reach > 0.02 || floodActive) {
-      computeFlood(tide.reach, tide.lvl, step);
-      floodActive = tide.reach > 0.02;
-      waterDirty = true;
-      // picnic damage: how much of the blanket is under water?
-      if (tide.state === 'play') {
+    const flooded = tide.on ? computeFlood(step) : false;
+    if (flooded || floodActive) { if (!flooded) fd.fill(0); waterDirty = true; }
+    floodActive = flooded;
+    const playing = tide.on && tide.state === 'play' && wt >= tide.start;
+    if (playing) {
+      tide.wave = Math.floor((wt - tide.start) / SHORE_PERIOD);
+      if (tide.wave !== tide.lastN) { tide.lastN = tide.wave; if (actx && soundOn) whoosh(); }
+      if (flooded) {                                           // picnic damage: how much of the blanket is under water?
         let wetN = 0, n = 0;
         for (let x = -0.6; x <= 0.61; x += 0.15) for (let z = -0.45; z <= 0.46; z += 0.15) {
           const i = clamp(Math.round((x + HALF) / CELL), 0, GN - 1), j = clamp(Math.round((z + HALF) / CELL), 0, GN - 1);
@@ -776,9 +781,11 @@ function updateTide(dt) {
         }
         const frac = wetN / n;
         if (frac > 0) tide.health = Math.max(0, tide.health - frac * step * 0.07);
-        if (tide.health <= 0) { tide.state = 'lost'; tide.reach = 0; }
+        if (tide.health <= 0) tide.state = 'lost';
       }
-    } else if (floodActive) { fd.fill(0); floodActive = false; waterDirty = true; }
+      if (tide.state === 'play' && tide.wave >= tide.waves) tide.state = 'won';
+    }
+    surgingNow = flooded && shores[tide.strength].front(0, wt).surging;
     setStatus();
   }
   // washed-away items
@@ -787,13 +794,6 @@ function updateTide(dt) {
     if (shouldGo && !it.gone) { it.gone = true; it.t = 0; }
     if (it.gone && it.t < 1.6) { it.t += dt; it.mesh.position.z += dt * 0.45; it.mesh.position.y = it.y0 + Math.sin(it.t * 6) * 0.01; const s = Math.max(0.001, 1 - it.t / 1.6); it.mesh.scale.setScalar(s); if (it.t >= 1.6) it.mesh.visible = false; }
   }
-}
-let floodActive = false;
-function startWave() {
-  const k = tide.wave, s = STRENGTH_K[tide.strength];
-  tide.reachMax = (1.1 + 0.42 * k + Math.random() * 0.35) * s;
-  tide.lvl = (0.06 + 0.012 * k) * (0.9 + 0.2 * s);
-  if (actx && soundOn) whoosh();
 }
 
 function updateWater(t) {
@@ -862,8 +862,8 @@ function setStatus() {
   if (!tide.on) line2 = 'Tide is off';
   else if (tide.state === 'won') line2 = 'The picnic is safe — enjoy! 🎉';
   else if (tide.state === 'lost') line2 = 'Washed away… press Restart in the menu';
-  else if (tide.phase === 'grace') line2 = 'First wave in ' + Math.max(0, Math.ceil(tide.grace - tide.t)) + ' s — build!';
-  else line2 = 'Wave ' + Math.min(tide.waves, tide.wave + 1) + ' / ' + tide.waves + (tide.reach > 0.05 ? '  — incoming!' : '');
+  else if (wt < tide.start) line2 = 'Waves count from the first set in ' + Math.max(0, Math.ceil(tide.start - wt)) + ' s — build!';
+  else line2 = 'Wave ' + Math.min(tide.waves, tide.wave + 1) + ' / ' + tide.waves + (surgingNow ? '  — incoming!' : '');
   const bk = ' 💧' + bucketWater.toFixed(1);
   const text = 'Picnic ' + h + bk + '|' + line2;
   if (text === statusText) return;
@@ -1347,7 +1347,7 @@ function animate() {
   statusMesh.scale.setScalar(clamp(_a.distanceTo(statusMesh.position) / 5, 0.5, 12));
 
   gulls.update(t);
-  camera.getWorldPosition(_a); sky.update(t, _a); ocean.update(t); shore.update(t);
+  camera.getWorldPosition(_a); sky.update(t, _a); ocean.update(t); shore.update(t);   // shore: the visible swash (and the game's tide)
   lens.update(mouseNDC);
   touch.tick(dt);
   comfort.update(dt, vst);
