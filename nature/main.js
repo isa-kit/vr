@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js';
+import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
+import { createTouch } from '../shared/touch.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx;
@@ -37,8 +39,9 @@ const EYE = 1.6;           // desktop eye height
 const WALK = 5.5, RUN = 2.3;
 
 let scene, camera, renderer, dolly, world, menu, caps, horizonColor, kit, spy;
-let speedMul = 1, snapTurn = false, snapLatch = false, soundOn = true;
-const SPEED_STEPS = [0.5, 1, 1.5, 2.5];
+let soundOn = true, comfort, touch, wt = 0, fenceBuilt = false;
+const VR_WALK = 1.6;          // m/s in a headset / on a phone: slow, constant, no ramps
+const EDGE_Z = -34;           // hard stop well back from the cliff; speed eases off over the last 8 m
 let water, birds = [], clouds = [], sheepMesh;
 const clock = new THREE.Clock();
 const keys = {};
@@ -90,10 +93,14 @@ async function init() {
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1200);
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });   // alpha only if passthrough can be toggled
   if (caps.ar) renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
+  touch = createTouch({ canvas: renderer.domElement, look: true, stick: true,
+    buttons: [{ id: 'zoom', label: '🔭' }],
+    onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.2, Math.min(1.2, pitch - dy * 0.004)); } });
+  renderer.setPixelRatio(touch.pixelRatio(2));
+  { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · ☰ Menu for options', h.textContent); }
   fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.45, radius: 0.6, threshold: 0.96 });
 
   dolly = new THREE.Group();
@@ -126,23 +133,27 @@ async function init() {
   for (const o of [...scene.children]) if (o !== dolly) world.add(o);
   scene.add(world);
 
+  buildFence();
+  comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
+    onQuality: (q) => { for (const m of instanced) m.count = Math.floor(m.userData.full * [1, 0.8, 0.55, 0.35][q]); for (const b of birds) b.visible = q < 1; } });
+  const instanced = []; world.traverse((o) => { if (o.isInstancedMesh && o.count > 30) { o.userData.full = o.count; instanced.push(o); } });
+
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Nature — Glade & Cliffs',
-    hint: 'WASD walk · mouse look · Shift run · hold Z for binoculars · click the view to look around · Esc/M menu. In VR: grip the spyglass at your side and raise it to your eye.',
+    hint: touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · Pause world motion in Comfort', 'WASD walk · mouse look · Shift run · hold Z for binoculars · click the view to look around · Esc/M menu. In VR: grip the spyglass at your side and raise it to your eye.'),
     rows: [
-      sectionRow('Walking'),
-      stepperRow('Speed', () => '×' + SPEED_STEPS[speedIdx()], () => stepSpeed(-1), () => stepSpeed(1)),
-      { label: 'Turning', cells: [
-        { text: 'Smooth', action: () => { snapTurn = false; }, active: () => !snapTurn },
-        { text: 'Snap', action: () => { snapTurn = true; }, active: () => snapTurn } ] },
+      ...comfort.rows({ movement: true, teleport: true }),
+      ...touch.rows(),
     ],
+    fade: comfort.fade,
     sound: { get: () => soundOn, set: setSound },
     setBackdrop,
     recenter,
     onBeforeEnter: startAudio,
   });
 
+  comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
   // spyglass: a hand-held lens (render-to-texture, ×6) floating at your left hip; grip to grab, look through it
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   spy = createLens({ renderer, scene, camera, menu, radius: 0.085, zoom: 6, ring: 0xc9a24a });
@@ -164,12 +175,13 @@ async function init() {
   const enter = document.getElementById('enter');
   renderer.domElement.addEventListener('click', () => {
     startAudio();
-    if (!pointerLocked && !renderer.xr.isPresenting) { lockPointer(); menu.close(); }
+    if (!pointerLocked && !renderer.xr.isPresenting) { if (!touch.isTouch) lockPointer(); menu.close(); }
   });
-  enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); lockPointer(); menu.close(); });
+  enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); if (!touch.isTouch) lockPointer(); menu.close(); });
   document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
+  if (location.hash === '#debug') window.__nat = { dolly, comfort, touch, camera };
   renderer.setAnimationLoop(animate);
 }
 
@@ -441,8 +453,6 @@ function buildBirds() {
 }
 
 // ---------- menu hooks ----------
-const speedIdx = () => SPEED_STEPS.indexOf(speedMul);
-function stepSpeed(d) { speedMul = SPEED_STEPS[Math.max(0, Math.min(SPEED_STEPS.length - 1, speedIdx() + d))]; }
 // passthrough on = hide the whole world so the room shows through
 function setBackdrop(visible) {
   world.visible = visible;
@@ -501,51 +511,98 @@ function onMouseMove(e) {
   yaw -= e.movementX * 0.0025; pitch -= e.movementY * 0.0025;
   pitch = Math.max(-1.2, Math.min(1.2, pitch));
 }
+
+// where a pointing ray meets walkable ground (for teleport); null if it lands somewhere we don't let you stand
+function groundHit(origin, dir) {
+  if (dir.y > -0.02) return null;
+  let t = 0.3, prev = 0;
+  for (; t < 40; t += 0.4) {
+    const x = origin.x + dir.x * t, z = origin.z + dir.z * t;
+    if (origin.y + dir.y * t <= terrainH(x, z)) {
+      let lo = prev, hi = t;
+      for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (origin.y + dir.y * m <= terrainH(origin.x + dir.x * m, origin.z + dir.z * m)) hi = m; else lo = m; }
+      const px = origin.x + dir.x * hi, pz = origin.z + dir.z * hi;
+      if (pz < EDGE_Z + 1 || Math.hypot(px, pz) > 140 || terrainH(px, pz) < WL + 0.3) return null;   // not near the cliff, not into the sea
+      return new THREE.Vector3(px, terrainH(px, pz), pz);
+    }
+    prev = t;
+  }
+  return null;
+}
+
+// a low timber rail well back from the cliff edge: a visible, solid-looking boundary
+function buildFence() {
+  const z = EDGE_Z - 1.5, step = 2.5, n = 56;
+  const wood = new THREE.MeshLambertMaterial({ color: 0x8a6238 });
+  const posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 1.0, 0.12).translate(0, 0.5, 0), wood, n + 1);
+  const rails = new THREE.InstancedMesh(new THREE.BoxGeometry(step, 0.07, 0.07).translate(step / 2, 0, 0), wood, n * 2);
+  const d = new THREE.Object3D();
+  for (let i = 0; i <= n; i++) {
+    const x = -70 + i * step; d.position.set(x, terrainH(x, z), z); d.rotation.set(0, 0, 0); d.scale.set(1, 1, 1); d.updateMatrix(); posts.setMatrixAt(i, d.matrix);
+    if (i < n) for (let r = 0; r < 2; r++) {
+      const x2 = x + step, y0 = terrainH(x, z) + 0.55 + r * 0.3, y1 = terrainH(x2, z) + 0.55 + r * 0.3;
+      d.position.set(x, y0, z); d.rotation.set(0, 0, Math.atan2(y1 - y0, step)); d.updateMatrix(); rails.setMatrixAt(i * 2 + r, d.matrix);
+    }
+  }
+  world.add(posts, rails);
+}
+
+const _wp = new THREE.Vector3();
+// Returns {moving, turning} for the comfort vignette.
 function handleMovement(dt) {
   const pres = renderer.xr.isPresenting;
-  let mx = 0, mz = 0, turn = 0;
+  let mx = 0, mz = 0, turning = 0, deskRun = false;
   if (!pres) {
-    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    if (touch.gyro.on) camera.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ')).multiply(touch.gyro.quat);
+    else camera.rotation.set(pitch, yaw, 0, 'YXZ');                     // always level — no roll
     if (keys.KeyW) mz -= 1; if (keys.KeyS) mz += 1; if (keys.KeyA) mx -= 1; if (keys.KeyD) mx += 1;
+    if (touch.move.x || touch.move.y) { mx += touch.move.x; mz += touch.move.y; }
+    deskRun = keys.ShiftLeft || keys.ShiftRight;
   } else {
     const s = renderer.xr.getSession();
     for (const src of s.inputSources) {
       if (!src.gamepad) continue; const ax = src.gamepad.axes;
       const hx = ax[2] ?? ax[0] ?? 0, hy = ax[3] ?? ax[1] ?? 0;
       if (src.handedness === 'right') {
-        if (snapTurn) {
-          if (Math.abs(hx) > 0.7 && !snapLatch) { snapLatch = true; yaw -= Math.sign(hx) * Math.PI / 6; }
-          else if (Math.abs(hx) < 0.3) snapLatch = false;
-        } else if (Math.abs(hx) > 0.6) turn = -Math.sign(hx);
-      }
-      else { mx += Math.abs(hx) > 0.15 ? hx : 0; mz += Math.abs(hy) > 0.15 ? hy : 0; }
+        const d = comfort.turnDelta(hx, dt);                           // snap 30° by default, slow smooth turn as an option
+        if (d) { rotateRigAboutHead(dolly, camera, d); yaw = dolly.rotation.y; if (!comfort.settings.snap) turning = Math.abs(d) / Math.max(dt, 1e-3); }
+      } else if (!comfort.settings.teleport) { mx += Math.abs(hx) > 0.15 ? hx : 0; mz += Math.abs(hy) > 0.15 ? hy : 0; }
     }
-    yaw -= turn * dt * 2.2;
-    dolly.rotation.y = yaw;
   }
+  let moving = 0;
   if (mx || mz) {
-    const speed = (keys.ShiftLeft || keys.ShiftRight ? WALK * RUN : WALK) * speedMul * dt;
-    const h = pres ? yaw : yaw;   // face dir
+    const m = Math.hypot(mx, mz), k = m > 1 ? 1 / m : 1;
+    // constant speed (no ramp): slow in a headset or on a phone; normal walk on desktop
+    let speed = (pres || touch.isTouch) ? comfort.speed(VR_WALK) : (deskRun ? WALK * RUN : WALK) * (comfort.reducedMotion ? 0.6 : 1);
     camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
     right.crossVectors(fwd, camera.up).normalize();
-    dolly.position.addScaledVector(fwd, -mz * speed);
-    dolly.position.addScaledVector(right, mx * speed);
+    const vx = (fwd.x * -mz + right.x * mx) * k, vz = (fwd.z * -mz + right.z * mx) * k;
+    // ease off over the last 8 m before the boundary when heading toward the cliff
+    if (vz < 0) speed *= Math.min(1, Math.max(0.12, (dolly.position.z - EDGE_Z) / 8));
+    dolly.position.x += vx * speed * dt; dolly.position.z += vz * speed * dt;
+    moving = speed * m;
   }
-  // clamp inside the world, and don't walk off the cliff
+  // clamp inside the world, and keep well away from the cliff
   const R = 150; const d = Math.hypot(dolly.position.x, dolly.position.z);
   if (d > R) { dolly.position.x *= R / d; dolly.position.z *= R / d; }
-  if (dolly.position.z < -38) dolly.position.z = -38;
-  dolly.position.y = terrainH(dolly.position.x, dolly.position.z);
+  if (dolly.position.z < EDGE_Z) dolly.position.z = EDGE_Z;
+  // follow the ground gently: the view eases over rises instead of bobbing with every bump
+  const gy = terrainH(dolly.position.x, dolly.position.z);
+  dolly.position.y += (gy - dolly.position.y) * Math.min(1, dt * 3);
+  if (Math.abs(gy - dolly.position.y) > 3) dolly.position.y = gy;
   camera.position.y = pres ? 0 : EYE;
+  return { moving, turning };
 }
 
 function animate() {
-  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
-  handleMovement(dt);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (!comfort.paused) wt += dt;
+  const t = wt;
+  const st = handleMovement(dt);
   camera.getWorldPosition(camWorld);
   water.material.uniforms.time.value = t;
   water.material.uniforms.cam.value.copy(camWorld);
-  for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 320) c.position.x = -320; }
+  if (!comfort.paused) for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 320) c.position.x = -320; }
   for (const b of birds) {
     const u = b.userData, a = t * u.sp + u.ph;
     const x = u.cx + Math.cos(a) * u.ra, z = u.cz + Math.sin(a) * u.rb;
@@ -558,11 +615,13 @@ function animate() {
   menu.update();
   kit.update(dt);
   spy.group.visible = renderer.xr.isPresenting;
-  if (!renderer.xr.isPresenting) {                 // desktop: hold Z for binoculars
-    const f = keys.KeyZ ? 20 : 70;
-    if (Math.abs(camera.fov - f) > 0.1) { camera.fov += (f - camera.fov) * Math.min(1, dt * 10); camera.updateProjectionMatrix(); }
+  if (!renderer.xr.isPresenting) {                 // desktop / phone: hold Z (or 🔭) for binoculars — an eased zoom, never a snap
+    const f = (keys.KeyZ || touch.buttons.zoom) ? 20 : 70;
+    if (Math.abs(camera.fov - f) > 0.1) { camera.fov += (f - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
   }
   spy.update();
+  touch.tick(dt);
+  comfort.update(dt, st);
   fx.render();
 }
 

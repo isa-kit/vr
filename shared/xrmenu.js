@@ -518,7 +518,7 @@ export function createXRMenu(opts) {
       @media (pointer:coarse){
         #xm-btn{top:calc(env(safe-area-inset-top,0px) + 50px);right:calc(env(safe-area-inset-right,0px) + 12px);min-height:46px;padding:10px 18px;font-size:16px}
         #xm-panel{top:calc(env(safe-area-inset-top,0px) + 104px);right:calc(env(safe-area-inset-right,0px) + 10px);width:min(94vw,380px);max-height:calc(100vh - 120px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-size:15px}
-        .xm-cells button,.xm-cells span{min-height:44px;font-size:15px;padding:10px 4px}
+        .xm-cells button,.xm-cells span{min-height:44px;font-size:15px;padding:10px 4px;display:flex;align-items:center;justify-content:center}
         .xm-lab{flex:0 0 84px;font-size:14px}
         .xm-x{font-size:22px;padding:8px 12px;min-width:44px;min-height:44px}
       }

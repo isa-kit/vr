@@ -9,6 +9,7 @@
 //     stick: true,                                  // on-screen thumb-stick, bottom-left → touch.move.x / touch.move.y in −1..1 (y<0 = forward)
 //     buttons: [{ id: 'up', label: '▲' }, { id: 'down', label: '▼' }],   // optional round buttons, bottom-right → touch.buttons.up (bool)
 //   });
+//   (stick/buttons only appear on touch devices; pass forceUI:true to show them on desktop for testing)
 //   touch.isTouch                  // coarse pointer / touch-capable device (don't use pointer lock there)
 //   touch.helpText(touchStr, deskStr)   // returns the right help line for this device
 //   touch.pixelRatio(2)            // devicePixelRatio capped for the device (phones ≤ 1.5)
@@ -24,7 +25,7 @@
 
 import * as THREE from 'three';
 
-export function createTouch({ canvas, look = true, onLook = null, stick = false, buttons = [] } = {}) {
+export function createTouch({ canvas, look = true, onLook = null, stick = false, buttons = [], forceUI = false } = {}) {
   const isTouch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const T = { isTouch, move: { x: 0, y: 0 }, buttons: {}, gyro: { on: false, quat: new THREE.Quaternion(), supported: false } };
   if (isTouch) document.body.classList.add('is-touch');
@@ -45,7 +46,7 @@ export function createTouch({ canvas, look = true, onLook = null, stick = false,
   document.head.appendChild(style);
 
   // ---------- thumb-stick ----------
-  if (stick) {
+  if (stick && (isTouch || forceUI)) {
     const base = document.createElement('div'); base.className = 'tc-stick';
     const knob = document.createElement('div'); knob.className = 'tc-knob'; base.appendChild(knob);
     document.body.appendChild(base);
@@ -60,14 +61,14 @@ export function createTouch({ canvas, look = true, onLook = null, stick = false,
       T.move.x = x; T.move.y = y;
     };
     const end = (e) => { if (e.pointerId !== pid) return; pid = null; knob.style.transform = ''; T.move.x = 0; T.move.y = 0; };
-    base.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); pid = e.pointerId; base.setPointerCapture(pid); set(e); });
+    base.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); pid = e.pointerId; try { base.setPointerCapture(pid); } catch (x) { /* synthetic */ } set(e); });
     base.addEventListener('pointermove', (e) => { if (e.pointerId === pid) { e.preventDefault(); set(e); } });
     base.addEventListener('pointerup', end); base.addEventListener('pointercancel', end);
     base.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   // ---------- round buttons (hold = true) ----------
-  if (buttons.length) {
+  if (buttons.length && (isTouch || forceUI)) {
     const wrap = document.createElement('div'); wrap.className = 'tc-btns'; document.body.appendChild(wrap);
     for (const b of buttons) {
       const el = document.createElement('button'); el.className = 'tc-btn'; el.textContent = b.label; el.setAttribute('aria-label', b.id);
@@ -84,7 +85,7 @@ export function createTouch({ canvas, look = true, onLook = null, stick = false,
     let id = null, lx = 0, ly = 0;
     canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'touch' || id !== null) return;
-      id = e.pointerId; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(id);
+      id = e.pointerId; lx = e.clientX; ly = e.clientY; try { canvas.setPointerCapture(id); } catch (x) { /* synthetic */ }
     });
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId !== id) return;

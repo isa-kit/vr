@@ -11,9 +11,11 @@
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js';
 import { createToolkit, createLens } from '../shared/xrtools.js';
+import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
+import { createTouch } from '../shared/touch.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
-let fx;
+let fx, comfort, touch, wt = 0, qLevel = 0;
 
 // ---------- sand grid ----------
 const TRAY = 5.0;                       // sculptable patch (m) — blends into the open beach around it
@@ -84,7 +86,8 @@ function init() {
   camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.02, 800);
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });   // alpha only if passthrough can be toggled
   if (caps.ar) renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  touch = createTouch({ canvas: renderer.domElement, look: false, stick: false });     // the canvas is handled below (sculpt / orbit / pinch)
+  renderer.setPixelRatio(touch.pixelRatio(2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
   renderer.shadowMap.enabled = true;
@@ -122,11 +125,15 @@ function init() {
   buildTools();
   buildStatusLabel();
 
+  comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
+    onQuality: (q) => { qLevel = q; if (q >= 2) { sun.castShadow = false; } } });
+  { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('One finger sculpts · two fingers pinch to zoom & orbit · pick a tool below · ☰ Menu for options', h.textContent); }
+
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Sand Castle',
     startOpenDesktop: innerWidth > 760,
-    hint: 'Protect the picnic from the tide! Dig holes — the sea fills them; Scoop (3) water into your bucket, then build Walls/Towers: wet sand holds, dry sand slumps. Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L loupe',
+    hint: touch.helpText('Protect the picnic from the tide! Dig holes — the sea fills them; Scoop water into your bucket, then build Walls/Towers: wet sand holds, dry sand slumps. One finger sculpts, two fingers pinch/orbit.', 'Protect the picnic from the tide! Dig holes — the sea fills them; Scoop (3) water into your bucket, then build Walls/Towers: wet sand holds, dry sand slumps. Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L loupe'),
     rows: [
       choiceGrid(TOOLS, () => tool, selectTool, 4),
       stepperRow('Brush', () => Math.round(brush * 100) + ' cm', () => stepBrush(-1), () => stepBrush(1)),
@@ -144,7 +151,9 @@ function init() {
         { text: () => (tide.on ? 'On' : 'Off'), action: () => { tide.on = !tide.on; if (tide.on) restartTide(); }, active: () => tide.on, w: 0.9 },
         { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; }, w: 1.2 },
         { text: 'Restart', action: restartPicnic, tone: 'accent', w: 1.1 } ] },
+      ...comfort.rows({ movement: true, teleport: true }),
     ],
+    fade: comfort.fade,
     sound: { get: () => soundOn, set: setSound },
     setBackdrop,
     recenter,
@@ -152,8 +161,10 @@ function init() {
     onSessionStart: () => { dolly.position.copy(VR_HOME); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); endDesktopLens(); },
     onSessionEnd: () => { dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); },
   });
+  comfort.attachMenu(menu);
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   registerTools();
+  buildToolbar();
 
   // either hand can pick tools (menu consumes the click) or sculpt (everything else)
   menu.onSelectStart((c, hand, idx) => beginStroke(SRC[1 + idx]));
@@ -773,7 +784,7 @@ function startWave() {
 function updateWater(t) {
   waterMesh.material.uniforms.time.value = t;
   waterAcc += 1;
-  if (!waterDirty || waterAcc < 4) return;           // ≤ 15 Hz
+  if (!waterDirty || waterAcc < (qLevel >= 1 ? 8 : 4)) return;           // ≤ 15 Hz
   waterDirty = false; waterAcc = 0;
   const P = waterMesh.geometry.attributes.position, D = waterMesh.geometry.attributes.aDepth;
   for (let c = 0; c < GN * GN; c++) {
@@ -923,7 +934,7 @@ function setDollyScale(s) {
   dolly.position.add(_a.sub(_b));         // keep your head where it was; the world grows/shrinks around you
 }
 function zoomBy(d) {
-  if (renderer.xr.isPresenting) setDollyScale(dolly.scale.x / (d > 0 ? 1.6 : 1 / 1.6));
+  if (renderer.xr.isPresenting) { const s0 = dolly.scale.x; comfort.fade(() => setDollyScale(s0 / (d > 0 ? 1.6 : 1 / 1.6)), 0.14, 0.3); }   // stepped zoom through a quick fade — never a slide
   else orbit.dist = clamp(orbit.dist * (d > 0 ? 0.65 : 1 / 0.65), MIN_DIST, MAX_DIST);
   if (menu) menu.refresh();
 }
@@ -1097,7 +1108,7 @@ function whoosh() {                       // a bigger swell of surf as a wave ro
   const t = actx.currentTime;
   surfGain.gain.cancelScheduledValues(t);
   surfGain.gain.setValueAtTime(surfGain.gain.value, t);
-  surfGain.gain.linearRampToValueAtTime(0.3, t + 3.5);
+  surfGain.gain.linearRampToValueAtTime(0.17, t + 4);
   surfGain.gain.linearRampToValueAtTime(0.11, t + 10);
 }
 function gull() {
@@ -1120,7 +1131,7 @@ function initPointer() {
   let orbitDrag = false, panDrag = false, pinchD = 0, pinchC = null;
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
   cv.addEventListener('pointerdown', (e) => {
-    startAudio(); cv.setPointerCapture(e.pointerId);
+    startAudio(); try { cv.setPointerCapture(e.pointerId); } catch (x) { /* synthetic */ }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     setMouse(e);
     if (ptrs.size === 2) {
@@ -1194,42 +1205,81 @@ function updateMouseHit() {
 }
 
 // ---------- VR sticks: left = walk, right = turn (snap) + height; both grips on air = zoom the world ----------
-let snapLatch = false, pinch = null;
+let altLatch = false, pinch = null;
 const gripDown = [false, false];
+const WALK_SPEED = 1.1;                         // m/s, constant, no ramps
 function vrLocomotion(dt) {
-  const session = renderer.xr.getSession(); if (!session) return;
+  const session = renderer.xr.getSession(); if (!session) return { moving: 0, turning: 0 };
   const sc = dolly.scale.x;
+  let moving = 0, turning = 0;
   for (const src of session.inputSources) {
     const gp = src.gamepad; if (!gp || gp.axes.length < 4) continue;
     const ax = gp.axes[2], ay = gp.axes[3];
     if (src.handedness === 'left') {
-      if (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15) {
+      if (!comfort.settings.teleport && (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15)) {
         camera.getWorldDirection(_a); _a.y = 0; _a.normalize();
         _b.crossVectors(_a, camera.up).normalize();
-        dolly.position.addScaledVector(_a, -ay * 1.6 * sc * dt).addScaledVector(_b, ax * 1.6 * sc * dt);
+        const sp = comfort.speed(WALK_SPEED) * sc;
+        dolly.position.addScaledVector(_a, -ay * sp * dt).addScaledVector(_b, ax * sp * dt);
+        moving = comfort.speed(WALK_SPEED) * Math.hypot(ax, ay);
       }
     } else if (src.handedness === 'right') {
-      if (Math.abs(ax) > 0.7 && !snapLatch) {
-        snapLatch = true;
-        camera.getWorldPosition(_a);
-        dolly.rotation.y -= Math.sign(ax) * Math.PI / 6; dolly.updateMatrixWorld(true);
-        camera.getWorldPosition(_b); dolly.position.add(_a.sub(_b));
-      } else if (Math.abs(ax) < 0.3) snapLatch = false;
-      if (Math.abs(ay) > 0.2) dolly.position.y = clamp(dolly.position.y - ay * 1.2 * sc * dt, -0.5 * sc, 40);
+      const d = comfort.turnDelta(ax, dt);                            // snap 30° (default) or slow smooth turn
+      if (d) { rotateRigAboutHead(dolly, camera, d); if (!comfort.settings.snap) turning = Math.abs(d) / Math.max(dt, 1e-3); }
+      // height: stepped (through a quick fade), never a smooth lift
+      if (Math.abs(ay) > 0.75 && !altLatch) {
+        altLatch = true; const dir = -Math.sign(ay);
+        comfort.fade(() => { dolly.position.y = clamp(dolly.position.y + dir * 0.3 * sc, -0.4 * sc, 40); }, 0.12, 0.25);
+      } else if (Math.abs(ay) < 0.3) altLatch = false;
     }
   }
-  // two-handed world zoom
+  // two-handed world zoom: spread / squeeze hands past a threshold → one stepped zoom (with fade)
   if (gripDown[0] && gripDown[1] && !kit.heldBy(0) && !kit.heldBy(1)) {
-    const d = menu.controllers[0].position.distanceTo(menu.controllers[1].position);
-    if (!pinch) pinch = { d0: Math.max(d, 0.05), s0: dolly.scale.x };
-    else setDollyScale(pinch.s0 * pinch.d0 / Math.max(d, 0.05));
+    const d = Math.max(0.05, menu.controllers[0].position.distanceTo(menu.controllers[1].position));
+    if (!pinch) pinch = { d0: d };
+    else if (d / pinch.d0 > 1.45) { zoomBy(1); pinch.d0 = d; }
+    else if (d / pinch.d0 < 1 / 1.45) { zoomBy(-1); pinch.d0 = d; }
   } else pinch = null;
+  return { moving, turning };
+}
+
+// where a pointing ray meets the beach (for teleport): flat ground only, not into the sea
+function groundHit(origin, dir) {
+  if (dir.y > -0.03) return null;
+  const t = -origin.y / dir.y; if (t < 0.2 || t > 30) return null;
+  const x = origin.x + dir.x * t, z = origin.z + dir.z * t;
+  if (Math.abs(x) > 9 || z > 7 || z < TRAY_C.z - HALF - 0.5) return null;
+  return new THREE.Vector3(x, 0, z);
+}
+
+// phones: a bottom tool bar (tools + undo), big touch targets
+function buildToolbar() {
+  if (!touch.isTouch) return;
+  const st = document.createElement('style');
+  st.textContent = `#toolbar{position:fixed;left:0;right:0;bottom:0;z-index:25;display:flex;gap:8px;overflow-x:auto;padding:8px 10px calc(env(safe-area-inset-bottom,0px) + 8px);
+      background:linear-gradient(transparent,rgba(12,15,28,.55) 40%);-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    #toolbar::-webkit-scrollbar{display:none}
+    #toolbar button{flex:0 0 auto;min-width:64px;min-height:48px;padding:6px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.3);background:rgba(28,34,58,.92);color:#f2f4ff;font:600 15px system-ui,sans-serif;touch-action:manipulation}
+    #toolbar button.on{background:rgba(255,214,150,.97);color:#1a1407;border-color:#fff}
+    #toolbar .sep{flex:0 0 6px}`;
+  document.head.appendChild(st);
+  const bar = document.createElement('div'); bar.id = 'toolbar'; document.body.appendChild(bar);
+  const btns = {};
+  const mk = (label, fn, id) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); for (const t of ['pointerdown', 'pointerup']) b.addEventListener(t, (e) => e.stopPropagation()); bar.appendChild(b); if (id) btns[id] = b; return b; };
+  for (const [label, id] of TOOLS) mk(label, () => selectTool(id), id);
+  const sep = document.createElement('div'); sep.className = 'sep'; bar.appendChild(sep);
+  mk('↶ Undo', undo); mk('− Brush', () => stepBrush(-1)); mk('+ Brush', () => stepBrush(1));
+  const upd = () => { for (const id in btns) btns[id].classList.toggle('on', id === tool); };
+  menu.onChange(upd); upd();
 }
 
 // ---------- frame ----------
 function animate() {
-  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (!comfort.paused) wt += dt;
+  const t = wt;
   const xr = renderer.xr.isPresenting;
+  let vst = { moving: 0, turning: 0 };
 
   if (!xr) {
     if (keys.ArrowLeft) orbit.yaw += dt * 1.2; if (keys.ArrowRight) orbit.yaw -= dt * 1.2;
@@ -1242,7 +1292,7 @@ function animate() {
     camera.lookAt(orbit.target);
     camera.near = clamp(orbit.dist * 0.03, 0.01, 0.5); camera.updateProjectionMatrix();
   } else {
-    vrLocomotion(dt);
+    vst = vrLocomotion(dt);
     dolly.updateMatrixWorld(true);
     renderer.xr.updateCamera(camera);          // fresh head pose for rays + tools this frame
   }
@@ -1277,7 +1327,7 @@ function animate() {
       s.ring.material.opacity = s.down ? 1 : 0.55 + 0.25 * Math.sin(t * 5);
     }
   }
-  updateTide(dt);
+  updateTide(comfort.paused ? 0 : dt);
   updateSandGeo();
   updateWater(t);
 
@@ -1289,6 +1339,8 @@ function animate() {
   seaMesh.material.uniforms.time.value = t;
   camera.getWorldPosition(seaMesh.material.uniforms.cam.value);
   lens.update(mouseNDC);
+  touch.tick(dt);
+  comfort.update(dt, vst);
   fx.render();
 }
 

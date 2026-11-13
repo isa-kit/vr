@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Sand Castle</title>
 <style>
   :root { color-scheme: dark; }
@@ -19,6 +19,16 @@
   #enter .card { text-align: center; color: #fff; font: 500 16px/1.5 system-ui, sans-serif; text-shadow: 0 2px 10px rgba(0,0,0,.5); }
   #enter h1 { font-size: 26px; font-weight: 650; margin: 0 0 6px; }
   #enter .go { margin-top: 14px; display: inline-block; padding: 10px 22px; border-radius: 999px; background: rgba(255,255,255,.94); color: #6a4a10; font-weight: 650; }
+
+  /* phone layout: safe areas, no overflow at 375 px, 44px+ touch targets */
+  body { -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
+  #hud { top: calc(env(safe-area-inset-top, 0px) + 10px) !important; left: calc(env(safe-area-inset-left, 0px) + 12px) !important;
+    max-width: calc(100vw - 132px - env(safe-area-inset-left, 0px)) !important; overflow-wrap: anywhere; }
+  a.back { top: calc(env(safe-area-inset-top, 0px) + 10px) !important; right: calc(env(safe-area-inset-right, 0px) + 12px) !important; }
+  @media (pointer: coarse) {
+    a.back { top: calc(env(safe-area-inset-top, 0px) + 4px) !important; padding: 12px 6px; font-size: 15px !important; }
+    #hud { font-size: 12px !important; line-height: 1.35 !important; }
+  }
 </style>
 </head>
 <body>
