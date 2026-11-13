@@ -48,6 +48,27 @@ export function createHeightfield({ seed = 1, base = {}, detail = {}, ridge = {}
   return { height, slope, raw };
 }
 
+// Slope/height-blended PBR ground material. Geometry needs attributes: aMix (vec4 weights: litter, grass, soil, rock), color (tint), uv (for the normal map).
+// The rock layer is sampled triplanar (world space + world normal), so vertical cliff faces never stretch.
+export function createSplatMaterial({ maps, tile = [0.3, 0.26, 0.28, 0.2], normalFrom = null }) {
+  const nf = normalFrom || maps.litter;
+  const u = { uA: { value: maps.litter.map }, uB: { value: maps.grass.map }, uC: { value: maps.soil.map }, uD: { value: maps.rock.map }, uTile: { value: new THREE.Vector4(...tile) } };
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, normalMap: nf.normalMap, roughnessMap: nf.roughnessMap, roughness: 1, metalness: 0 });
+  for (const m of [nf.normalMap, nf.roughnessMap]) m.repeat.set(1, 1);
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = 'attribute vec4 aMix; varying vec4 vMix; varying vec3 vWp; varying vec3 vWn;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vMix = aMix; vWp = (modelMatrix * vec4(transformed, 1.0)).xyz; vWn = normalize(mat3(modelMatrix) * normal);');
+    sh.fragmentShader = `uniform sampler2D uA, uB, uC, uD; uniform vec4 uTile; varying vec4 vMix; varying vec3 vWp; varying vec3 vWn;
+      vec3 splat(sampler2D t, float s){ vec2 p = vWp.xz * s; vec3 a = texture2D(t, p).rgb; vec3 b = texture2D(t, mat2(0.8, 0.6, -0.6, 0.8) * p * 0.37 + 0.31).rgb; float c = texture2D(t, p * 3.7 + 0.13).g; return mix(a, b, 0.42) * (0.62 + 0.9 * c) * 1.1; }
+      vec3 tri(sampler2D t, float s){ vec3 n = abs(normalize(vWn)); n = pow(n, vec3(4.0)); n /= (n.x + n.y + n.z + 1e-4);
+        vec3 a = texture2D(t, vWp.zy * s).rgb * n.x + texture2D(t, vWp.xz * s).rgb * n.y + texture2D(t, vWp.xy * s).rgb * n.z;
+        float c = (texture2D(t, vWp.zy * s * 3.1).g * n.x + texture2D(t, vWp.xz * s * 3.1).g * n.y + texture2D(t, vWp.xy * s * 3.1).g * n.z); return a * (0.62 + 0.9 * c) * 1.1; }\n` + sh.fragmentShader.replace('#include <map_fragment>', `
+      vec3 gcol = splat(uA, uTile.x) * vMix.x + splat(uB, uTile.y) * vMix.y + splat(uC, uTile.z) * vMix.z + tri(uD, uTile.w) * vMix.w;
+      diffuseColor.rgb *= gcol;`);
+  };
+  return { material: mat, uniforms: u };
+}
+
 // ---------------------------------------------------------------- terrain mesh + blended PBR ground
 export function createTerrain({ hf, maps, radius = 1250, sectors = 176, seed = 1, tile = [0.3, 0.26, 0.28, 0.2], tints = {}, extraWeights = null }) {
   const N = makeNoise(seed * 5 + 2), radii = [0];
@@ -58,17 +79,7 @@ export function createTerrain({ hf, maps, radius = 1250, sectors = 176, seed = 1
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aMix', new THREE.BufferAttribute(mixA, 4)); geo.setAttribute('color', new THREE.BufferAttribute(tint, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx);
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
-  const u = { uA: { value: maps.litter.map }, uB: { value: maps.grass.map }, uC: { value: maps.soil.map }, uD: { value: maps.rock.map }, uTile: { value: new THREE.Vector4(...tile) } };
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, normalMap: maps.litter.normalMap, roughnessMap: maps.litter.roughnessMap, roughness: 1, metalness: 0 });
-  for (const m of [maps.litter.normalMap, maps.litter.roughnessMap]) m.repeat.set(1, 1);
-  mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, u);
-    sh.vertexShader = 'attribute vec4 aMix; varying vec4 vMix; varying vec3 vWp;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vMix = aMix; vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = `uniform sampler2D uA, uB, uC, uD; uniform vec4 uTile; varying vec4 vMix; varying vec3 vWp;
-      vec3 splat(sampler2D t, float s){ vec2 p = vWp.xz * s; vec3 a = texture2D(t, p).rgb; vec3 b = texture2D(t, mat2(0.8, 0.6, -0.6, 0.8) * p * 0.37 + 0.31).rgb; float c = texture2D(t, p * 3.7 + 0.13).g; return mix(a, b, 0.42) * (0.62 + 0.9 * c) * 1.1; }\n` + sh.fragmentShader.replace('#include <map_fragment>', `
-      vec3 gcol = splat(uA, uTile.x) * vMix.x + splat(uB, uTile.y) * vMix.y + splat(uC, uTile.z) * vMix.z + splat(uD, uTile.w) * vMix.w;
-      diffuseColor.rgb *= gcol;`);
-  };
+  const { material: mat, uniforms: u } = createSplatMaterial({ maps, tile, normalFrom: maps.litter });
   const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true;
   const t0 = new THREE.Color(), tb = new THREE.Color();
   function rebuild(cx, cz) {

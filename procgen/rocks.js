@@ -9,7 +9,7 @@
 //        // facets   number of random cut planes (flat faces); 0 = smooth pebble
 //        // rough    amount of fine noise on top of the facets
 //        // moss     0..1 how much of the up-facing surface is tinted mossy (vertex colour)
-//   const rocks = createRocks({ items: [{ x, y, z, s, yaw, variant }], variants: [params, params, …], material });   // InstancedMeshes in a Group
+//   const rocks = createRocks({ items: [{ x, y, z, s, sy (optional vertical stretch), yaw, variant }], variants: [params, params, …], material });   // InstancedMeshes in a Group
 //
 //   UVs are box-projected per face (so one tileable rock texture never stretches). Use with
 //   standardMaterial(await makeMaterialMaps('rock', {...}), { vertexColors: true }).
@@ -56,7 +56,7 @@ export function createRocks({ items, variants, material, castShadow = false }) {
   geos.forEach((geo, vi) => {
     const list = items.filter(it => (it.variant ?? 0) % variants.length === vi); if (!list.length) return;
     const m = new THREE.InstancedMesh(geo, material, list.length); m.castShadow = castShadow; m.receiveShadow = true; m.frustumCulled = false;
-    list.forEach((it, i) => { o.position.set(it.x, it.y, it.z); o.rotation.set(0, it.yaw || 0, 0); o.scale.setScalar(it.s || 1); o.updateMatrix(); m.setMatrixAt(i, o.matrix); });
+    list.forEach((it, i) => { o.position.set(it.x, it.y, it.z); o.rotation.set(0, it.yaw || 0, 0); o.scale.set(it.s || 1, (it.s || 1) * (it.sy || 1), it.s || 1); o.updateMatrix(); m.setMatrixAt(i, o.matrix); });
     group.add(m); meshes.push(m);
   });
   group.userData.meshes = meshes; return group;
