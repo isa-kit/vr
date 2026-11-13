@@ -12,16 +12,16 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(31415);
 const rr = (a, b) => a + R() * (b - a);
-const ZS = -4.0;            // where the sand dips below the still-water line
-const PERIOD = 9.0;         // seconds between waves
-const LAMBDA = 28.0;        // wave spacing in metres
+const ZS = -3.0;            // where the sand dips below the still-water line
+const PERIOD = 12.0;         // seconds between waves
+const LAMBDA = 30.0;        // wave spacing in metres
 
 const HOR_A = 0xffc58a;
 let timeMode = 'auto', pCur = 0;
 const W = await createWorld({ eye: 0.95,
   rows: [sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Golden', 'a'], ['Dusk', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
-  bg: HOR_A, title: 'Beach — Sunset Shore', startPitch: -0.03,
-  tone: { exposure: 1.0, bloom: 0.5, radius: 0.65, threshold: 0.95 } });
+  bg: HOR_A, title: 'Beach — Sunset Shore', startPitch: -0.07,
+  tone: { exposure: 1.0, bloom: 0.3, radius: 0.65, threshold: 0.97 } });
 const { scene } = W;
 const FOGD = 0.0011;
 scene.fog = new THREE.FogExp2(HOR_A, FOGD);
@@ -34,7 +34,7 @@ const PA = { top: C(0x3a5f9f), mid: C(0xe3a283), hor: C(0xffc58a), sun: C(0xffd2
 const PB = { top: C(0x1b2352), mid: C(0x8c5a88), hor: C(0xf0795a), sun: C(0xff8a52), lit: C(0xff9f84), shade: C(0x3a3468), deep: C(0x0f2744), shallow: C(0x2d6674),
   hemi: C(0x514b72), sandDry: C(0xd4b49a), sandWet: C(0x55455a), sunLight: C(0xff7a48), hemiL: C(0x8f7aa6), glow: 1.4, elev: -0.03, stars: 0.75, sunI: 1.0, hemiI: 0.6 };
 const sunDir = new THREE.Vector3(0.26, PA.elev, -0.96).normalize();
-const sky = makeSky(noise, { top: 0x3a5f9f, mid: 0xe3a283, hor: HOR_A, sunDir, sunCol: 0xffd29a, glow: 1, cover: 0.5, cloudScale: 1.1, windX: 0.003, windY: 0.0008, sunSize: 0.04, sunGain: 3.2, azim: 1 });
+const sky = makeSky(noise, { top: 0x3a5f9f, mid: 0xe3a283, hor: HOR_A, sunDir, sunCol: 0xffd29a, glow: 1, cover: 0.5, cloudScale: 1.1, windX: 0.003, windY: 0.0008, sunSize: 0.04, sunGain: 2.2, azim: 1 });
 scene.add(sky.mesh); W.opaque.push(sky.mesh);
 const SU = sky.uniforms;
 
@@ -42,10 +42,10 @@ const hemiL = new THREE.HemisphereLight(0xf0c6a8, 0x8a7458, 0.8); scene.add(hemi
 const sunL = new THREE.DirectionalLight(0xffbb78, 1.3); sunL.position.copy(sunDir).multiplyScalar(200); scene.add(sunL);
 
 // ---------------- beach profile ----------------
-const sandH1 = (z) => z >= ZS ? (z - ZS) * 0.045 : -9 * (1 - Math.exp(-(ZS - z) * 0.0125));
+const sandH1 = (z) => z >= ZS ? (z - ZS) * 0.06 : -9 * (1 - Math.exp(-(ZS - z) * 0.0125));
 const duneH = (x, z) => smoothstep(ZS + 30, ZS + 100, z) * (fbm(x * 0.018 + 4, z * 0.018 + 1) - 0.32) * 13 * smoothstep(8, 40, Math.abs(x) + (z - ZS) * 0.35);
 const groundH = (x, z) => sandH1(z) + Math.max(duneH(x, z), 0) + (z > ZS ? (fbm(x * 0.3, z * 0.3) - 0.5) * 0.06 : 0);
-const SEAT_Z = 2;
+const SEAT_Z = 7;        // the swash never gets closer than ~7 m
 const seatY = groundH(0, SEAT_Z);
 
 // ---------------- shared swash timing (GLSL mirrors this) ----------------
@@ -74,10 +74,10 @@ const sandU = {
         vec2 p = vW.xz; vec3 Vv = cameraPosition - vW; float dist = length(Vv); vec3 V = Vv / dist;
         // swash front for this column
         float lt = (uTime - tShift(p.x)) / ${PERIOD.toFixed(1)}; float n = floor(lt), tau = fract(lt);
-        float amp = 0.55 + 0.45 * hash1(n * 3.17 + 1.3), smax = 5.0 * amp;
-        float surge = 1.0 - pow(1.0 - clamp(tau / 0.22, 0.0, 1.0), 2.0);
-        float retreat = 1.0 - smoothstep(0.22, 0.99, tau);
-        float s = smax * (tau < 0.22 ? surge : retreat);
+        float amp = 0.55 + 0.45 * hash1(n * 3.17 + 1.3), smax = 3.0 * amp;
+        float surge = 1.0 - pow(1.0 - clamp(tau / 0.3, 0.0, 1.0), 2.0);
+        float retreat = 1.0 - smoothstep(0.3, 0.99, tau);
+        float s = smax * (tau < 0.3 ? surge : retreat);
         float d = uZs + s - p.y;                         // metres of water film behind the front (<0: dry)
         float zmax = uZs + smax;
         // micro relief
@@ -86,7 +86,7 @@ const sandU = {
         float ripple = sin(p.y * 9.0 + n0 * 6.0) * 0.5 + 0.5;
         vec3 N = normalize(vN + vec3(n0 - nx, 0.0, n0 - nz) * 2.5);
         // wetness: long-term wet band + freshly soaked
-        float wetZ = uZs + 4.0 + (texture2D(uNoise, vec2(p.x * 0.02, 0.3)).r - 0.5) * 2.4;
+        float wetZ = uZs + 3.0 + (texture2D(uNoise, vec2(p.x * 0.02, 0.3)).r - 0.5) * 2.4;
         float wet = smoothstep(wetZ + 0.9, wetZ - 0.5, p.y);
         wet = max(wet, smoothstep(zmax + 0.3, zmax - 1.0, p.y) * (1.0 - smoothstep(0.5, 1.0, tau)) * 0.85);
         vec3 sand = mix(uSandDry, uSandWet, wet);
@@ -107,7 +107,7 @@ const sandU = {
         float lace = texture2D(uNoise, p * 1.9 + vec2(0.0, -uTime * 0.04)).g, lace2 = texture2D(uNoise, p * 3.4 + 7.1).b;
         float lc = lace * 0.55 + lace2 * 0.5;
         float lead = mask * exp(-max(d, 0.0) * 1.6) * smoothstep(0.38, 0.62, lc + 0.4 * exp(-d * 3.0));
-        float line = smoothstep(0.7, 0.0, abs(p.y - zmax + 0.3)) * smoothstep(0.24, 0.34, tau) * (1.0 - smoothstep(0.45, 0.95, tau)) * smoothstep(0.42, 0.66, lc);
+        float line = smoothstep(0.7, 0.0, abs(p.y - zmax + 0.3)) * smoothstep(0.32, 0.42, tau) * (1.0 - smoothstep(0.45, 0.95, tau)) * smoothstep(0.42, 0.66, lc);
         float foam = clamp(max(lead, line * 0.8), 0.0, 1.0);
         vec3 foamC = vec3(1.0, 0.97, 0.93) * (uHemi * 0.9 + uSunCol * 0.45) * 1.45;
         col = mix(col, foamC, foam * 0.9);
@@ -167,11 +167,11 @@ const waterU = {
       varying vec3 vW; uniform float uTime, uZs, uFogD; uniform vec3 uDeep, uShallow, uFogColor, uHemi; uniform vec4 uIsl[5]; uniform sampler2D uNoise;
       ${SKY_GLSL}
       ${TSHIFT}
-      float sandH(float z){ return z >= uZs ? (z - uZs) * 0.045 : -9.0 * (1.0 - exp(-(uZs - z) * 0.0125)); }
+      float sandH(float z){ return z >= uZs ? (z - uZs) * 0.06 : -9.0 * (1.0 - exp(-(uZs - z) * 0.0125)); }
       float prof(float u){ float a = smoothstep(0.08, 0.96, u); a *= a; return a * (1.0 - smoothstep(0.965, 1.0, u)); }
       void wave(vec2 p, vec2 dir, float len, float slope, float dist, inout vec2 g){
         float k = 6.2831853 / len, w = sqrt(9.81 * k);
-        g += dir * slope * cos(dot(p, dir) * k - w * uTime) / (1.0 + dist * k * 0.03);
+        g += dir * slope * cos(dot(p, dir) * k - w * uTime * 0.45) / (1.0 + dist * k * 0.03);
       }
       void main(){
         vec2 p = vW.xz; float depth = -sandH(p.y);
@@ -297,7 +297,7 @@ const gulls = [];
 for (let i = 0; i < 11; i++) {
   const hero = i < 3;
   const b = makeBird({ wingSpan: hero ? 1.1 : rr(0.8, 1.2), tip: 0x2b2a30 });
-  b.userData.p = { cx: rr(-60, 60), cz: hero ? rr(-30, -14) : rr(-45, -170), cy: hero ? rr(4, 8) : rr(7, 26), ax: hero ? rr(14, 26) : rr(40, 110), az: hero ? rr(6, 10) : rr(14, 40), ay: rr(1, 4), w: rr(0.06, 0.12) * (R() < 0.5 ? 1 : -1), ph: R() * 6.28, ph2: R() * 6.28, fl: rr(6, 8.5) };
+  b.userData.p = { cx: rr(-60, 60), cz: hero ? rr(-30, -14) : rr(-45, -170), cy: hero ? rr(4, 8) : rr(7, 26), ax: hero ? rr(14, 26) : rr(40, 110), az: hero ? rr(6, 10) : rr(14, 40), ay: rr(1, 4), w: rr(0.06, 0.12) * (R() < 0.5 ? 1 : -1), ph: R() * 6.28, ph2: R() * 6.28, fl: rr(3.5, 5) };
   scene.add(b); gulls.push(b);
 }
 const gp = (p, t, o) => { const a = t * p.w + p.ph; return o.set(p.cx + Math.sin(a) * p.ax, p.cy + Math.sin(a * 0.8 + p.ph2) * p.ay, p.cz + Math.sin(a * 2 + 1) * p.az); };
@@ -353,12 +353,12 @@ W.buildAudio = (A) => {
     const nz = A.noise('pink'), lp = A.filter('lowpass', 300, 0.6), g = A.gain(0.0001), pn = A.pan(pan);
     A.chain(nz, lp, g, pn, master); pn.connect(rv);
     lp.frequency.setValueAtTime(260, t0); lp.frequency.linearRampToValueAtTime(1800, t0 + 1.7); lp.frequency.exponentialRampToValueAtTime(420, t0 + 6.5);
-    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.16 * amp, t0 + 1.8); g.gain.exponentialRampToValueAtTime(0.0008, t0 + 7);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.1 * amp, t0 + 2.4); g.gain.exponentialRampToValueAtTime(0.0008, t0 + 7);
     const wsh = A.noise('white'), hp = A.filter('highpass', 3400, 0.7), wg2 = A.gain(0.0001), bub = A.gain(1);
     A.chain(wsh, hp, bub, wg2, pn); A.lfo(bub.gain, 38 + Math.random() * 20, 0.5); 
-    wg2.gain.setValueAtTime(0.0001, t0 + 1.5); wg2.gain.linearRampToValueAtTime(0.045 * amp, t0 + 2.2); wg2.gain.linearRampToValueAtTime(0.03 * amp, t0 + 4.2); wg2.gain.exponentialRampToValueAtTime(0.0006, t0 + 8.2);
+    wg2.gain.setValueAtTime(0.0001, t0 + 1.5); wg2.gain.linearRampToValueAtTime(0.03 * amp, t0 + 2.6); wg2.gain.linearRampToValueAtTime(0.02 * amp, t0 + 4.6); wg2.gain.exponentialRampToValueAtTime(0.0006, t0 + 8.2);
     const sz = A.noise('white'), sbp = A.filter('bandpass', 1500, 0.6), sg = A.gain(0.0001); A.chain(sz, sbp, sg, pn);
-    sg.gain.setValueAtTime(0.0001, t0 + 1.2); sg.gain.linearRampToValueAtTime(0.05 * amp, t0 + 1.9); sg.gain.exponentialRampToValueAtTime(0.0006, t0 + 3.6);
+    sg.gain.setValueAtTime(0.0001, t0 + 1.2); sg.gain.linearRampToValueAtTime(0.03 * amp, t0 + 2.3); sg.gain.exponentialRampToValueAtTime(0.0006, t0 + 3.6);
     setTimeout(() => { for (const s of [nz, wsh, sz]) { try { s.stop(); } catch (e) {} } }, 9500);
   }, 400);
   // gulls

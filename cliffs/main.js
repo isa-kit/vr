@@ -17,7 +17,7 @@ let timeMode = 'auto', pCur = 0;
 const W = await createWorld({ eye: 1.15,
   rows: [sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Afternoon', 'a'], ['Golden', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
   bg: HOR_A, title: 'Cliffs — Edge of the Sea', startPitch: -0.08, startYaw: 0,
-  tone: { exposure: 1.0, bloom: 0.45, radius: 0.6, threshold: 0.95 } });
+  tone: { exposure: 1.0, bloom: 0.28, radius: 0.6, threshold: 0.97 } });
 const { scene } = W;
 const FOGD = 0.00085;
 scene.fog = new THREE.FogExp2(HOR_A, FOGD);
@@ -30,7 +30,7 @@ const PA = { top: C(0x2b62b4), mid: C(0x80b2e0), hor: C(0xe8dfcf), sun: C(0xfff1
 const PB = { top: C(0x3b5b9b), mid: C(0xcf9f93), hor: C(0xf6c796), sun: C(0xffb868), lit: C(0xffe0bd), shade: C(0x86729a), deep: C(0x0e3a58), shallow: C(0x3a8a8e), sunLight: C(0xffb36b), hemiS: C(0xd9b6a8), glow: 1.25, elev: 0.075, hemiI: 0.8, sunI: 1.45 };
 
 const sunDir = new THREE.Vector3(0.45, PA.elev, -0.88).normalize();
-const sky = makeSky(noise, { top: 0x2b62b4, mid: 0x80b2e0, hor: HOR_A, sunDir, cover: 0.52, cloudScale: 1.0, windX: 0.0035, windY: 0.001, sunSize: 0.03, sunGain: 1.8 });
+const sky = makeSky(noise, { top: 0x2b62b4, mid: 0x80b2e0, hor: HOR_A, sunDir, cover: 0.52, cloudScale: 1.0, windX: 0.0035, windY: 0.001, sunSize: 0.03, sunGain: 1.4 });
 scene.add(sky.mesh); W.opaque.push(sky.mesh);
 const SU = sky.uniforms;
 
@@ -38,18 +38,20 @@ const hemi = new THREE.HemisphereLight(0xcfe0f2, 0x6b7a4a, 0.95); scene.add(hemi
 const sunL = new THREE.DirectionalLight(0xffe9c6, 1.25); sunL.position.copy(sunDir).multiplyScalar(200); scene.add(sunL);
 
 // ---------------- coastline (identical formula lives in the water shader) ----------------
-const cz0 = (x) => -1.4 + 0.0024 * x * x + 5 * Math.sin(x * 0.045 + 1.3) + 3 * Math.sin(x * 0.11 + 4.1) + 2 * Math.sin(x * 0.23);
+const cz0 = (x) => -1.4 + 0.0016 * x * x + 5 * Math.sin(x * 0.045 + 1.3) + 3 * Math.sin(x * 0.11 + 4.1) + 2 * Math.sin(x * 0.23);
 const C0 = cz0(0);
-const coastZ = (x) => cz0(x) - C0 - 1.6;
+const SEAT_S = 22;      // the seat is 22 m back from the lip, on a broad grassy ledge that slopes gently down to a low wall
+const RAMP = 8;         // metres the ledge falls between the seat and the wall
+const coastZ = (x) => cz0(x) - C0 - SEAT_S;
 const baseZ = (x) => coastZ(x) - 7.5;
-const topH = (x, z, s) => H + 2.4 * (fbm(x * 0.012 + 3, z * 0.012 + 8) - 0.5) + 0.05 * Math.min(Math.max(s, 0), 480) * smoothstep(5, 120, s) + (fbm(x * 0.09, z * 0.09) - 0.5) * 0.5;
-const seatY = topH(0, 0, coastZ(0));
+const topH = (x, z, s) => H - RAMP * (1 - smoothstep(0, SEAT_S, s)) + 2.4 * (fbm(x * 0.012 + 3, z * 0.012 + 8) - 0.5) + 0.05 * Math.min(Math.max(s, 0), 480) * smoothstep(5, 120, s) + (fbm(x * 0.09, z * 0.09) - 0.5) * 0.5;
+const seatY = topH(0, 0, -coastZ(0));
 
 // ---------------- cliff + land (ribbon per column) ----------------
 {
   const xs = [0]; { let x = 0, d = 2.6; for (let i = 0; i < 70; i++) { x += d; d *= 1.045; xs.push(x); } }
   const cols = []; for (let i = xs.length - 1; i >= 1; i--) cols.push(-xs[i]); for (const x of xs) cols.push(x);
-  const landS = [1800, 1150, 760, 500, 330, 215, 140, 90, 58, 36, 22, 13, 7.5, 4, 1.8, 0];
+  const landS = [1800, 1150, 760, 500, 330, 215, 140, 90, 60, 42, 30, 22, 17, 12, 8, 5, 3, 1.5, 0.6, 0];
   const NQ = 44, NL = landS.length;
   const verts = [], colors = [], idx = [];
   const pal = [0x8d8272, 0xa89c88, 0x6f675c, 0x9d9078, 0x7c7265].map(h => new THREE.Color(h));
@@ -58,13 +60,13 @@ const seatY = topH(0, 0, coastZ(0));
     const x = cols[ci], zc = coastZ(x);
     for (let l = 0; l < NL; l++) {
       const s = landS[l], z = zc + s;
-      let y = topH(x, z, s); if (l >= NL - 3) y -= 0.9 * (1 - smoothstep(0, 5, s));
+      const y = topH(x, z, s);
       verts.push(x, y, z);
       const n = fbm(x * 0.05, z * 0.05), m = fbm(x * 0.2 + 9, z * 0.2);
       tmp.copy(g1).lerp(g2, n).lerp(g3, smoothstep(0.55, 0.8, m) * 0.6).lerp(dry, 1 - smoothstep(0, 9, s));
       colors.push(tmp.r, tmp.g, tmp.b);
     }
-    const y0 = topH(x, zc, 0) - 0.9;
+    const y0 = topH(x, zc, 0);
     for (let q = 1; q <= NQ; q++) {
       const t = q / NQ, n1 = vnoise(x * 0.07, t * 3.0);
       let dz = 1.2 * t + 6.3 * Math.pow(t, 5) + 1.1 * (((t * 8 + n1 * 1.6) % 1) - 0.5) * Math.pow(Math.sin(Math.PI * t), 0.7)
@@ -91,6 +93,23 @@ const seatY = topH(0, 0, coastZ(0));
   geo.setIndex(idx); geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   scene.add(mesh); W.opaque.push(mesh);
+}
+
+// ---------------- safety: a low stone wall along the lip, and a flat stone seat under the viewer ----------------
+{
+  const stone = new THREE.MeshLambertMaterial({ color: 0xffffff }), step = 2.1;
+  const xs = []; for (let x = -200; x <= 200; x += step) xs.push(x);
+  const wall = new THREE.InstancedMesh(new THREE.BoxGeometry(2.3, 1.1, 0.7), stone, xs.length), d = new THREE.Object3D();
+  const cols = [0xb4ad9f, 0xc3bcae, 0xa49e92, 0xcbc4b5].map(h => new THREE.Color(h));
+  xs.forEach((x, i) => {
+    const z = coastZ(x) + 0.9, z2 = coastZ(x + step) + 0.9, sc = rr(0.92, 1.12);
+    d.position.set(x + step / 2, topH(x, z, 0.9) + 0.4, (z + z2) / 2);
+    d.rotation.set(0, -Math.atan2(z2 - z, step), 0); d.scale.set(1.02, sc, rr(0.95, 1.25)); d.updateMatrix();
+    wall.setMatrixAt(i, d.matrix); wall.setColorAt(i, cols[i % 4]);
+  });
+  scene.add(wall); W.opaque.push(wall);
+  const slab = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.3, 28), new THREE.MeshLambertMaterial({ color: 0xd9cfb8 }));
+  slab.position.set(0, seatY - 0.12, 0); scene.add(slab); W.opaque.push(slab);
 }
 
 // rocks at the foot of the cliff
@@ -132,9 +151,9 @@ function addIsland(x, z, o) {
   if (o.foam !== false) foamList.push([x, z, o.r * 0.8]);
   return m;
 }
-addIsland(-52, -72, { r: 6, h: 24, seed: 1.7, detail: 4, steep: 0.5, grassMin: 0.5 });
-addIsland(64, -108, { r: 9, h: 31, seed: 4.1, detail: 4, steep: 0.5, grassMin: 0.45 });
-addIsland(-125, -158, { r: 12, h: 22, seed: 8.2, detail: 4, steep: 0.55 });
+addIsland(-70, -185, { r: 7, h: 34, seed: 1.7, detail: 4, steep: 0.5, grassMin: 0.5 });
+addIsland(95, -215, { r: 10, h: 36, seed: 4.1, detail: 4, steep: 0.5, grassMin: 0.45 });
+addIsland(-170, -255, { r: 13, h: 30, seed: 8.2, detail: 4, steep: 0.55 });
 addIsland(205, -290, { r: 44, h: 26, seed: 2.3, detail: 5, steep: 0.65 });
 addIsland(-250, -370, { r: 60, h: 36, seed: 5.5, detail: 5, steep: 0.7 });
 const lhIsle = addIsland(-175, -470, { r: 40, h: 30, seed: 6.4, detail: 5, steep: 0.7 });
@@ -172,10 +191,10 @@ const waterU = {
     fragmentShader: `
       varying vec3 vW; uniform float uTime, uC0, uFogD; uniform vec3 uDeep, uShallow, uFogColor; uniform vec4 uIsl[8]; uniform sampler2D uNoise;
       ${SKY_GLSL}
-      float coastZ(float x){ return -1.4 + 0.0024*x*x + 5.0*sin(x*0.045+1.3) + 3.0*sin(x*0.11+4.1) + 2.0*sin(x*0.23) - uC0 - 1.6; }
+      float coastZ(float x){ return -1.4 + 0.0016*x*x + 5.0*sin(x*0.045+1.3) + 3.0*sin(x*0.11+4.1) + 2.0*sin(x*0.23) - uC0 - 22.0; }
       void wave(vec2 p, vec2 dir, float len, float slope, float dist, inout vec2 g, inout float h){
         float k = 6.2831853 / len; float w = sqrt(9.81 * k);
-        float ph = dot(p, dir) * k - w * uTime;
+        float ph = dot(p, dir) * k - w * uTime * 0.6;
         float f = 1.0 / (1.0 + dist * k * 0.05);
         g += dir * slope * f * cos(ph); h += slope / k * f * sin(ph);
       }
@@ -233,8 +252,8 @@ const waterU = {
   const N = 7500, m = new THREE.InstancedMesh(bg, gm, N), d = new THREE.Object3D(); let k = 0, tries = 0;
   while (k < N && tries++ < N * 5) {
     const a = R() * 6.283, r = 0.05 + Math.pow(R(), 1.5) * 42, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const s = z - coastZ(x); if (s < 0.25) continue;
-    d.position.set(x, topH(x, z, s) - 0.9 * (1 - smoothstep(0, 5, s)) - 0.03, z);
+    const s = z - coastZ(x); if (s < 9 || Math.hypot(x, z) < 2.6) continue;
+    d.position.set(x, topH(x, z, s) - 0.03, z);
     d.rotation.set(rr(-0.18, 0.18), R() * 6.28, rr(-0.18, 0.18)); d.scale.set(rr(1, 1.7), rr(0.3, 0.8), 1); d.updateMatrix(); m.setMatrixAt(k++, d.matrix);
   }
   m.count = k; m.frustumCulled = false; scene.add(m); W.opaque.push(m);
@@ -244,8 +263,8 @@ const waterU = {
   const cols = [0xf09ab8, 0xf6f2e8, 0xf7d55a, 0xc9a0ee].map(h => new THREE.Color(h));
   k = 0; tries = 0;
   while (k < 220 && tries++ < 3000) {
-    const a = R() * 6.283, r = 1 + R() * 20, x = Math.cos(a) * r, z = Math.sin(a) * r, s = z - coastZ(x); if (s < 0.4) continue;
-    d.position.set(x, topH(x, z, s) - 0.9 * (1 - smoothstep(0, 5, s)) + rr(0.18, 0.4), z); d.rotation.set(R(), R(), R()); d.scale.setScalar(rr(0.8, 1.6)); d.updateMatrix();
+    const a = R() * 6.283, r = 1 + R() * 20, x = Math.cos(a) * r, z = Math.sin(a) * r, s = z - coastZ(x); if (s < 1.8 || Math.hypot(x, z) < 3.4) continue;
+    d.position.set(x, topH(x, z, s) + rr(0.18, 0.4), z); d.rotation.set(R(), R(), R()); d.scale.setScalar(rr(0.8, 1.6)); d.updateMatrix();
     fm.setMatrixAt(k, d.matrix); fm.setColorAt(k, cols[k % 4]); k++;
   }
   fm.count = k; scene.add(fm); W.opaque.push(fm);
@@ -254,7 +273,7 @@ const waterU = {
   const rock = paint(new THREE.DodecahedronGeometry(0.7, 1).scale(1, 0.7, 1), 0x7d776d), rm = new THREE.InstancedMesh(rock, new THREE.MeshLambertMaterial({ vertexColors: true }), 26);
   for (let i = 0; i < 26; i++) {
     const a = R() * 6.283, r = 3 + R() * 70, x = Math.cos(a) * r, z = Math.sin(a) * r, s = z - coastZ(x);
-    if (s < 1.5) { d.scale.setScalar(0); d.updateMatrix(); rm.setMatrixAt(i, d.matrix); continue; }
+    if (s < 3 || Math.hypot(x, z) < 4) { d.scale.setScalar(0); d.updateMatrix(); rm.setMatrixAt(i, d.matrix); continue; }
     d.position.set(x, topH(x, z, s) + 0.05, z); d.rotation.set(R(), R() * 6, R()); d.scale.setScalar(rr(0.5, 2.2)); d.updateMatrix(); rm.setMatrixAt(i, d.matrix);
   }
   scene.add(rm); W.opaque.push(rm);
@@ -270,7 +289,7 @@ for (let i = 0; i < 15; i++) {
   const b = makeBird({ wingSpan: hero ? 2.2 : rr(1.4, 2.0), tip: 0x2d2f36 });
   b.userData.p = {
     cx: rr(-70, 70), cz: hero ? rr(-34, -16) : rr(-30, -150), cy: hero ? seatY + rr(-4, 6) : seatY + rr(-38, 14),
-    ax: hero ? rr(14, 24) : rr(30, 70), az: hero ? rr(8, 14) : rr(20, 50), ay: rr(2, 6), w: rr(0.07, 0.13) * (R() < 0.5 ? 1 : -1), ph: R() * 6.28, ph2: R() * 6.28, fl: rr(5, 7),
+    ax: hero ? rr(14, 24) : rr(30, 70), az: hero ? rr(8, 14) : rr(20, 50), ay: rr(2, 6), w: rr(0.07, 0.13) * (R() < 0.5 ? 1 : -1), ph: R() * 6.28, ph2: R() * 6.28, fl: rr(3.5, 5),
   };
   scene.add(b); gulls.push(b);
 }
@@ -301,7 +320,7 @@ W.onFrame((dt, t) => {
   const p = pCur;
   applyTime(p * 0.9);
   SU.uTime.value = t; waterU.uTime.value = t;
-  lamp.material.color.setRGB(1.6, 1.35, 0.7).multiplyScalar(0.55 + 0.45 * Math.max(0, Math.sin(t * 1.4)) + p);
+  lamp.material.color.setRGB(1.3, 1.15, 0.7).multiplyScalar(0.85 + 0.15 * Math.sin(t * 0.35) + 0.3 * p);
   for (const b of gulls) {
     const pr = b.userData.p;
     gullPos(pr, t, gA); gullPos(pr, t + 0.35, gB); gullPos(pr, t + 0.7, gC); b.position.copy(gA); b.lookAt(gB);
@@ -331,12 +350,12 @@ W.buildAudio = (A) => {
     const n = A.noise('pink'), lp = A.filter('lowpass', 300, 0.7), g = A.gain(0.0001), p = A.pan(pan);
     A.chain(n, lp, g, p, master); p.connect(rv);
     lp.frequency.setValueAtTime(280, t0); lp.frequency.linearRampToValueAtTime(1100, t0 + 2.8); lp.frequency.exponentialRampToValueAtTime(260, t0 + 8);
-    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.16 * amp, t0 + 2.8); g.gain.exponentialRampToValueAtTime(0.0008, t0 + 8.5);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.11 * amp, t0 + 3.4); g.gain.exponentialRampToValueAtTime(0.0008, t0 + 9);
     setTimeout(() => { try { n.stop(); } catch (e) {} }, 9000);
     const h = A.noise('white'), hb = A.filter('bandpass', 3000, 0.8), hg2 = A.gain(0.0001); A.chain(h, hb, hg2, p);
     hg2.gain.setValueAtTime(0.0001, t0 + 2.4); hg2.gain.linearRampToValueAtTime(0.03 * amp, t0 + 3.0); hg2.gain.exponentialRampToValueAtTime(0.0005, t0 + 8);
     setTimeout(() => { try { h.stop(); } catch (e) {} }, 9000);
-    A.blip({ f: [[0, 62], [1.2, 38]], dur: 1.4, type: 'sine', vol: 0.12 * amp, attack: 0.05, at: 2.7, pan: pan * 0.5 });
+    A.blip({ f: [[0, 62], [1.2, 38]], dur: 1.4, type: 'sine', vol: 0.06 * amp, attack: 0.05, at: 2.7, pan: pan * 0.5 });
   }, 7, 11, 0.3);
   // gulls
   const bus = (pan) => { const pn = A.pan(pan), lp = A.filter('lowpass', 5200), d = A.gain(0.6), s = A.gain(0.5); A.chain(pn, lp); lp.connect(d); d.connect(master); lp.connect(s); s.connect(rv); return pn; };

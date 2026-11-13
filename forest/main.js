@@ -14,7 +14,7 @@ const rr = (a, b) => a + R() * (b - a);
 
 const FOG = 0xbccfc4;
 const W = await createWorld({ eye: 1.15, bg: FOG, title: 'Forest — Morning Light', startPitch: 0.1,
-  tone: { exposure: 1.0, bloom: 0.4, radius: 0.7, threshold: 0.93 } });
+  tone: { exposure: 1.0, bloom: 0.25, radius: 0.7, threshold: 0.97 } });
 const { scene, camera } = W;
 scene.fog = new THREE.FogExp2(FOG, 0.0108);
 
@@ -29,8 +29,8 @@ function groundH(x, z) {
 }
 
 // ---------------- lights & sky ----------------
-const hemi = new THREE.HemisphereLight(0xdbeadf, 0x394a28, 0.95); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffe0ad, 1.7); sun.position.copy(sunDir).multiplyScalar(100); scene.add(sun);
+const hemi = new THREE.HemisphereLight(0xe6f0e0, 0x4a5c32, 1.15); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe2b5, 1.6); sun.position.copy(sunDir).multiplyScalar(100); scene.add(sun);
 
 const sky = makeSky(noise, {
   top: 0x6f9fc9, mid: 0xc4d9e2, hor: FOG, sunDir, sunCol: 0xfff1cf, glow: 0.8, sunSize: 0.05, sunGain: 1.2,
@@ -252,18 +252,18 @@ function makeMotes({ count, box, center, size, color, opacity, fall, drift, addi
   const m = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, fog: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     uniforms: { uTime: { value: 0 }, uBox: { value: new THREE.Vector3(...box) }, uCenter: { value: new THREE.Vector3(...center) }, uSize: { value: size }, uFall: { value: fall }, uDrift: { value: new THREE.Vector2(...drift) }, uColor: { value: new THREE.Color(color) }, uOp: { value: opacity } },
-    vertexShader: `attribute vec4 aSeed; varying vec2 vUv; varying float vT; uniform float uTime, uSize, uFall; uniform vec3 uBox, uCenter; uniform vec2 uDrift;
+    vertexShader: `attribute vec4 aSeed; varying vec2 vUv; varying float vT, vDist; uniform float uTime, uSize, uFall; uniform vec3 uBox, uCenter; uniform vec2 uDrift;
       void main(){ vUv = uv; vec3 p = aSeed.xyz * uBox;
         p.x += sin(uTime * 0.17 + aSeed.w * 30.0) * 1.6 + uTime * uDrift.x;
         p.z += cos(uTime * 0.13 + aSeed.w * 21.0) * 1.6 + uTime * uDrift.y;
         p.y += sin(uTime * 0.21 + aSeed.w * 12.0) * 0.5 - uTime * uFall;
         p = mod(p, uBox) - uBox * 0.5 + uCenter;
-        vT = aSeed.w; vec4 mv = viewMatrix * vec4(p, 1.0);
+        vT = aSeed.w; vec4 mv = viewMatrix * vec4(p, 1.0); vDist = length(mv.xyz);
         mv.xy += position.xy * uSize * (0.55 + 0.9 * aSeed.w);
         gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `varying vec2 vUv; varying float vT; uniform float uTime, uOp; uniform vec3 uColor;
+    fragmentShader: `varying vec2 vUv; varying float vT, vDist; uniform float uTime, uOp; uniform vec3 uColor;
       void main(){ float d = length(vUv - 0.5) * 2.0; float a = smoothstep(1.0, 0.0, d); a *= a;
-        a *= (0.55 + 0.45 * sin(uTime * (0.7 + vT) + vT * 40.0)) * uOp; gl_FragColor = vec4(uColor, a); ${SHADER_TAIL} }`,
+        a *= (0.78 + 0.22 * sin(uTime * (0.15 + 0.2 * vT) + vT * 40.0)) * uOp * smoothstep(2.5, 7.0, vDist); gl_FragColor = vec4(uColor, a); ${SHADER_TAIL} }`,
   });
   const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.renderOrder = 6; scene.add(mesh); return m;
 }
@@ -274,7 +274,7 @@ const leaves = makeMotes({ count: 34, box: [40, 26, 40], center: [0, 11, -12], s
 const birds = [];
 for (let i = 0; i < 5; i++) {
   const b = makeBird({ body: 0x40362a, wing: 0x54483a, tip: 0x2a241c, wingSpan: 0.32 });
-  b.userData.p = { cx: rr(-6, 6), cz: rr(-38, -14), ra: rr(10, 20), rb: rr(8, 15), y: rr(5, 14), sp: rr(0.07, 0.12) * (i % 2 ? 1 : -1), ph: R() * 6.28, fr: rr(16, 22) };
+  b.userData.p = { cx: rr(-8, 8), cz: rr(-55, -34), ra: rr(14, 24), rb: rr(12, 20), y: rr(8, 18), sp: rr(0.04, 0.08) * (i % 2 ? 1 : -1), ph: R() * 6.28, fr: rr(8, 11) };
   scene.add(b); birds.push(b);
 }
 
@@ -282,9 +282,9 @@ for (let i = 0; i < 5; i++) {
 const tmpA = new THREE.Vector3();
 W.onFrame((dt, t) => {
   const cloud = 0.78 + 0.22 * Math.sin(t * 0.045) * Math.sin(t * 0.027 + 1.0);      // slow drifting cloud-shadow
-  sun.intensity = 1.2 + 0.7 * cloud;
-  for (const m of shafts) { m.uniforms.uTime.value = t; m.uniforms.uInt.value = 0.5 + 0.7 * cloud; }
-  groundMat.userData.u.uTime.value = t; groundMat.userData.u.uLit.value = 0.55 + 0.45 * cloud;
+  sun.intensity = 1.3 + 0.4 * cloud;
+  for (const m of shafts) { m.uniforms.uTime.value = t; m.uniforms.uInt.value = 0.5 + 0.3 * cloud; }
+  groundMat.userData.u.uTime.value = t; groundMat.userData.u.uLit.value = 0.75 + 0.25 * cloud;
   sky.uniforms.uTime.value = t;
   pollen.uniforms.uTime.value = t; leaves.uniforms.uTime.value = t;
   for (const s of mist) { s.position.x += s.userData.vx * dt; if (s.position.x > 85) s.position.x = -85; s.position.y += Math.sin(t * 0.1 + s.userData.z0) * 0.0015; }
@@ -349,7 +349,7 @@ W.buildAudio = (A) => {
     for (let i = 0; i < n; i++) {
       const at = i * 0.085 + Math.random() * 0.01, s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 2205, ctx.sampleRate);
       const d = s.buffer.getChannelData(0); for (let k = 0; k < d.length; k++) d[k] = (Math.random() * 2 - 1) * Math.pow(1 - k / d.length, 6);
-      const f = A.filter('bandpass', 1400, 2), g = A.gain(0.08); A.chain(s, f, g, dest); s.start(ctx.currentTime + at);
+      const f = A.filter('bandpass', 1400, 2), g = A.gain(0.035); A.chain(s, f, g, dest); s.start(ctx.currentTime + at);
     }
   }, 50, 100, 12);
 };

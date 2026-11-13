@@ -226,7 +226,7 @@ export function createAudio() {
   const master = ctx.createGain(); master.gain.value = 0;
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 3.5; comp.attack.value = 0.02; comp.release.value = 0.4;
   master.connect(comp); comp.connect(ctx.destination);
-  master.gain.setValueAtTime(0, ctx.currentTime); master.gain.linearRampToValueAtTime(0.9, ctx.currentTime + 5);
+  master.gain.setValueAtTime(0, ctx.currentTime); master.gain.linearRampToValueAtTime(0.7, ctx.currentTime + 6);
   const sr = ctx.sampleRate, bufs = {};
   function noiseBuf(kind) {
     if (bufs[kind]) return bufs[kind];
@@ -308,9 +308,10 @@ export async function createWorld(o = {}) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, maxPixelRatio));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
+  try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) {}   // real-world scale, floor at y = 0
   try { renderer.xr.setFoveation(1); } catch (e) {}
   document.body.appendChild(renderer.domElement);
-  const fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.35, radius: 0.55, threshold: 0.96, ...tone });
+  const fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.25, radius: 0.55, threshold: 0.97, ...tone });
 
   const rig = new THREE.Group(); rig.add(camera); scene.add(rig);
   camera.position.y = eye;
@@ -318,6 +319,8 @@ export async function createWorld(o = {}) {
   const W = {
     THREE, scene, camera, renderer, rig, fx, eye, title, caps, bgColor,
     audio: null, startAudio: null, frameFns: [], opaque: [], soundOn: true, world: null,
+    // all ambient motion runs on simT, which can be slowed (reduced motion) or frozen (pause / calm)
+    reducedMotion: false, timeScale: 1, paused: false, simT: 0,
     onFrame(fn) { W.frameFns.push(fn); },
     yaw: startYaw, pitch: startPitch, home: new THREE.Vector3(),
   };
@@ -334,6 +337,9 @@ export async function createWorld(o = {}) {
     const k = (fov / 68) * 0.0042;
     W.yaw += dx * k; W.pitch += dy * k; vy = dx * k * 0.6; vp = dy * k * 0.6;
   });
+  const rmq = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  W.reducedMotion = !!(rmq && rmq.matches); if (W.reducedMotion) W.timeScale = 0.3;
+  if (rmq && rmq.addEventListener) rmq.addEventListener('change', (e) => { W.reducedMotion = e.matches; W.timeScale = e.matches ? 0.3 : 1; });
   const keys = {};
   addEventListener('keydown', (e) => { keys[e.code] = true; });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -383,18 +389,19 @@ export async function createWorld(o = {}) {
       setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(), quitUrl: '../',
     });
     renderer.setAnimationLoop(() => {
-      const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+      const rdt = Math.min(clock.getDelta(), 0.05);
+      const dt = W.paused ? 0 : rdt * W.timeScale; W.simT += dt; const t = W.simT;
       windU.value = t;
       if (!renderer.xr.isPresenting) {
         centered = false;
-        const kk = 1.4 * dt;
+        const kk = 1.4 * rdt;
         if (keys.ArrowLeft || keys.KeyA) W.yaw += kk; if (keys.ArrowRight || keys.KeyD) W.yaw -= kk;
         if (keys.ArrowUp || keys.KeyW) W.pitch += kk; if (keys.ArrowDown || keys.KeyS) W.pitch -= kk;
-        if (!dragging) { W.yaw += vy; W.pitch += vp; vy *= 0.92; vp *= 0.92; }
+        if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.92; vp *= 0.92; } else if (!dragging) { vy = vp = 0; }
         W.pitch = Math.max(pitchMin, Math.min(pitchMax, W.pitch));
         // "grab the world": drag right -> view turns left (+yaw), drag down -> look up (+pitch)
-        camera.rotation.set(W.pitch, W.yaw + startYaw, Math.sin(t * 0.13) * 0.004, 'YXZ');
-        camera.position.y = eye + Math.sin(t * 0.55) * 0.004;   // slow breathing
+        camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
+        camera.position.y = eye;
       } else if (!centered) { centered = true; W.recenter(); }  // face the scene on entering VR
       W.menu.update();
       for (const fn of W.frameFns) fn(dt, t);
