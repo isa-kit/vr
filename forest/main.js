@@ -112,7 +112,8 @@ const mats = {
   broad: swayMaterial({ k: 0.0025, y0: 0, power: 2 }),
 };
 mats.giant.side = mats.fir.side = THREE.DoubleSide;
-const placed = [];
+const placed = [], thin = [];   // thin: [mesh, fullCount] — foliage the frame-rate governor can thin out
+W.detailFns.push((f) => thin.forEach(([m, n]) => { m.count = Math.floor(n * f); }));
 function scatter(geo, mat, n, rMin, rMax, scaleR, spacing, extra) {
   const mesh = new THREE.InstancedMesh(geo, mat, n);
   const d = new THREE.Object3D(); let k = 0, tries = 0;
@@ -127,7 +128,7 @@ function scatter(geo, mat, n, rMin, rMax, scaleR, spacing, extra) {
     d.position.set(x, groundH(x, z) - 0.2, z); d.rotation.set(0, R() * 6.28, 0); d.scale.set(s, s * rr(0.92, 1.12), s);
     d.updateMatrix(); mesh.setMatrixAt(k++, d.matrix);
   }
-  mesh.count = k; mesh.frustumCulled = false; scene.add(mesh); return mesh;
+  mesh.count = k; mesh.frustumCulled = false; scene.add(mesh); thin.push([mesh, k]); return mesh;
 }
 scatter(conifer(54, 1.25, 20, 11, 6.2, 0x1c3822, 0x35623a), mats.giant, 120, 9, 170, [0.75, 1.35], 5.0, 1.2);
 scatter(conifer(26, 0.55, 7, 8, 3.1, 0x244a2c, 0x41763f), mats.fir, 140, 8, 150, [0.7, 1.3], 2.8, 0.8);
@@ -160,7 +161,7 @@ function fernGeo() {
     if (fbm(x * 0.12 + 3, z * 0.12) < 0.42 && R() < 0.8) continue;
     d.position.set(x, groundH(x, z), z); d.rotation.set(0, R() * 6.28, 0); d.scale.setScalar(rr(0.8, 1.6)); d.updateMatrix(); mesh.setMatrixAt(k++, d.matrix);
   }
-  mesh.count = k; mesh.frustumCulled = false; scene.add(mesh);
+  mesh.count = k; mesh.frustumCulled = false; scene.add(mesh); thin.push([mesh, k]);
 }
 // boulders, fallen log, stump, mushrooms
 {

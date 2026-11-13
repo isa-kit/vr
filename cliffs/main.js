@@ -108,7 +108,7 @@ const seatY = topH(0, 0, -coastZ(0));
     wall.setMatrixAt(i, d.matrix); wall.setColorAt(i, cols[i % 4]);
   });
   scene.add(wall); W.opaque.push(wall);
-  const slab = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.3, 28), new THREE.MeshLambertMaterial({ color: 0xd9cfb8 }));
+  const slab = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.8, 0.3, 28), new THREE.MeshLambertMaterial({ color: 0xd9cfb8 }));
   slab.position.set(0, seatY - 0.12, 0); scene.add(slab); W.opaque.push(slab);
 }
 
@@ -257,6 +257,7 @@ const waterU = {
     d.rotation.set(rr(-0.18, 0.18), R() * 6.28, rr(-0.18, 0.18)); d.scale.set(rr(1, 1.7), rr(0.3, 0.8), 1); d.updateMatrix(); m.setMatrixAt(k++, d.matrix);
   }
   m.count = k; m.frustumCulled = false; scene.add(m); W.opaque.push(m);
+  const grassFull = k; W.detailFns.push((f) => { m.count = Math.floor(grassFull * f); });
 
   // thrift & daisies
   const fg = new THREE.OctahedronGeometry(0.028, 0), fm = new THREE.InstancedMesh(fg, new THREE.MeshLambertMaterial({ color: 0xffffff }), 220);
@@ -273,7 +274,7 @@ const waterU = {
   const rock = paint(new THREE.DodecahedronGeometry(0.7, 1).scale(1, 0.7, 1), 0x7d776d), rm = new THREE.InstancedMesh(rock, new THREE.MeshLambertMaterial({ vertexColors: true }), 26);
   for (let i = 0; i < 26; i++) {
     const a = R() * 6.283, r = 3 + R() * 70, x = Math.cos(a) * r, z = Math.sin(a) * r, s = z - coastZ(x);
-    if (s < 3 || Math.hypot(x, z) < 4) { d.scale.setScalar(0); d.updateMatrix(); rm.setMatrixAt(i, d.matrix); continue; }
+    if (s < 12 || Math.hypot(x, z) < 12) { d.scale.setScalar(0); d.updateMatrix(); rm.setMatrixAt(i, d.matrix); continue; }
     d.position.set(x, topH(x, z, s) + 0.05, z); d.rotation.set(R(), R() * 6, R()); d.scale.setScalar(rr(0.5, 2.2)); d.updateMatrix(); rm.setMatrixAt(i, d.matrix);
   }
   scene.add(rm); W.opaque.push(rm);

@@ -265,6 +265,7 @@ function palmGeo() {
     d.position.set(x, h - 0.03, z); d.rotation.set(rr(-0.25, 0.25), R() * 6.28, rr(-0.25, 0.25)); d.scale.set(rr(0.8, 1.6), rr(0.5, 1.6), 1); d.updateMatrix(); gmesh.setMatrixAt(k++, d.matrix);
   }
   gmesh.count = k; gmesh.frustumCulled = false; scene.add(gmesh); W.opaque.push(gmesh);
+  const grassFull = k; W.detailFns.push((f) => { gmesh.count = Math.floor(grassFull * f); });
 
   // driftwood + shells + pebbles
   const wood = new THREE.MeshLambertMaterial({ color: 0xa79480 });

@@ -295,17 +295,37 @@ export async function createWorld(o = {}) {
   const {
     eye = 1.15, fov = 68, far = 2400, startYaw = 0, startPitch = 0,
     pitchMin = -1.35, pitchMax = 1.35, bg = 0x999999, tone = {}, title = 'World',
-    maxPixelRatio = 2, hint = 'Drag to look around · arrow keys also turn · Esc / M opens the menu', rows = [],
+    maxPixelRatio = 2, rows = [],
   } = o;
 
-  const caps = await detectXR();
+  // ----- device class: phones get touch UI, no VR/AR button (a phone has no controllers, so entering would strand the user)
+  const isHeadsetUA = /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent);
+  const isTouch = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches) && !isHeadsetUA;
+  const hint = o.hint || (isTouch ? 'Drag to look around · use Menu for sound, light and quit' : 'Drag to look around · arrow keys also turn · Esc / M opens the menu');
+  const helpEl = document.getElementById('help'); if (helpEl) helpEl.textContent = hint;
+  const caps = isTouch ? { vr: false, ar: false } : await detectXR();
+  const vfovFor = () => {                      // portrait: widen the vertical FOV so the composition still reads
+    const a = innerWidth / innerHeight;
+    return a >= 1 ? fov : Math.min(100, 2 * Math.atan(Math.tan(56 * Math.PI / 360) / a) * 180 / Math.PI);
+  };
+  const styleFix = document.createElement('style');   // touch-size and safe-area overrides for the shared menu's on-screen controls
+  styleFix.textContent = `@media (pointer: coarse) {
+    #xm-btn{top:calc(env(safe-area-inset-top,0px) + 46px)!important;right:calc(env(safe-area-inset-right,0px) + 12px)!important;min-height:44px;padding:0 18px!important;font-size:15px!important}
+    #xm-panel{top:calc(env(safe-area-inset-top,0px) + 98px)!important;right:calc(env(safe-area-inset-right,0px) + 12px)!important;
+      width:min(340px,calc(100vw - 24px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)))!important;
+      max-height:calc(100vh - 112px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important}
+    .xm-cells button{min-height:44px;font-size:14px!important}.xm-x{min-width:44px;min-height:44px;font-size:20px!important}.xm-lab{flex-basis:84px!important}
+    a.back{padding:10px 6px}
+  }`;
+  document.head.appendChild(styleFix);
   const scene = new THREE.Scene();
   const bgColor = new THREE.Color(bg);
   scene.background = bgColor;
-  const camera = new THREE.PerspectiveCamera(fov, innerWidth / innerHeight, 0.08, far);
+  const camera = new THREE.PerspectiveCamera(vfovFor(), innerWidth / innerHeight, 0.08, far);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar, powerPreference: 'high-performance' });
   if (caps.ar) renderer.setClearColor(0x000000, 0);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, maxPixelRatio));
+  let pixelRatio = Math.min(devicePixelRatio, isTouch ? 1.5 : maxPixelRatio);
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
   try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) {}   // real-world scale, floor at y = 0
@@ -322,7 +342,7 @@ export async function createWorld(o = {}) {
     // all ambient motion runs on simT, which can be slowed (reduced motion) or frozen (pause / calm)
     reducedMotion: false, timeScale: 1, paused: false, simT: 0,
     onFrame(fn) { W.frameFns.push(fn); },
-    yaw: startYaw, pitch: startPitch, home: new THREE.Vector3(),
+    yaw: startYaw, pitch: startPitch + (innerWidth < innerHeight ? 0.12 : 0), home: new THREE.Vector3(),   // portrait: tilt up a touch so the composition reads
   };
 
   // ----- desktop look: drag (mouse / touch / pen), arrow keys, gentle inertia
@@ -334,12 +354,25 @@ export async function createWorld(o = {}) {
   el.addEventListener('pointermove', (e) => {
     if (!dragging || renderer.xr.isPresenting) return;
     const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
-    const k = (fov / 68) * 0.0042;
+    const k = e.pointerType === 'touch' ? (camera.fov * Math.PI / 180 / innerHeight) * 1.35 : (camera.fov / 68) * 0.0042;
     W.yaw += dx * k; W.pitch += dy * k; vy = dx * k * 0.6; vp = dy * k * 0.6;
   });
   const rmq = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   W.reducedMotion = !!(rmq && rmq.matches); if (W.reducedMotion) W.timeScale = 0.3;
   if (rmq && rmq.addEventListener) rmq.addEventListener('change', (e) => { W.reducedMotion = e.matches; W.timeScale = e.matches ? 0.3 : 1; });
+  // ----- optional "look by moving the phone" (off by default; iOS needs a tap to grant permission)
+  const gyro = { on: false, has: false, a: 0, b: 0, g: 0, base: null, listening: false };
+  const rad = (d) => d * Math.PI / 180, _e = new THREE.Euler(), _qd = new THREE.Quaternion(), _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2), _z = new THREE.Vector3(0, 0, 1);
+  const onOrient = (ev) => { if (ev.alpha == null) return; gyro.a = ev.alpha; gyro.b = ev.beta; gyro.g = ev.gamma; gyro.has = true; };
+  const setGyro = (v) => {
+    if (!v) { gyro.on = false; return; }
+    const enable = () => { if (!gyro.listening) { addEventListener('deviceorientation', onOrient); gyro.listening = true; } gyro.on = true; gyro.base = null; };
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') enable(); }).catch(() => {});
+    } else enable();
+  };
+  const phoneRows = (isTouch && typeof DeviceOrientationEvent !== 'undefined')
+    ? [sectionRow('Phone'), toggleRow('Move to look', () => gyro.on, setGyro)] : [];
   const keys = {};
   addEventListener('keydown', (e) => { keys[e.code] = true; });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -372,11 +405,12 @@ export async function createWorld(o = {}) {
     scene.background = visible ? bgColor : null;
   };
 
-  addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+  addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.fov = vfovFor(); camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
   // ----- loop
   const clock = new THREE.Clock();
-  let centered = false;
+  let centered = false, slowAcc = 0, slowN = 0, level = 0, direct = false;
+  W.detailFns = [];
   W.start = () => {
     // everything except the rig goes into `world` so passthrough can hide it in one go
     W.home.copy(rig.position);
@@ -384,7 +418,7 @@ export async function createWorld(o = {}) {
     for (const c of [...scene.children]) if (c !== rig) W.world.add(c);
     scene.add(W.world);
     W.menu = createXRMenu({
-      renderer, camera, dolly: rig, caps, title, hint, rows,
+      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...phoneRows],
       sound: { get: () => W.soundOn, set: W.setSound },
       setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(), quitUrl: '../',
     });
@@ -399,13 +433,33 @@ export async function createWorld(o = {}) {
         if (keys.ArrowUp || keys.KeyW) W.pitch += kk; if (keys.ArrowDown || keys.KeyS) W.pitch -= kk;
         if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.92; vp *= 0.92; } else if (!dragging) { vy = vp = 0; }
         W.pitch = Math.max(pitchMin, Math.min(pitchMax, W.pitch));
-        // "grab the world": drag right -> view turns left (+yaw), drag down -> look up (+pitch)
-        camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
+        if (gyro.on && gyro.has) {
+          const so = (screen.orientation ? screen.orientation.angle : window.orientation) || 0;
+          _e.set(rad(gyro.b), rad(gyro.a), -rad(gyro.g), 'YXZ'); _qd.setFromEuler(_e); _qd.multiply(_q1); _qd.multiply(_q0.setFromAxisAngle(_z, -rad(so)));
+          _e.setFromQuaternion(_qd, 'YXZ'); if (gyro.base === null) gyro.base = _e.y;
+          // phone gives pitch + heading; dragging still turns the heading. Roll is dropped so the horizon stays level.
+          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y - gyro.base + W.yaw + startYaw, 0, 'YXZ');
+        } else {
+          // "grab the world": drag right -> view turns left (+yaw), drag down -> look up (+pitch)
+          camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
+        }
         camera.position.y = eye;
       } else if (!centered) { centered = true; W.recenter(); }  // face the scene on entering VR
       W.menu.update();
       for (const fn of W.frameFns) fn(dt, t);
-      fx.render();
+      // frame-rate governor (desktop / phone): slow frames first drop bloom + post-processing and thin the foliage, then lower resolution
+      if (!renderer.xr.isPresenting && !W.paused) {
+        slowAcc += rdt; slowN++;
+        if (slowN >= 90) {
+          const avg = slowAcc / slowN; slowAcc = 0; slowN = 0;
+          if (avg > 0.034 && level < 3) {
+            level++;
+            if (level === 1) { direct = true; for (const fn of W.detailFns) fn(0.6); }
+            else { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); renderer.setSize(innerWidth, innerHeight); if (level === 2) for (const fn of W.detailFns) fn(0.35); }
+          }
+        }
+      }
+      if (direct && !renderer.xr.isPresenting) renderer.render(scene, camera); else fx.render();
     });
   };
   return W;
