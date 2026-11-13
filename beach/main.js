@@ -7,7 +7,7 @@
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
   paint, fbm, smoothstep, rng, hash, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113d';
+} from '../seated/common.js?v=20261113e';
 import { createBirds } from '../shared/birds.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -18,9 +18,10 @@ const PERIOD = 12.0;         // seconds between waves
 const LAMBDA = 30.0;        // wave spacing in metres
 
 const HOR_A = 0xffc58a;
-let timeMode = 'auto', pCur = 0;
+let timeMode = 'auto', pCur = 0, curSeat = 'shore', switchTo = () => {};
 const W = await createWorld({ eye: 0.95,
-  rows: [sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Golden', 'a'], ['Dusk', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
+  hint: 'Drag to look around · keys 1–3 or Menu → Viewpoint to change seat',
+  rows: [sectionRow('Viewpoint'), ...choiceGrid([['Shore', 'shore'], ['Dune top', 'dune'], ['Along the beach', 'along']], () => curSeat, (id) => switchTo(id), 3), sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Golden', 'a'], ['Dusk', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
   bg: HOR_A, title: 'Beach — Sunset Shore', startPitch: -0.07,
   tone: { exposure: 1.0, bloom: 0.3, radius: 0.65, threshold: 0.97 } });
 const { scene } = W;
@@ -368,5 +369,19 @@ W.buildAudio = (A) => {
   }, 22, 42, 10);
 };
 
-W.rig.position.set(0, seatY, SEAT_Z);
+// ---------------- viewpoints: the shore, a dune top looking over the surf, and looking along the beach; switching goes through black ----------------
+const SEATS = [
+  { id: 'shore', x: 0, z: SEAT_Z, yaw: 0, pitch: -0.07 },
+  { id: 'dune', x: -8, z: SEAT_Z + 56, yaw: 0, pitch: -0.12 },
+  { id: 'along', x: 0, z: SEAT_Z, yaw: 1.2, pitch: -0.05 },
+].map(v => ({ ...v, y: groundH(v.x, v.z) }));
+try { const sv = localStorage.getItem('oortia-beach-vp'); if (SEATS.some(v => v.id === sv)) curSeat = sv; } catch (e) { /* ignore */ }
+function applySeat(id) {
+  const v = SEATS.find(q => q.id === id) || SEATS[0]; curSeat = v.id;
+  W.setSeat({ x: v.x, y: v.y, z: v.z, yaw: v.yaw, pitch: v.pitch });
+  try { localStorage.setItem('oortia-beach-vp', v.id); } catch (e) { /* ignore */ }
+}
+switchTo = (id) => { if (id === curSeat) return; if (W.comfort) W.comfort.fade(() => applySeat(id)); else applySeat(id); };
+addEventListener('keydown', (e) => { const m = /^Digit([1-9])$/.exec(e.code); if (!m || e.ctrlKey || e.metaKey || e.altKey) return; const v = SEATS[+m[1] - 1]; if (v) switchTo(v.id); });
+applySeat(curSeat);
 W.start();

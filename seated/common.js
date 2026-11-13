@@ -291,7 +291,7 @@ export async function createWorld(o = {}) {
     // all ambient motion runs on simT, which can be slowed (reduced motion) or frozen (pause / calm)
     reducedMotion: false, timeScale: 1, paused: false, simT: 0,
     onFrame(fn) { W.frameFns.push(fn); },
-    yaw: startYaw, pitch: startPitch + (innerWidth < innerHeight ? 0.12 : 0), home: new THREE.Vector3(),   // portrait: tilt up a touch so the composition reads
+    yaw: 0, pitch: startPitch + (innerWidth < innerHeight ? 0.12 : 0), startYaw, startPitch, portraitTilt: 0.12, home: new THREE.Vector3(),   // yaw/pitch are the user's look offsets from the seat's facing; portrait tilts up a touch
   };
 
   // ----- desktop look: drag (mouse / touch / pen), arrow keys, gentle inertia
@@ -337,8 +337,16 @@ export async function createWorld(o = {}) {
 
   // ----- recenter / passthrough hooks for the shared menu
   W.recenter = () => {
-    if (renderer.xr.isPresenting) recenterRig(rig, camera, new THREE.Vector3(W.home.x, 0, W.home.z), startYaw);
-    else { W.yaw = 0; W.pitch = startPitch + (innerWidth < innerHeight ? 0.12 : 0); vy = vp = 0; }   // yaw is relative to startYaw
+    if (renderer.xr.isPresenting) recenterRig(rig, camera, new THREE.Vector3(W.home.x, 0, W.home.z), W.startYaw);
+    else { W.yaw = 0; W.pitch = W.startPitch + (innerWidth < innerHeight ? W.portraitTilt : 0); vy = vp = 0; }   // yaw is relative to the seat's facing
+  };
+  // Move the viewer to a new seat (instant; callers wrap it in comfort.fade so it always goes through black, never a glide).
+  // yaw: facing in radians (0 = toward -z, + = turn left).  In VR the head is re-aligned to the seat and facing.
+  W.setSeat = ({ x, y, z, yaw = 0, pitch = 0, tilt = 0.12 }) => {   // tilt: extra pitch applied in portrait only
+    rig.position.set(x, y, z); W.home.copy(rig.position);
+    W.startYaw = yaw; W.startPitch = pitch; W.portraitTilt = tilt; vy = vp = 0;
+    W.yaw = 0; W.pitch = pitch + (innerWidth < innerHeight ? tilt : 0);
+    if (renderer.xr.isPresenting) W.recenter();
   };
   const setBackdrop = (visible) => {          // passthrough ON = hide the whole world so the room shows through
     if (W.world) W.world.visible = visible;
@@ -383,10 +391,10 @@ export async function createWorld(o = {}) {
         if (touch.gyro.on) {
           touch.tick(rdt); _e.setFromQuaternion(touch.gyro.quat, 'YXZ');
           // phone gives pitch + heading; dragging still turns the heading. Roll is dropped so the horizon stays level.
-          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y + W.yaw + startYaw, 0, 'YXZ');
+          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y + W.yaw + W.startYaw, 0, 'YXZ');
         } else {
           // camera yaw is +left: drag right lowers yaw (look right); drag down lowers pitch (look down); arrow keys: left/up raise them
-          camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
+          camera.rotation.set(W.pitch, W.yaw + W.startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
         }
         camera.position.y = eye;
       } else if (!centered) { centered = true; W.recenter(); }  // face the scene on entering VR

@@ -6,7 +6,7 @@
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
   paint, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113d';
+} from '../seated/common.js?v=20261113e';
 import { createBirds } from '../shared/birds.js';
 
 const R = rng(7771);
@@ -14,9 +14,10 @@ const rr = (a, b) => a + R() * (b - a);
 const H = 56;                                 // clifftop height above the sea
 
 const HOR_A = 0xe8dfcf;
-let timeMode = 'auto', pCur = 0;
+let timeMode = 'auto', pCur = 0, layoutAround = () => {}, slabMesh = null, curSeat = 'ledge', switchTo = () => {};
 const W = await createWorld({ eye: 1.15,
-  rows: [sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Afternoon', 'a'], ['Golden', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
+  hint: 'Drag to look around · keys 1–3 or Menu → Viewpoint to change ledge',
+  rows: [sectionRow('Viewpoint'), ...choiceGrid([['Centre ledge', 'ledge'], ['West ledge', 'west'], ['East ledge', 'east']], () => curSeat, (id) => switchTo(id), 3), sectionRow('Light'), ...choiceGrid([['Auto', 'auto'], ['Afternoon', 'a'], ['Golden', 'b']], () => timeMode, (v) => { timeMode = v; }, 3)],
   bg: HOR_A, title: 'Cliffs — Edge of the Sea', startPitch: -0.08, startYaw: 0,
   tone: { exposure: 1.0, bloom: 0.28, radius: 0.6, threshold: 0.97 } });
 const { scene } = W;
@@ -110,7 +111,7 @@ const seatY = topH(0, 0, -coastZ(0));
   });
   scene.add(wall); W.opaque.push(wall);
   const slab = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.8, 0.3, 28), new THREE.MeshLambertMaterial({ color: 0xd9cfb8 }));
-  slab.position.set(0, seatY - 0.12, 0); scene.add(slab); W.opaque.push(slab);
+  slab.position.set(0, seatY - 0.12, 0); scene.add(slab); W.opaque.push(slab); slabMesh = slab;
 }
 
 // rocks at the foot of the cliff
@@ -250,26 +251,31 @@ const waterU = {
   bg.setAttribute('color', new THREE.BufferAttribute(new Float32Array([lo.r, lo.g, lo.b, lo.r, lo.g, lo.b, mid.r, mid.g, mid.b, mid.r, mid.g, mid.b, hi.r, hi.g, hi.b]), 3));
   bg.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4]);
   const gm = swayMaterial({ k: 0.22, y0: 0, power: 1.5 }); gm.side = THREE.DoubleSide;
-  const N = 7500, m = new THREE.InstancedMesh(bg, gm, N), d = new THREE.Object3D(); let k = 0, tries = 0;
-  while (k < N && tries++ < N * 5) {
-    const a = R() * 6.283, r = 0.05 + Math.pow(R(), 1.5) * 42, x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const s = z - coastZ(x); if (s < 9 || Math.hypot(x, z) < 2.6) continue;
-    d.position.set(x, topH(x, z, s) - 0.03, z);
-    d.rotation.set(rr(-0.18, 0.18), R() * 6.28, rr(-0.18, 0.18)); d.scale.set(rr(1, 1.7), rr(0.3, 0.8), 1); d.updateMatrix(); m.setMatrixAt(k++, d.matrix);
-  }
-  m.count = k; m.frustumCulled = false; scene.add(m); W.opaque.push(m);
-  const grassFull = k; W.detailFns.push((f) => { m.count = Math.floor(grassFull * f); });
-
+  const N = 7500, m = new THREE.InstancedMesh(bg, gm, N), d = new THREE.Object3D();
+  m.frustumCulled = false; scene.add(m); W.opaque.push(m);
+  let grassFull = 0; W.detailFns.push((f) => { m.count = Math.floor(grassFull * f); });
   // thrift & daisies
   const fg = new THREE.OctahedronGeometry(0.028, 0), fm = new THREE.InstancedMesh(fg, new THREE.MeshLambertMaterial({ color: 0xffffff }), 220);
   const cols = [0xf09ab8, 0xf6f2e8, 0xf7d55a, 0xc9a0ee].map(h => new THREE.Color(h));
-  k = 0; tries = 0;
-  while (k < 220 && tries++ < 3000) {
-    const a = R() * 6.283, r = 1 + R() * 20, x = Math.cos(a) * r, z = Math.sin(a) * r, s = z - coastZ(x); if (s < 1.8 || Math.hypot(x, z) < 3.4) continue;
-    d.position.set(x, topH(x, z, s) + rr(0.18, 0.4), z); d.rotation.set(R(), R(), R()); d.scale.setScalar(rr(0.8, 1.6)); d.updateMatrix();
-    fm.setMatrixAt(k, d.matrix); fm.setColorAt(k, cols[k % 4]); k++;
-  }
-  fm.count = k; scene.add(fm); W.opaque.push(fm);
+  scene.add(fm); W.opaque.push(fm);
+  layoutAround = (sx, sz) => {              // grass and flowers are laid out around whichever seat is current
+    let k = 0, tries = 0;
+    while (k < N && tries++ < N * 5) {
+      const a = R() * 6.283, r = 0.05 + Math.pow(R(), 1.5) * 42, x = sx + Math.cos(a) * r, z = sz + Math.sin(a) * r;
+      const s = z - coastZ(x); if (s < 9 || Math.hypot(x - sx, z - sz) < 2.6) continue;
+      d.position.set(x, topH(x, z, s) - 0.03, z);
+      d.rotation.set(rr(-0.18, 0.18), R() * 6.28, rr(-0.18, 0.18)); d.scale.set(rr(1, 1.7), rr(0.3, 0.8), 1); d.updateMatrix(); m.setMatrixAt(k++, d.matrix);
+    }
+    grassFull = k; m.count = k; m.instanceMatrix.needsUpdate = true;
+    k = 0; tries = 0;
+    while (k < 220 && tries++ < 3000) {
+      const a = R() * 6.283, r = 1 + R() * 20, x = sx + Math.cos(a) * r, z = sz + Math.sin(a) * r, s = z - coastZ(x); if (s < 1.8 || Math.hypot(x - sx, z - sz) < 3.4) continue;
+      d.position.set(x, topH(x, z, s) + rr(0.18, 0.4), z); d.rotation.set(R(), R(), R()); d.scale.setScalar(rr(0.8, 1.6)); d.updateMatrix();
+      fm.setMatrixAt(k, d.matrix); fm.setColorAt(k, cols[k % 4]); k++;
+    }
+    fm.count = k; fm.instanceMatrix.needsUpdate = true; if (fm.instanceColor) fm.instanceColor.needsUpdate = true;
+  };
+  layoutAround(0, 0);
 
   // boulders and a little cairn
   const rock = paint(new THREE.DodecahedronGeometry(0.7, 1).scale(1, 0.7, 1), 0x7d776d), rm = new THREE.InstancedMesh(rock, new THREE.MeshLambertMaterial({ vertexColors: true }), 26);
@@ -356,5 +362,19 @@ W.buildAudio = (A) => {
   }, 14, 30, 8);
 };
 
-W.rig.position.set(0, seatY, 0);
+// ---------------- viewpoints: three seats on the same broad walled ledge, each facing the sea; switching always goes through black ----------------
+const SEATS = [['ledge', 0], ['west', -95], ['east', 95]].map(([id, x]) => {
+  const z = coastZ(x) + SEAT_S, slope = (coastZ(x + 1) - coastZ(x - 1)) / 2;
+  return { id, x, z, y: topH(x, z, SEAT_S), yaw: Math.atan2(-slope, 1) };   // face the sea, square to the coast
+});
+try { const sv = localStorage.getItem('oortia-cliffs-vp'); if (SEATS.some(v => v.id === sv)) curSeat = sv; } catch (e) { /* ignore */ }
+function applySeat(id) {
+  const v = SEATS.find(q => q.id === id) || SEATS[0]; curSeat = v.id;
+  W.setSeat({ x: v.x, y: v.y, z: v.z, yaw: v.yaw, pitch: -0.08 });
+  slabMesh.position.set(v.x, v.y - 0.12, v.z); layoutAround(v.x, v.z);
+  try { localStorage.setItem('oortia-cliffs-vp', v.id); } catch (e) { /* ignore */ }
+}
+switchTo = (id) => { if (id === curSeat) return; if (W.comfort) W.comfort.fade(() => applySeat(id)); else applySeat(id); };
+addEventListener('keydown', (e) => { const m = /^Digit([1-9])$/.exec(e.code); if (!m || e.ctrlKey || e.metaKey || e.altKey) return; const v = SEATS[+m[1] - 1]; if (v) switchTo(v.id); });
+applySeat(curSeat);
 W.start();
