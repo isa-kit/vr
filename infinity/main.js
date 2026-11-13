@@ -1,14 +1,14 @@
-// Infinity Lights — fly through an endless field of glowing lights.
-// Works flat (desktop), in VR (Quest browser) and AR (Android Chrome) via WebXR.
-// In-world control panel: pattern (type), spacing, depth, randomize.
+// Infinity Lights — fly through an endless field of crisp, glowing lights.
+// Fully immersive by default (one Enter VR button; passthrough is an opt-in toggle
+// in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { VRButton } from 'three/addons/webxr/VRButton.js';
-import { ARButton } from 'three/addons/webxr/ARButton.js';
-import { buildControlPanel } from './ui.js';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx, nebula;   // post-processing + nebula backdrop
+
+const BG = 0x000006;
 
 // deep-space backdrop: a small sphere that travels with the player, drawn first
 function buildNebula() {
@@ -37,35 +37,30 @@ const MAX_LIGHTS = 8000;    // buffer capacity; active count follows spacing/dep
 const MOVE_SPEED = 18;
 const BOOST      = 4;
 const LOOK_SPEED = 0.0025;
+const SPEEDS = [0.25, 0.5, 1, 2, 3];
 
-// user-driven params (panel writes these, then regenerates)
+// user-driven params (menu writes these, then regenerates)
 const params = {
   pattern: 'random',   // random | grid | diagonal | jitter
   spacing: 8,          // world units between lattice points  (4..30)
   depth:   120,        // size of the field cube / draw distance (50..240)
   seed:    20261111,
 };
+let speedIdx = 2;
 
 // ---------- state ----------
-let scene, camera, renderer, dolly, points, geometry;
+let scene, camera, renderer, dolly, points, geometry, lightMat, menu, caps;
 let basePositions;                 // Float32Array, length MAX_LIGHTS*3
 let activeCount = 0;
-let panel, panelGroup;
-const controllers = [];
-let hovered = null;
 const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
 const clock = new THREE.Clock();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const raycaster = new THREE.Raycaster();
-const tempMatrix = new THREE.Matrix4();
 const _p = new THREE.Vector3();
-const mouseNDC = new THREE.Vector2(0, 0);
-const CENTER = new THREE.Vector2(0, 0);
 
 // Defaults come from the engine-agnostic scene config; built-in values above
 // are the fallback if the fetch fails (e.g. opened as a bare file://).
-loadConfig().then(init);
+Promise.all([loadConfig(), detectXR()]).then(([, c]) => { caps = c; init(); });
 
 async function loadConfig() {
   try {
@@ -79,11 +74,13 @@ async function loadConfig() {
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000006);
+  scene.background = new THREE.Color(BG);
 
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, params.depth * 1.6);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  // Only ask for an alpha canvas when passthrough could actually be toggled on.
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });
+  if (caps.ar) renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
@@ -94,44 +91,33 @@ function init() {
   dolly.add(camera);
   scene.add(dolly);
 
-  fx = beautify(renderer, scene, camera, { exposure: 1.0, bloom: 0.75, radius: 0.5, threshold: 0.76 });
+  // crisp points: tight core, small halo → far less bloom needed
+  fx = beautify(renderer, scene, camera, { exposure: 1.0, bloom: 0.3, radius: 0.18, threshold: 0.88 });
   buildNebula();
   buildLights();
 
-  // control panel floats in front of the view (child of camera so it's always reachable)
-  panel = buildControlPanel({ setPattern, bump, randomize, hide: hidePanel });
-  panelGroup = panel.group;
-  panelGroup.scale.setScalar(0.9);
-  dolly.add(panelGroup);          // world-anchored (not head-locked): a desk you glance at
-  recenterPanel();
-  panel.setActivePattern(params.pattern);
-  panel.setReadout('spacing', 'Spacing  ' + params.spacing);
-  panel.setReadout('depth', 'Depth  ' + params.depth);
+  menu = createXRMenu({
+    renderer, camera, dolly, caps,
+    title: 'Infinity Lights',
+    hint: 'Click the view to fly · WASD move · Q/E down/up · Shift boost · 1–4 patterns · R randomize · Esc/M menu',
+    rows: [
+      sectionRow('Pattern'),
+      choiceGrid([['Random', 'random'], ['Grid', 'grid'], ['Diagonal', 'diagonal'], ['Jitter', 'jitter']],
+        () => params.pattern, setPattern, 2),
+      stepperRow('Spacing', () => params.spacing, () => bump('spacing', -1), () => bump('spacing', 1)),
+      stepperRow('Depth', () => params.depth, () => bump('depth', -1), () => bump('depth', 1)),
+      stepperRow('Speed', () => '×' + SPEEDS[speedIdx], () => { speedIdx = Math.max(0, speedIdx - 1); }, () => { speedIdx = Math.min(SPEEDS.length - 1, speedIdx + 1); }),
+      buttonRow('⟳  Randomize', randomize, 'accent'),
+    ],
+    sound: { get: () => soundOn, set: setSound },
+    setBackdrop,
+    recenter,
+    onBeforeEnter: startAudio,
+  });
 
   generatePattern();
 
-  // VR controllers: a ray to point at the panel, trigger to click, grip to toggle.
-  for (let i = 0; i < 2; i++) {
-    const c = renderer.xr.getController(i);
-    c.addEventListener('selectstart', activateHover);
-    c.addEventListener('squeezestart', togglePanel);
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]),
-      new THREE.LineBasicMaterial({ color: 0xffd6a0, transparent: true, opacity: 0.7 })
-    );
-    line.scale.z = 3;
-    c.add(line);
-    dolly.add(c);
-    controllers.push(c);
-  }
-
-  document.body.appendChild(VRButton.createButton(renderer));
-  const arBtn = ARButton.createButton(renderer);
-  arBtn.style.transform = 'translateY(-44px)';
-  document.body.appendChild(arBtn);
-
-  renderer.xr.addEventListener('sessionstart', onSessionStart);
-  renderer.xr.addEventListener('sessionend', onSessionEnd);
+  renderer.xr.addEventListener('sessionstart', startAudio);
 
   addEventListener('resize', onResize);
   addEventListener('keydown', (e) => { keys[e.code] = true; onKey(e); });
@@ -144,39 +130,85 @@ function init() {
   renderer.setAnimationLoop(animate);
 }
 
-// ---------- lights ----------
-function makeGlowTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 64;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0.0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.25, 'rgba(255,241,214,0.9)');
-  g.addColorStop(1.0, 'rgba(255,220,180,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 64, 64);
-  return new THREE.CanvasTexture(c);
+// passthrough on = hide the opaque backdrop (lights then float in the room)
+function setBackdrop(visible) {
+  scene.background = visible ? new THREE.Color(BG) : null;
+  nebula.visible = visible;
 }
 
+function recenter() {
+  if (renderer.xr.isPresenting) recenterRig(dolly, camera, new THREE.Vector3(0, dolly.position.y, 0), 0);
+  else { dolly.position.set(0, 0, 0); yaw = 0; pitch = 0; camera.rotation.set(0, 0, 0); }
+}
+
+// ---------- lights ----------
 function buildLights() {
   geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3));
+  geometry.setAttribute('aCol', new THREE.BufferAttribute(new Float32Array(MAX_LIGHTS * 3), 3));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(MAX_LIGHTS), 1));
   basePositions = new Float32Array(MAX_LIGHTS * 3);
 
-  const material = new THREE.PointsMaterial({
-    size: 1.7,
-    map: makeGlowTexture(),
-    vertexColors: true,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    sizeAttenuation: true,
+  // Procedural point: a hard-edged bright core + a small soft halo. Point size is
+  // angular (world size / distance) with a pixel floor so far lights stay crisp dots.
+  lightMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+    uniforms: {
+      uHalfH: { value: 500 },    // half the eye-buffer height in px
+      uMin: { value: 3.0 },
+      uMax: { value: 150.0 },
+      uHalf: { value: params.depth * 0.5 },
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      attribute vec3 aCol; attribute float aSize;
+      uniform float uHalfH, uMin, uMax, uHalf, uTime;
+      varying vec3 vCol; varying float vA; varying float vS;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        float dist = max(-mv.z, 0.01);
+        float px = aSize * projectionMatrix[1][1] * uHalfH / dist;
+        float s = clamp(px, uMin, uMax);
+        vec3 d = abs(position - cameraPosition) / uHalf;
+        float edge = max(d.x, max(d.y, d.z));
+        float fade = 1.0 - smoothstep(0.7, 1.0, edge);
+        float tw = 0.9 + 0.1 * sin(uTime * 1.4 + aSize * 41.0 + position.x * 0.7);
+        vCol = aCol; vS = s;
+        vA = fade * tw * clamp(px / uMin, 0.4, 1.0);
+        gl_PointSize = s;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      varying vec3 vCol; varying float vA; varying float vS;
+      void main(){
+        vec2 p = gl_PointCoord * 2.0 - 1.0;
+        float d = length(p);
+        float rpx = 0.5 * vS;                       // radius in px
+        float coreR = clamp(max(0.17, 1.3 / rpx), 0.0, 1.0);
+        float aa = 1.0 / rpx;
+        float core = 1.0 - smoothstep(coreR - aa, coreR + aa, d);
+        float halo = exp(-d * d * 10.0) * (1.0 - smoothstep(0.8, 1.0, d));
+        vec3 c = mix(vCol, vec3(1.0), 0.5) * core * 1.9 + vCol * halo * 0.3;
+        gl_FragColor = vec4(c, vA);
+        ${SHADER_TAIL}
+      }`,
   });
 
-  points = new THREE.Points(geometry, material);
+  points = new THREE.Points(geometry, lightMat);
   points.frustumCulled = false;   // positions are rewritten around the camera each frame
   scene.add(points);
+}
+
+function eyeBufferHalfHeight() {
+  if (renderer.xr.isPresenting) {
+    try {
+      const l = renderer.xr.getBaseLayer();
+      const h = l && (l.framebufferHeight || l.textureHeight);
+      if (h) return h * 0.5;
+    } catch (e) { /* fall through */ }
+    return 800;
+  }
+  return renderer.getDrawingBufferSize(new THREE.Vector2()).y * 0.5;
 }
 
 function generatePattern() {
@@ -187,8 +219,10 @@ function generatePattern() {
   const step = depth / n;                    // keeps lattice period == wrap period (seamless)
   activeCount = Math.min(n * n * n, MAX_LIGHTS);
   geometry.setDrawRange(0, activeCount);
+  lightMat.uniforms.uHalf.value = depth * 0.5;
 
-  const col = geometry.getAttribute('color');
+  const col = geometry.getAttribute('aCol');
+  const siz = geometry.getAttribute('aSize');
   const rng = mulberry32(params.seed);
   const tint = new THREE.Color();
 
@@ -221,15 +255,16 @@ function generatePattern() {
               : pick < 0.8 ? 0.72 + rng() * 0.06
               : pick < 0.95 ? 0.50 + rng() * 0.05
               : 0.12;
-    const sat = pick < 0.95 ? 0.7 + rng() * 0.25 : 0.15;
-    tint.setHSL(hue % 1, sat, 0.6);
+    const sat = pick < 0.95 ? 0.75 + rng() * 0.25 : 0.15;
+    tint.setHSL(hue % 1, sat, 0.58);
     col.array[i * 3] = tint.r;
     col.array[i * 3 + 1] = tint.g;
     col.array[i * 3 + 2] = tint.b;
+    siz.array[i] = 0.85 + rng() * 0.75;
   }
   col.needsUpdate = true;
+  siz.needsUpdate = true;
   updatePositions();
-  document.getElementById('pat').textContent = params.pattern;
 }
 
 // Wrap every light into a depth-sized cube centred on the camera -> feels infinite.
@@ -247,19 +282,16 @@ function updatePositions() {
   pos.needsUpdate = true;
 }
 
-// ---------- panel handlers ----------
+// ---------- menu handlers ----------
 function setPattern(p) {
   params.pattern = p;
-  panel.setActivePattern(p);
   generatePattern();
 }
 function bump(which, dir) {
   if (which === 'spacing') {
     params.spacing = clamp(params.spacing + dir * 2, 4, 30);
-    panel.setReadout('spacing', 'Spacing  ' + params.spacing);
   } else {
     params.depth = clamp(params.depth + dir * 15, 50, 240);
-    panel.setReadout('depth', 'Depth  ' + params.depth);
     camera.far = params.depth * 1.6;
     camera.updateProjectionMatrix();
   }
@@ -269,55 +301,36 @@ function randomize() {
   params.seed = (Math.random() * 1e9) | 0;
   generatePattern();
 }
-function hidePanel() { panelGroup.visible = false; }
-function recenterPanel() {
-  const eye = new THREE.Vector3();
-  const fwd = new THREE.Vector3();
-  camera.updateWorldMatrix(true, false);
-  camera.getWorldPosition(eye);
-  camera.getWorldDirection(fwd);
-  fwd.y = 0;
-  if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1);
-  fwd.normalize();
-  const desk = eye.clone().addScaledVector(fwd, 0.62);
-  desk.y -= 0.5;                          // standing-desk height, below the eyeline
-  panelGroup.position.copy(desk).sub(dolly.position);
-  panelGroup.updateMatrixWorld();
-  panelGroup.lookAt(eye);                 // tilt the face up toward you, like a propped tablet
-}
-function togglePanel() {
-  panelGroup.visible = !panelGroup.visible;
-  if (panelGroup.visible) recenterPanel();
-}
 
-// ---------- interaction (raycast the panel) ----------
-function updateInteraction() {
-  if (!panelGroup.visible) { setHover(null); return; }
-
-  if (renderer.xr.isPresenting) {
-    let best = null;
-    for (const c of controllers) {
-      tempMatrix.identity().extractRotation(c.matrixWorld);
-      raycaster.ray.origin.setFromMatrixPosition(c.matrixWorld);
-      raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-      const hits = raycaster.intersectObjects(panel.hitTargets, false);
-      if (hits.length) { best = hits[0].object; break; }
-    }
-    setHover(best);
-  } else {
-    raycaster.setFromCamera(pointerLocked ? CENTER : mouseNDC, camera);
-    const hits = raycaster.intersectObjects(panel.hitTargets, false);
-    setHover(hits.length ? hits[0].object : null);
-  }
+// ---------- ambient sound (soft evolving pad) ----------
+let actx = null, master = null, soundOn = true;
+function startAudio() {
+  if (actx) { if (soundOn && actx.state === 'suspended') actx.resume(); return; }
+  try {
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = 0.5;
+    const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.4;
+    lp.connect(master).connect(actx.destination);
+    const lfoF = actx.createOscillator(), lfoG = actx.createGain();
+    lfoF.frequency.value = 0.045; lfoG.gain.value = 350; lfoF.connect(lfoG).connect(lp.frequency); lfoF.start();
+    [110, 164.81, 220, 277.18, 329.63, 440].forEach((f, k) => {
+      for (const det of [-4, 5]) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = k % 2 ? 'sine' : 'triangle'; o.frequency.value = f; o.detune.value = det;
+        g.gain.value = 0.035 / (1 + k * 0.35);
+        const t = actx.createOscillator(), tg = actx.createGain();       // slow breathing per voice
+        t.frequency.value = 0.03 + Math.random() * 0.06; tg.gain.value = g.gain.value * 0.7;
+        t.connect(tg).connect(g.gain); t.start();
+        o.connect(g).connect(lp); o.start();
+      }
+    });
+    if (!soundOn) actx.suspend();
+  } catch (e) { /* no audio */ }
 }
-function setHover(mesh) {
-  if (hovered === mesh) return;
-  if (hovered) hovered.scale.setScalar(1);
-  hovered = mesh;
-  if (hovered) hovered.scale.setScalar(1.07);
-}
-function activateHover() {
-  if (hovered && hovered.userData.action) hovered.userData.action();
+function setSound(v) {
+  soundOn = v;
+  if (v) startAudio();
+  if (actx) (v ? actx.resume() : actx.suspend());
 }
 
 // ---------- loop ----------
@@ -325,12 +338,15 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   handleMovement(dt);
   updatePositions();
-  updateInteraction();
+  lightMat.uniforms.uHalfH.value = eyeBufferHalfHeight();
+  lightMat.uniforms.uMin.value = renderer.xr.isPresenting ? 3.5 : 2.5 * Math.min(devicePixelRatio, 2);
+  lightMat.uniforms.uTime.value = clock.elapsedTime;
+  menu.update();
   fx.render();
 }
 
 function handleMovement(dt) {
-  const speed = MOVE_SPEED * ((keys['ShiftLeft'] || keys['ShiftRight']) ? BOOST : 1);
+  const speed = MOVE_SPEED * SPEEDS[speedIdx] * ((keys['ShiftLeft'] || keys['ShiftRight']) ? BOOST : 1);
   const move = new THREE.Vector3();
   const fwd = new THREE.Vector3();
   camera.getWorldDirection(fwd);
@@ -366,11 +382,7 @@ function handleMovement(dt) {
 
 // ---------- input ----------
 function onMouseMove(e) {
-  if (!pointerLocked) {
-    mouseNDC.x = (e.clientX / innerWidth) * 2 - 1;
-    mouseNDC.y = -(e.clientY / innerHeight) * 2 + 1;
-    return;
-  }
+  if (!pointerLocked) return;
   yaw -= e.movementX * LOOK_SPEED;
   pitch -= e.movementY * LOOK_SPEED;
   pitch = Math.max(-1.4, Math.min(1.4, pitch));
@@ -378,8 +390,7 @@ function onMouseMove(e) {
 }
 
 function onClick() {
-  if (hovered) { activateHover(); return; }         // clicked a panel button
-  if (!renderer.xr.isPresenting) renderer.domElement.requestPointerLock();
+  if (!renderer.xr.isPresenting) { startAudio(); renderer.domElement.requestPointerLock(); menu.close(); }
 }
 
 function onKey(e) {
@@ -387,18 +398,8 @@ function onKey(e) {
   if (e.code === 'Digit2') setPattern('grid');
   if (e.code === 'Digit3') setPattern('diagonal');
   if (e.code === 'Digit4') setPattern('jitter');
-  if (e.code === 'KeyC') togglePanel();
   if (e.code === 'KeyR') randomize();
-}
-
-function onSessionStart() {
-  const s = renderer.xr.getSession();
-  const isAR = s && s.environmentBlendMode && s.environmentBlendMode !== 'opaque';
-  if (isAR) { scene.background = null; nebula.visible = false; }   // let camera passthrough show in AR
-}
-function onSessionEnd() {
-  scene.background = new THREE.Color(0x000006);
-  nebula.visible = true;
+  menu.refresh();
 }
 
 function onResize() {

@@ -4,7 +4,7 @@
 // WebXR (VR) + flat desktop.  All the hard stuff is cheated to stay light.
 
 import * as THREE from 'three';
-import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
@@ -35,7 +35,9 @@ const WL = -1.5;            // water level
 const EYE = 1.6;           // desktop eye height
 const WALK = 5.5, RUN = 2.3;
 
-let scene, camera, renderer, dolly;
+let scene, camera, renderer, dolly, world, menu, caps, horizonColor;
+let speedMul = 1, snapTurn = false, snapLatch = false, soundOn = true;
+const SPEED_STEPS = [0.5, 1, 1.5, 2.5];
 let water, birds = [], clouds = [], sheepMesh;
 const clock = new THREE.Clock();
 const keys = {};
@@ -77,18 +79,20 @@ async function init() {
     if (p.mountain) cfg.mountains = p.mountain; if (c.vista?.birds?.count) cfg.birds = c.vista.birds.count;
   } catch (e) {}
 
+  caps = await detectXR();
   scene = new THREE.Scene();
   const horizon = new THREE.Color(0xeadcc0);   // warm hazy horizon
+  horizonColor = horizon;
   scene.background = horizon.clone();
   scene.fog = new THREE.Fog(horizon, 60, 300);
 
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1200);
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });   // alpha only if passthrough can be toggled
+  if (caps.ar) renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
-  document.body.appendChild(VRButton.createButton(renderer));
   fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.45, radius: 0.6, threshold: 0.96 });
 
   dolly = new THREE.Group();
@@ -115,7 +119,28 @@ async function init() {
   buildMountains();
   buildClouds();
   buildBirds();
-  buildVRControllers();
+
+  // everything but the rig lives in `world` so the menu can hide it for passthrough
+  world = new THREE.Group();
+  for (const o of [...scene.children]) if (o !== dolly) world.add(o);
+  scene.add(world);
+
+  menu = createXRMenu({
+    renderer, camera, dolly, caps,
+    title: 'Nature — Glade & Cliffs',
+    hint: 'WASD walk · mouse look · Shift run · click the view to look around · Esc/M menu',
+    rows: [
+      sectionRow('Walking'),
+      stepperRow('Speed', () => '×' + SPEED_STEPS[speedIdx()], () => stepSpeed(-1), () => stepSpeed(1)),
+      { label: 'Turning', cells: [
+        { text: 'Smooth', action: () => { snapTurn = false; }, active: () => !snapTurn },
+        { text: 'Snap', action: () => { snapTurn = true; }, active: () => snapTurn } ] },
+    ],
+    sound: { get: () => soundOn, set: setSound },
+    setBackdrop,
+    recenter,
+    onBeforeEnter: startAudio,
+  });
 
   addEventListener('resize', onResize);
   addEventListener('mousemove', onMouseMove);
@@ -124,9 +149,9 @@ async function init() {
   const enter = document.getElementById('enter');
   renderer.domElement.addEventListener('click', () => {
     startAudio();
-    if (!pointerLocked && !renderer.xr.isPresenting) lockPointer();
+    if (!pointerLocked && !renderer.xr.isPresenting) { lockPointer(); menu.close(); }
   });
-  enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); lockPointer(); });
+  enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); lockPointer(); menu.close(); });
   document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
@@ -400,15 +425,30 @@ function buildBirds() {
   }
 }
 
-// ---------- VR controllers ----------
-function buildVRControllers() {
-  for (let i = 0; i < 2; i++) { const c = renderer.xr.getController(i); dolly.add(c); }
+// ---------- menu hooks ----------
+const speedIdx = () => SPEED_STEPS.indexOf(speedMul);
+function stepSpeed(d) { speedMul = SPEED_STEPS[Math.max(0, Math.min(SPEED_STEPS.length - 1, speedIdx() + d))]; }
+// passthrough on = hide the whole world so the room shows through
+function setBackdrop(visible) {
+  world.visible = visible;
+  scene.background = visible ? horizonColor : null;
+}
+function recenter() {
+  if (renderer.xr.isPresenting) { recenterRig(dolly, camera, new THREE.Vector3(0, 0, 20), 0); yaw = dolly.rotation.y; }
+  else { dolly.position.set(0, 0, 20); yaw = 0; pitch = 0; }
 }
 
 // ---------- synthesized ambient audio (wind + occasional birdsong) ----------
 let actx, started = false;
+function setSound(v) {
+  soundOn = v;
+  if (v) startAudio();
+  if (actx) (v ? actx.resume() : actx.suspend());
+}
 function startAudio() {
-  if (started) return; started = true;
+  if (started) { if (soundOn && actx && actx.state === 'suspended') actx.resume(); return; }
+  if (!soundOn) return;
+  started = true;
   try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
     const buf = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate), d = buf.getChannelData(0);
@@ -457,14 +497,19 @@ function handleMovement(dt) {
     for (const src of s.inputSources) {
       if (!src.gamepad) continue; const ax = src.gamepad.axes;
       const hx = ax[2] ?? ax[0] ?? 0, hy = ax[3] ?? ax[1] ?? 0;
-      if (src.handedness === 'right') { if (Math.abs(hx) > 0.6) turn = -Math.sign(hx); }
+      if (src.handedness === 'right') {
+        if (snapTurn) {
+          if (Math.abs(hx) > 0.7 && !snapLatch) { snapLatch = true; yaw -= Math.sign(hx) * Math.PI / 6; }
+          else if (Math.abs(hx) < 0.3) snapLatch = false;
+        } else if (Math.abs(hx) > 0.6) turn = -Math.sign(hx);
+      }
       else { mx += Math.abs(hx) > 0.15 ? hx : 0; mz += Math.abs(hy) > 0.15 ? hy : 0; }
     }
     yaw -= turn * dt * 2.2;
     dolly.rotation.y = yaw;
   }
   if (mx || mz) {
-    const speed = (keys.ShiftLeft || keys.ShiftRight ? WALK * RUN : WALK) * dt;
+    const speed = (keys.ShiftLeft || keys.ShiftRight ? WALK * RUN : WALK) * speedMul * dt;
     const h = pres ? yaw : yaw;   // face dir
     camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
     right.crossVectors(fwd, camera.up).normalize();
@@ -495,6 +540,7 @@ function animate() {
     u.l.rotation.z = f; u.r.rotation.z = f;
   }
   windU.value = t;
+  menu.update();
   fx.render();
 }
 
