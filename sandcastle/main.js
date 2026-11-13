@@ -9,14 +9,18 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261113c';
-import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
-import { createTouch } from '../shared/touch.js?v=20261113c';
-import { createBirds } from '../shared/birds.js?v=20261113c';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114e';
+import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114e';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261114e';
+import { createTouch } from '../shared/touch.js?v=20261114e';
+import { createBirds } from '../shared/birds.js?v=20261114e';
+import * as RZ from './realism.js?v=20261114e';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114e';
 
-let fx, comfort, touch, wt = 0, qLevel = 0, gulls;
+let fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
+const sandMats = [];
+let quality = 'auto';
+try { quality = localStorage.getItem('oortia-sand-quality') || 'auto'; } catch (e) { /* ignore */ }
 
 // ---------- sand grid ----------
 const TRAY = 5.0;                       // sculptable patch (m) — blends into the open beach around it
@@ -105,7 +109,8 @@ function init() {
   dolly.add(camera);
   scene.add(dolly);
 
-  scene.add(new THREE.HemisphereLight(0xdff0ff, 0xbfa87e, 1.0));
+  hemi = new THREE.HemisphereLight(0xdff0ff, 0xbfa87e, 0.45);
+  scene.add(hemi);
   sun = new THREE.DirectionalLight(0xffe6c0, 1.45);
   sun.position.copy(TRAY_C).addScaledVector(sunDir, 10);
   sun.target.position.copy(TRAY_C);
@@ -117,6 +122,9 @@ function init() {
 
   env = new THREE.Group();            // sky, beach, sea, crate — hidden when passthrough is on
   scene.add(env);
+  sandTex = RZ.makeSandTextures();
+  envTex = RZ.makeEnvironment(renderer, sunDir);              // procedural sky + sand ground + HDR sun → believable ambient and reflections
+  scene.environment = envTex; scene.environmentIntensity = 0.6;
   buildSky();
   buildBeach();
   buildSea();
@@ -132,7 +140,7 @@ function init() {
   buildStatusLabel();
 
   comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
-    onQuality: (q) => { qLevel = q; gulls.group.visible = q < 2; if (q >= 2) { sun.castShadow = false; } } });
+    onQuality: (q) => { qLevel = q; gulls.group.visible = q < 2; applyQuality(); } });
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('One finger sculpts · two fingers pinch to zoom & orbit · pick a tool below · ☰ Menu for options', h.textContent); }
 
   menu = createXRMenu({
@@ -153,6 +161,7 @@ function init() {
       { label: 'Bucket', cells: [
         { text: () => '💧 ' + bucketWater.toFixed(1) + ' / ' + BUCKET_CAP, w: 2.2 },
         { text: 'Empty', action: () => { bucketWater = 0; cupWater = 0; }, w: 1 } ] },
+      { label: 'Quality', cells: [['Auto', 'auto'], ['High', 'high'], ['Med', 'medium'], ['Light', 'light']].map(([t, id]) => ({ text: t, active: () => quality === id, action: () => { quality = id; try { localStorage.setItem('oortia-sand-quality', id); } catch (e) { /* ignore */ } applyQuality(); } })) },
       { label: 'Tide', cells: [
         { text: () => (tide.on ? 'On' : 'Off'), action: () => { tide.on = !tide.on; if (tide.on) restartTide(); }, active: () => tide.on, w: 0.9 },
         { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; }, w: 1.2 },
@@ -180,6 +189,8 @@ function init() {
     if (hand === 'right' && b === 5) cycleTool(-1);       // B
   });
   menu.onSqueeze((c, hand, i, down) => { gripDown[i] = down; });
+  applyQuality();
+  renderer.xr.addEventListener('sessionstart', applyQuality); renderer.xr.addEventListener('sessionend', applyQuality);
 
   addEventListener('resize', onResize);
   addEventListener('keydown', onKeyDown);
@@ -192,6 +203,25 @@ function init() {
   if (location.hash === '#debug') window.__sc = { tide, orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
   renderer.setAnimationLoop(animate);
 }
+
+// ---------- quality tiers: High (desktop) / Medium (phone) / Light (headset) ----------
+const QTIERS = { high: { name: 'High', env: true, normal: true, shadow: 2048, pebbles: 1, idx: 0 }, medium: { name: 'Medium', env: true, normal: true, shadow: 1024, pebbles: 0.5, idx: 1 }, light: { name: 'Light', env: false, normal: false, shadow: 1024, pebbles: 0.2, idx: 2 } };
+const QORDER = ['high', 'medium', 'light'];
+function baseQuality() {
+  if (quality !== 'auto' && QTIERS[quality]) return quality;
+  return renderer && renderer.xr.isPresenting ? 'light' : (touch && touch.isTouch ? 'medium' : 'high');
+}
+let curTier = QTIERS.high;
+function applyQuality() {
+  const b = QTIERS[baseQuality()], idx = Math.max(b.idx, qLevel >= 2 ? 2 : qLevel >= 1 ? 1 : 0);
+  const t = QTIERS[QORDER[idx]]; curTier = t;
+  scene.environment = t.env ? envTex : null; hemi.intensity = t.env ? 0.45 : 1.0;
+  for (const m of sandMats) { m.normalMap = t.normal ? sandTex.normal : null; m.map = t.normal ? sandTex.albedo : null; m.needsUpdate = true; }
+  if (sun.shadow.mapSize.x !== t.shadow) { sun.shadow.mapSize.set(t.shadow, t.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+  renderer.shadowMap.needsUpdate = true;
+  if (smallStuff) smallStuff.children[0].count = Math.floor(pebbleFull * t.pebbles);
+}
+function qualityText() { return QTIERS[baseQuality()].name + (curTier.idx !== QTIERS[baseQuality()].idx ? ' → ' + curTier.name : '') + (quality === 'auto' ? ' (auto)' : ''); }
 
 // ---------- sky ----------
 function buildSky() {
@@ -212,20 +242,19 @@ function buildSky() {
 }
 
 // fine procedural grain (fades with distance) so close-ups and the magnifier have detail
-function sandify(mat, cutPatch = false) {
-  mat.customProgramCacheKey = () => (cutPatch ? 'sand-cut' : 'sand');      // the two variants must not share a compiled program
-  mat.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\n vSandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = 'varying vec3 vSandW;\nfloat sandHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
-      sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-        float sFade = 1.0 - smoothstep(0.5, 3.2, length(vSandW - cameraPosition));
-        vec2 sg = vSandW.xz * 230.0;
-        float sN = sandHash(floor(sg)) * 0.65 + sandHash(floor(sg * 0.37) + 7.0) * 0.35;
-        diffuseColor.rgb *= 1.0 + (sN - 0.5) * 0.34 * sFade;
+function sandMaterial(cutPatch = false) {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: sandTex.albedo, normalMap: sandTex.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.93, metalness: 0, color: new THREE.Color(1.55, 1.38, 1.1) });
+  m.customProgramCacheKey = () => (cutPatch ? 'sandpbr-cut' : 'sandpbr');
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'attribute float aWet; varying float vWet; varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n vWet = aWet; vSandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying float vWet; varying vec3 vSandW;\n' + sh.fragmentShader
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, 0.16, vWet);        // wet sand: glossy')
+      .replace('#include <color_fragment>', `#include <color_fragment>
         ${cutPatch ? `if (abs(vSandW.x - (${TRAY_C.x.toFixed(3)})) < ${HALF.toFixed(3)} && abs(vSandW.z - (${TRAY_C.z.toFixed(3)})) < ${HALF.toFixed(3)}) discard;` : ''}`);
   };
-  return mat;
+  sandMats.push(m);
+  return m;
 }
 const DRY_C = new THREE.Color(0xf4e0b2), WET_C = new THREE.Color(0xb59862);
 
@@ -238,24 +267,26 @@ function buildBeach() {
     const x = pos.getX(i), z = pos.getZ(i), h = groundH(x, z);
     pos.setY(i, h);
     tmp.copy(DRY_C).lerp(WET_C, smoothstep(edge - 0.3, edge - 2.5, z));
-    tmp.offsetHSL(0, 0, (Math.random() - 0.5) * 0.03);
+    const patch = Math.sin(x * 0.37 + Math.sin(z * 0.23) * 2.0) * Math.cos(z * 0.31 - x * 0.11) * 0.04, ripple = Math.sin((x * 1.9 + z * 4.6) + Math.sin(x * 0.4) * 3.0) * 0.018;
+    tmp.offsetHSL(0, 0, patch + ripple + (Math.random() - 0.5) * 0.015);
     col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-  const beach = new THREE.Mesh(geo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true }), true));   // cut out under the patch so holes are real
+  const uvs = new Float32Array(pos.count * 2); for (let i = 0; i < pos.count; i++) { uvs[i * 2] = pos.getX(i) / 0.3; uvs[i * 2 + 1] = pos.getZ(i) / 0.3; }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2)); geo.setAttribute('aWet', new THREE.BufferAttribute(new Float32Array(pos.count), 1));
+  const beach = new THREE.Mesh(geo, sandMaterial(true));   // cut out under the patch so holes are real
   beach.receiveShadow = true; env.add(beach);
 
   // a driftwood crate at hand height; the spade, bucket and magnifier live on it
-  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.5), new THREE.MeshLambertMaterial({ color: 0x9c6b3a }));
-  crate.position.set(CRATE.x, CRATE.top / 2, CRATE.z); crate.castShadow = crate.receiveShadow = true; env.add(crate);
-  const towel = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.44), new THREE.MeshLambertMaterial({ color: 0x3f86d6 }));
+  const crate = RZ.buildCrate(0.62, 0.62, 0.5);
+  crate.position.set(CRATE.x, CRATE.top / 2, CRATE.z); env.add(crate);
+  const towel = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.44), new THREE.MeshStandardMaterial({ ...RZ.makeTowelTextures(), roughness: 0.95 }));
   towel.rotation.x = -Math.PI / 2; towel.position.set(CRATE.x, CRATE.top + 0.002, CRATE.z); env.add(towel);
-  const shellMat = [0xf3d9d0, 0xeabfcb, 0xf0e4d2];
-  for (let i = 0; i < 12; i++) {
-    const x = (Math.random() - 0.5) * 9, z = 1.2 + Math.random() * 3;
-    const s = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 5, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: shellMat[i % 3] }));
-    s.position.set(x, -0.0, z); s.rotation.set(-Math.PI / 2 + Math.random() * 0.4, Math.random(), 0); env.add(s);
-  }
+  // pebbles and shells scattered procedurally over the open beach (never on the sculpting patch)
+  const edge2 = TRAY_C.z - HALF;
+  smallStuff = RZ.scatterSmall(env, { pebbles: 420, shells: 70, area: { x0: -14, x1: 14, z0: edge2 - 3, z1: 6 },
+    groundY: (x, z) => groundH(x, z), avoid: (x, z) => (Math.abs(x - TRAY_C.x) < HALF + 0.2 && Math.abs(z - TRAY_C.z) < HALF + 0.2) || (Math.abs(x - CRATE.x) < 0.5 && Math.abs(z - CRATE.z) < 0.45) });
+  pebbleFull = smallStuff.children[0].count;
 }
 const CRATE = { x: 0.95, z: 1.0, top: 0.62 };
 
@@ -316,7 +347,10 @@ function buildSandTable() {
   sandGeo.setIndex(new THREE.BufferAttribute(idx, 1));
   sandGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3, 0), TRAY * 0.8);
   sandGeo.boundingBox = new THREE.Box3(new THREE.Vector3(-HALF, MINH, -HALF), new THREE.Vector3(HALF, MAXH, HALF));
-  sandMesh = new THREE.Mesh(sandGeo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const uv = new Float32Array(n * 2);
+  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const k = gi(i, j) * 2; uv[k] = (i * CELL - HALF + TRAY_C.x) / 0.3; uv[k + 1] = (j * CELL - HALF + TRAY_C.z) / 0.3; }
+  sandGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); sandGeo.setAttribute('aWet', new THREE.BufferAttribute(new Float32Array(n), 1));
+  sandMesh = new THREE.Mesh(sandGeo, sandMaterial(false));
   sandMesh.position.set(TRAY_C.x, TRAY_C.y - BASE, TRAY_C.z);        // untouched sand sits at y = 0, flush with the beach
   sandMesh.frustumCulled = false;
   sandMesh.castShadow = true; sandMesh.receiveShadow = true;
@@ -330,13 +364,13 @@ function buildSandTable() {
   markAll();
 }
 
-let WET = [WET_C.r * 0.8, WET_C.g * 0.78, WET_C.b * 0.74], DRY = [DRY_C.r, DRY_C.g, DRY_C.b];
+let DRY = [DRY_C.r, DRY_C.g, DRY_C.b], WET = [DRY_C.r * 0.60, DRY_C.g * 0.57, DRY_C.b * 0.53];   // wet sand: same hue, much darker
 function updateSandGeo() {
   if (!dirty) return;
   const r = { i0: Math.max(0, dirty.i0 - 1), i1: Math.min(GN - 1, dirty.i1 + 1), j0: Math.max(0, dirty.j0 - 1), j1: Math.min(GN - 1, dirty.j1 + 1) };
   dirty = null;
-  const pos = sandGeo.attributes.position, nor = sandGeo.attributes.normal, col = sandGeo.attributes.color;
-  const P = pos.array, N = nor.array, C = col.array;
+  const pos = sandGeo.attributes.position, nor = sandGeo.attributes.normal, col = sandGeo.attributes.color, wetA = sandGeo.attributes.aWet;
+  const P = pos.array, N = nor.array, C = col.array, WA = wetA.array;
   for (let j = r.j0; j <= r.j1; j++) {
     for (let i = r.i0; i <= r.i1; i++) {
       const id = gi(i, j), k = id * 3, h = sand[id];
@@ -345,13 +379,14 @@ function updateSandGeo() {
       const nz = (sand[gi(i, Math.max(0, j - 1))] - sand[gi(i, Math.min(GN - 1, j + 1))]) / (2 * CELL);
       const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
       N[k] = nx * inv; N[k + 1] = inv; N[k + 2] = nz * inv;
-      const w = Math.max(wet[id], smoothstep(BASE - 0.015, BASE - 0.06, h)), dryness = 1 - w, slope = 0.86 + 0.14 * inv, g = (1 + grain[id]) * slope;
+      const w = Math.max(wet[id], smoothstep(BASE - 0.015, BASE - 0.06, h)), dryness = 1 - w; WA[id] = Math.max(w * 0.9, Math.min(1, (fd[id] + pw[id]) * 40));
+      const _dry = dryness, slope = 0.86 + 0.14 * inv, g = (1 + grain[id]) * slope;
       C[k] = (WET[0] + (DRY[0] - WET[0]) * dryness) * g;
       C[k + 1] = (WET[1] + (DRY[1] - WET[1]) * dryness) * g;
       C[k + 2] = (WET[2] + (DRY[2] - WET[2]) * dryness) * g;
     }
   }
-  for (const a of [pos, nor, col]) {
+  for (const a of [pos, nor, col, wetA]) {
     if (!firstUpload) { a.clearUpdateRanges(); a.addUpdateRange(r.j0 * GN * 3, (r.j1 - r.j0 + 1) * GN * 3); }
     a.needsUpdate = true;
   }
@@ -558,12 +593,7 @@ function makeDecoMesh(d) {
   } else if (d.type === 'shell') {
     const m = new THREE.MeshLambertMaterial({ color: d.color });
     if (d.s > 0.5) {                                   // scallop
-      const body = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), m);
-      body.scale.set(1, 0.4, 0.85); g.add(body);
-      for (let q = -3; q <= 3; q++) {
-        const rib = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.012, 0.055), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }));
-        rib.position.set(Math.sin(q * 0.4) * 0.035, 0.02, Math.cos(q * 0.4) * 0.02 - 0.012); rib.rotation.y = q * 0.4; g.add(rib);
-      }
+      g.add(new THREE.Mesh(RZ.scallopGeometry(), new THREE.MeshStandardMaterial({ color: d.color, roughness: 0.4 })));
     } else {                                           // spiral
       const cone = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 9), m);
       cone.rotation.z = Math.PI / 2 - 0.35; cone.position.y = 0.035; g.add(cone);
@@ -624,45 +654,24 @@ function gingham() {
 }
 function buildPicnic() {
   picnic = new THREE.Group(); picnic.position.set(TRAY_C.x, TRAY_C.y, TRAY_C.z); scene.add(picnic);
-  const L = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
-  const add = (mesh, thr, x, z, y = 0) => {
-    mesh.position.set(x, y, z); mesh.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
-    picnic.add(mesh); picnicItems.push({ mesh, thr, gone: false, t: 0, z0: z, y0: y }); return mesh;
+  const add = (obj, thr, x, z, y = 0, rot = 0) => {
+    obj.position.set(x, y, z); obj.rotation.y = rot; obj.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    picnic.add(obj); picnicItems.push({ mesh: obj, thr, gone: false, t: 0, z0: z, y0: y }); return obj;
   };
-  const blanket = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.1), new THREE.MeshLambertMaterial({ map: gingham() }));
-  blanket.rotation.x = -Math.PI / 2; blanket.position.y = 0.006; blanket.receiveShadow = true; picnic.add(blanket);
-  picnic.userData.blanket = blanket;
-
-  // basket
-  const basket = new THREE.Group();
-  basket.add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.22), L(0xb98a50)));
-  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.03, 0.23), L(0xa27640)); lid.position.y = 0.095; basket.add(lid);
-  const hdl = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 8, 20, Math.PI), L(0x8a5f30)); hdl.position.y = 0.11; basket.add(hdl);
-  basket.rotation.y = 0.3; add(basket, 0.25, -0.38, -0.12, 0.09);
-  // watermelon slice
-  const mel = new THREE.Group();
-  mel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.035, 24, 1, false, 0, Math.PI), L(0xe8404f)),
-          new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.034, 24, 1, true, 0, Math.PI), L(0x3f8d4a, { side: THREE.DoubleSide })));
-  mel.rotation.y = 0.8; add(mel, 0.36, 0.3, -0.25, 0.03);
-  // plates + sandwich + apple + cupcake + bottle
-  const plate = (x, z) => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.085, 0.015, 24), L(0xf4f6f8)); return add(p, 0.9, x, z, 0.012); };
-  plate(0.05, 0.2);
-  const sw = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.035, 3), L(0xe2b868)); sw.rotation.y = 0.4; add(sw, 0.72, 0.05, 0.2, 0.04);
-  const apple = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), L(0xd8333a)); add(apple, 0.85, 0.3, 0.18, 0.05);
-  const cup = new THREE.Group();
-  const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.05, 12), L(0xe8a0b8)); cup.add(cb);
-  const ct = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), L(0xfff2e0)); ct.position.y = 0.04; ct.scale.y = 0.75; cup.add(ct);
-  add(cup, 0.6, -0.15, 0.3, 0.03);
-  const bot = new THREE.Group();
-  bot.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.2, 12), L(0x3a9a58, { transparent: true, opacity: 0.9 })));
-  const nk = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.025, 0.09, 10), L(0x3a9a58)); nk.position.y = 0.14; bot.add(nk);
-  add(bot, 0.48, -0.6, 0.25, 0.11);
-  // beach umbrella (last to go)
-  const um = new THREE.Group();
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.3, 8), L(0xf2eee4)); pole.position.y = 0.65; um.add(pole);
-  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.26, 12, 1, true), L(0xe8483c, { side: THREE.DoubleSide })); canopy.position.y = 1.25; um.add(canopy);
-  const stripes = new THREE.Mesh(new THREE.ConeGeometry(0.621, 0.261, 12, 1, true, 0, Math.PI / 6), L(0xffffff, { side: THREE.DoubleSide })); stripes.position.y = 1.25; um.add(stripes);
-  um.rotation.z = 0.08; add(um, 0.12, 0.62, -0.38, 0);
+  const blanket = RZ.buildBlanket(); picnic.add(blanket); picnic.userData.blanket = blanket;   // woven gingham with folds
+  const R = RZ.rng(12);
+  add(RZ.buildBasket(), 0.25, -0.38, -0.12, 0.006, 0.3);
+  add(RZ.buildWatermelonSlice(), 0.36, 0.3, -0.25, 0.024, 0.8);
+  add(RZ.buildPlate(), 0.9, 0.05, 0.2, 0.006);
+  add(RZ.buildCheese(), 0.66, 0.06, 0.2, 0.012, 0.6);
+  add(RZ.buildBread(), 0.72, 0.14, 0.02, 0.006, 0.55);
+  add(RZ.buildApple(R), 0.85, 0.3, 0.18, 0.006);
+  add(RZ.buildApple(R), 0.8, 0.37, 0.09, 0.006, 1.2);
+  add(RZ.buildCupcake(), 0.6, -0.15, 0.3, 0.006);
+  add(RZ.buildBottle(), 0.48, -0.6, 0.25, 0.006);
+  add(RZ.buildEnamelCup(0x2f6fb5), 0.55, -0.43, 0.36, 0.006);
+  add(RZ.buildEnamelCup(0xc9473a), 0.5, -0.33, 0.43, 0.006, 1.2);
+  const um = RZ.buildUmbrella(); um.rotation.z = 0.08; add(um, 0.12, 0.62, -0.38, 0);          // beach umbrella (last to go)
 }
 
 // ---------- tide ----------
@@ -810,20 +819,27 @@ function buildWater() {
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3, 0), TRAY * 0.8);
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false,
-    uniforms: { time: { value: 0 } },
+    uniforms: { time: { value: 0 }, sunD: { value: sunDir } },
     vertexShader: `attribute float aDepth; varying float vD; varying vec3 vW; varying float vX;
       void main(){ vD = aDepth; vX = position.x; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `varying float vD; varying vec3 vW; varying float vX; uniform float time;
+    fragmentShader: `varying float vD; varying vec3 vW; varying float vX; uniform float time; uniform vec3 sunD;
       void main(){
         float a = smoothstep(0.0, 0.012, vD) * smoothstep(0.0, 0.7, ${HALF.toFixed(3)} - abs(vX));
         if (a < 0.01) discard;
-        vec3 shallow = vec3(0.30, 0.62, 0.62), deep = vec3(0.05, 0.25, 0.42);
-        vec3 col = mix(shallow, deep, smoothstep(0.0, 0.12, vD));
-        float rip = 0.5 * sin((vW.x + vW.z * 0.6) * 7.0 + time * 1.6) + 0.5 * sin((vW.x * 0.4 - vW.z) * 9.0 - time * 1.3);
-        col += 0.03 * rip;
-        float foam = 1.0 - smoothstep(0.0, 0.035, vD);
-        col = mix(col, vec3(0.95), foam * 0.55);
-        gl_FragColor = vec4(col, a * 0.88);
+        // gentle ripple normals
+        vec2 g = vec2(cos((vW.x + vW.z * 0.6) * 7.0 + time * 1.6) * 3.5 + cos((vW.x * 0.4 - vW.z) * 9.0 - time * 1.3) * 1.8,
+                      cos((vW.x + vW.z * 0.6) * 7.0 + time * 1.6) * 2.1 - cos((vW.x * 0.4 - vW.z) * 9.0 - time * 1.3) * 4.5) * 0.012;
+        vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
+        vec3 V = normalize(cameraPosition - vW);
+        float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+        vec3 absorb = mix(vec3(0.42, 0.60, 0.50), vec3(0.03, 0.19, 0.27), smoothstep(0.0, 0.16, vD));   // sandy shallows → deeper blue-green (refraction-ish tint)
+        vec3 col = mix(absorb, vec3(0.66, 0.80, 0.92), fres * 0.85 + 0.04);
+        vec3 H = normalize(V + normalize(sunD));
+        col += vec3(1.0, 0.95, 0.82) * pow(max(dot(N, H), 0.0), 240.0) * 1.8;                           // sun glint
+        float rim = smoothstep(0.0, 0.003, vD) * (1.0 - smoothstep(0.003, 0.010, vD));                    // meniscus line
+        float foam = 1.0 - smoothstep(0.0, 0.03, vD);
+        col = mix(col, vec3(0.97, 0.98, 0.97), foam * 0.32 + rim * 0.4);
+        gl_FragColor = vec4(col, a * mix(0.30, 0.9, smoothstep(0.0, 0.07, vD)));
         ${SHADER_TAIL}
       }`,
   });
@@ -961,20 +977,8 @@ function setBackdrop(visible) {            // passthrough on = hide sky/beach/se
 // ============================ hand tools ============================
 let crateTools = [], bucketWaterMesh, bucketGauge, gaugeCtx, gaugeTex, cupWaterMesh, gaugeShown = -1;
 function buildTools() {
-  // spade (working end along −z, origin = grip)
-  const spade = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.34, 8).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 }));
-  shaft.position.z = -0.17; spade.add(shaft);
-  const grip = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.009, 8, 16), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 })); grip.position.z = 0.01; spade.add(grip);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.13), new THREE.MeshLambertMaterial({ color: 0xf4c23a })); blade.position.z = -0.4; spade.add(blade);
-  spade.userData.tool = 'Spade';
-  // bucket
-  const bucket = new THREE.Group();
-  const bb = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.085, 0.16, 20, 1, true), new THREE.MeshLambertMaterial({ color: 0xe7563f, side: THREE.DoubleSide })); bb.position.y = 0;
-  const bot = new THREE.Mesh(new THREE.CircleGeometry(0.085, 20).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xc8402c })); bot.position.y = -0.079;
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 24), new THREE.MeshLambertMaterial({ color: 0xc8402c })); rim.rotation.x = Math.PI / 2; rim.position.y = 0.08;
-  const bh = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.007, 6, 20, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf2eee4 })); bh.position.y = 0.08;
-  bucket.add(bb, bot, rim, bh);
+  const spade = RZ.buildSpade();                // working end along −z, origin = grip
+  const bucket = RZ.buildBucket();
   // water inside the bucket + a floating gauge so you can always see how much you have
   bucketWaterMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.099, 0.09, 0.01, 20), new THREE.MeshBasicMaterial({ color: 0x3aa8d8, transparent: true, opacity: 0.9, toneMapped: false }));
   bucketWaterMesh.visible = false; bucket.add(bucketWaterMesh);
@@ -983,13 +987,9 @@ function buildTools() {
   bucketGauge = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.075), new THREE.MeshBasicMaterial({ map: gaugeTex, transparent: true, depthTest: false, toneMapped: false, fog: false }));
   bucketGauge.renderOrder = 960; bucketGauge.position.y = 0.2; bucket.add(bucketGauge);
   // cup: dip it in a pool, then tip it over the bucket
-  const cup = new THREE.Group();
-  const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.047, 0.036, 0.07, 18, 1, true), new THREE.MeshLambertMaterial({ color: 0xf4c23a, side: THREE.DoubleSide }));
-  const cbot = new THREE.Mesh(new THREE.CircleGeometry(0.036, 18).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xd9a52a })); cbot.position.y = -0.034;
-  const ch = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf4c23a })); ch.rotation.z = -Math.PI / 2; ch.position.set(0.05, 0, 0);
-  cupWaterMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.038, 0.008, 18), new THREE.MeshBasicMaterial({ color: 0x3aa8d8, transparent: true, opacity: 0.9, toneMapped: false }));
-  cupWaterMesh.visible = false;
-  cup.add(cb, cbot, ch, cupWaterMesh);
+  const cup = RZ.buildCup();
+  cupWaterMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.035, 0.008, 18), new THREE.MeshBasicMaterial({ color: 0x3aa8d8, transparent: true, opacity: 0.9, toneMapped: false }));
+  cupWaterMesh.visible = false; cup.add(cupWaterMesh);
   // magnifying glass (gets the menu in registerTools so the wrist UI is hidden during its render pass)
   lens = createLens({ renderer, scene, camera, menu: null, radius: 0.1, zoom: 3 });
   crateTools = [spade, bucket, lens.group, cup];
