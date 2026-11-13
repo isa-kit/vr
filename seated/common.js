@@ -305,7 +305,8 @@ export async function createWorld(o = {}) {
     if (!dragging || renderer.xr.isPresenting) return;
     const dx = e.clientX - lx, dy = e.clientY - ly; lx = e.clientX; ly = e.clientY;
     const k = e.pointerType === 'touch' ? (camera.fov * Math.PI / 180 / innerHeight) * 1.35 : (camera.fov / 68) * 0.0042;
-    W.yaw += dx * k; W.pitch += dy * k; vy = dx * k * 0.6; vp = dy * k * 0.6;
+    // same convention as Nature / Infinity / touch.js: the view follows the finger or mouse (drag right -> look right, drag down -> look down)
+    W.yaw -= dx * k; W.pitch -= dy * k; vy = -dx * k * 0.25; vp = -dy * k * 0.25;
   });
   const rmq = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   W.reducedMotion = !!(rmq && rmq.matches); if (W.reducedMotion) W.timeScale = 0.3;
@@ -337,7 +338,7 @@ export async function createWorld(o = {}) {
   // ----- recenter / passthrough hooks for the shared menu
   W.recenter = () => {
     if (renderer.xr.isPresenting) recenterRig(rig, camera, new THREE.Vector3(W.home.x, 0, W.home.z), startYaw);
-    else { W.yaw = startYaw; W.pitch = startPitch; vy = vp = 0; }
+    else { W.yaw = 0; W.pitch = startPitch + (innerWidth < innerHeight ? 0.12 : 0); vy = vp = 0; }   // yaw is relative to startYaw
   };
   const setBackdrop = (visible) => {          // passthrough ON = hide the whole world so the room shows through
     if (W.world) W.world.visible = visible;
@@ -377,14 +378,14 @@ export async function createWorld(o = {}) {
         const kk = 1.4 * rdt;
         if (keys.ArrowLeft || keys.KeyA) W.yaw += kk; if (keys.ArrowRight || keys.KeyD) W.yaw -= kk;
         if (keys.ArrowUp || keys.KeyW) W.pitch += kk; if (keys.ArrowDown || keys.KeyS) W.pitch -= kk;
-        if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.92; vp *= 0.92; } else if (!dragging) { vy = vp = 0; }
+        if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.88; vp *= 0.88; } else if (!dragging) { vy = vp = 0; }
         W.pitch = Math.max(pitchMin, Math.min(pitchMax, W.pitch));
         if (touch.gyro.on) {
           touch.tick(rdt); _e.setFromQuaternion(touch.gyro.quat, 'YXZ');
           // phone gives pitch + heading; dragging still turns the heading. Roll is dropped so the horizon stays level.
           camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y + W.yaw + startYaw, 0, 'YXZ');
         } else {
-          // "grab the world": drag right -> view turns left (+yaw), drag down -> look up (+pitch)
+          // camera yaw is +left: drag right lowers yaw (look right); drag down lowers pitch (look down); arrow keys: left/up raise them
           camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
         }
         camera.position.y = eye;

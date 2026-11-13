@@ -7,7 +7,7 @@
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
   paint, fbm, smoothstep, rng, hash, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113c';
+} from '../seated/common.js?v=20261113d';
 import { createBirds } from '../shared/birds.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
