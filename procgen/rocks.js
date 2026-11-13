@@ -19,7 +19,7 @@ import * as THREE from 'three';
 import { rng, makeNoise } from './noise.js';
 
 export function makeRockGeometry({ seed = 1, detail = 3, flatten = 0.7, facets = 7, rough = 0.12, size = 1, moss = 0.6, texScale = 0.5, aspect = 1.2 } = {}) {
-  const R = rng(seed * 131 + 9), N = makeNoise(seed + 5), g = new THREE.IcosahedronGeometry(1, detail).toNonIndexed();
+  const R = rng(seed * 131 + 9), N = makeNoise(seed + 5), g = new THREE.IcosahedronGeometry(1, detail);
   const p = g.attributes.position, planes = [];
   for (let k = 0; k < facets; k++) { const n = new THREE.Vector3(R() - 0.5, (R() - 0.35), R() - 0.5).normalize(); planes.push({ n, d: 0.62 + R() * 0.28 }); }
   const asp = new THREE.Vector3(aspect * (0.85 + R() * 0.3), flatten, (0.85 + R() * 0.3) / aspect * 1.1), v = new THREE.Vector3(), off = R() * 50;
