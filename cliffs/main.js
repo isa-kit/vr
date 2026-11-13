@@ -5,8 +5,9 @@
 
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
-  paint, fbm, vnoise, smoothstep, rng, hash, makeFlock, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113b';
+  paint, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid,
+} from '../seated/common.js?v=20261113c';
+import { createBirds } from '../shared/birds.js';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);
@@ -283,13 +284,14 @@ const waterU = {
   const cx = -3.2, cz = 2.2; cairn.position.set(cx, topH(cx, cz, cz - coastZ(cx)), cz); scene.add(cairn); W.opaque.push(cairn);
 }
 
-// ---------------- seabirds: loose flocks on long lazy arcs, gliding on the updraft with slow bursts of flapping ----------------
-const flocks = [
-  makeFlock(scene, { n: 4, c: [15, seatY - 2, -62], r: [55, 22], speed: 3.6, dir: 1, span: 2.0, flapEvery: [9, 16], flapFrac: 0.26, flapHz: 2.2, spread: [9, 4, 9] }),
-  makeFlock(scene, { n: 3, c: [-45, seatY + 3, -100], r: [75, 28], speed: 4.4, dir: -1, span: 2.1, flapEvery: [10, 18], flapFrac: 0.24, flapHz: 2.0, spread: [10, 5, 10] }),
-  makeFlock(scene, { n: 2, c: [25, seatY - 6, -78], r: [60, 22], speed: 3.9, dir: -1, span: 1.9, flapEvery: [12, 20], flapFrac: 0.18, flapHz: 1.9, spread: [8, 3, 5] }),
-  makeFlock(scene, { n: 1, c: [-10, seatY - 8, -110], r: [95, 30], speed: 5.5, dir: 1, span: 3.0, birdOpts: { body: 0xf4f1ea, wing: 0xe9ecef, tip: 0x1e1f24, beak: 0xd9c9a0 }, flapEvery: [20, 30], flapFrac: 0.1, flapHz: 1.5, spread: [0, 0, 8] }),   // a big soaring bird
-];
+// ---------------- seabirds: loose flocks on long lazy arcs (shared calm-bird module) ----------------
+const birds = createBirds({ parent: scene, color: 0xf4f4ef, wingColor: 0xcfd4da, tipColor: 0x3a3d44, seed: 5, flocks: [
+  { n: 4, cx: 15, cz: -62, ra: 55, rb: 22, y: seatY - 2, yv: 3, period: 67, size: 2.0 },
+  { n: 3, cx: -45, cz: -100, ra: 75, rb: 28, y: seatY + 3, yv: 3, period: 73, size: 2.1 },
+  { n: 2, cx: 25, cz: -78, ra: 60, rb: 22, y: seatY - 6, yv: 3, period: 66, size: 1.9 },
+  { n: 1, cx: -10, cz: -110, ra: 95, rb: 30, y: seatY - 8, yv: 4, period: 71, size: 3.0 },   // a big soaring bird
+] });
+W.detailFns.push((f) => { birds.group.visible = f > 0.3; });
 
 // ---------------- frame ----------------
 const tmpC = new THREE.Color();
@@ -313,7 +315,7 @@ W.onFrame((dt, t) => {
   applyTime(p * 0.9);
   SU.uTime.value = t; waterU.uTime.value = t;
   lamp.material.color.setRGB(1.3, 1.15, 0.7).multiplyScalar(0.85 + 0.15 * Math.sin(t * 0.35) + 0.3 * p);
-  for (const f of flocks) f.update(dt, t);
+  birds.update(t);
 });
 
 // ---------------- audio ----------------
@@ -354,6 +356,5 @@ W.buildAudio = (A) => {
   }, 14, 30, 8);
 };
 
-W.flocks = flocks;
 W.rig.position.set(0, seatY, 0);
 W.start();

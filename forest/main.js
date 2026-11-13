@@ -5,8 +5,9 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, makeSky, softTexture, swayMaterial,
-  paint, fbm, smoothstep, rng, makeFlock,
-} from '../seated/common.js?v=20261113b';
+  paint, fbm, smoothstep, rng,
+} from '../seated/common.js?v=20261113c';
+import { createBirds } from '../shared/birds.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(20260);
@@ -271,12 +272,12 @@ function makeMotes({ count, box, center, size, color, opacity, fall, drift, addi
 const pollen = makeMotes({ count: 260, box: [44, 18, 44], center: [0, 7, -14], size: 0.055, color: 0xfff1c8, opacity: 1.0, fall: 0.03, drift: [0.12, -0.05], additive: true });
 const leaves = makeMotes({ count: 34, box: [40, 26, 40], center: [0, 11, -12], size: 0.07, color: 0xd1a53c, opacity: 0.9, fall: 0.42, drift: [0.35, 0.1], additive: false });
 
-// ---------------- woodland pigeons, drifting between the trees far off (slow, distant, mostly gliding) ----------------
-const pigeon = { body: 0x8d857a, wing: 0x7c766c, tip: 0x4a443c, beak: 0x3a342c };
-const flocks = [
-  makeFlock(scene, { n: 3, c: [-10, 17, -70], r: [38, 22], speed: 3.2, dir: 1, span: 0.7, birdOpts: pigeon, flapEvery: [5, 9], flapFrac: 0.4, flapHz: 3.2, spread: [5, 3, 5] }),
-  makeFlock(scene, { n: 2, c: [20, 24, -85], r: [45, 20], speed: 3.8, dir: -1, span: 0.75, birdOpts: pigeon, flapEvery: [6, 10], flapFrac: 0.4, flapHz: 3.0, spread: [4, 3, 6] }),
-];
+// ---------------- woodland pigeons, drifting between the trees far off (shared calm-bird module) ----------------
+const birds = createBirds({ parent: scene, color: 0x8d857a, wingColor: 0x7c766c, tipColor: 0x4a443c, seed: 11, flocks: [
+  { n: 3, cx: -10, cz: -70, ra: 38, rb: 22, y: 17, yv: 3, period: 59, size: 0.7 },
+  { n: 2, cx: 20, cz: -85, ra: 45, rb: 20, y: 24, yv: 3, period: 54, size: 0.75 },
+] });
+W.detailFns.push((f) => { birds.group.visible = f > 0.3; });
 
 // ---------------- animate ----------------
 const tmpA = new THREE.Vector3();
@@ -288,7 +289,7 @@ W.onFrame((dt, t) => {
   sky.uniforms.uTime.value = t;
   pollen.uniforms.uTime.value = t; leaves.uniforms.uTime.value = t;
   for (const s of mist) { s.position.x += s.userData.vx * dt; if (s.position.x > 85) s.position.x = -85; s.position.y += Math.sin(t * 0.1 + s.userData.z0) * 0.0015; }
-  for (const f of flocks) f.update(dt, t);
+  birds.update(t);
 });
 
 // ---------------- audio ----------------
@@ -347,6 +348,5 @@ W.buildAudio = (A) => {
   }, 50, 100, 12);
 };
 
-W.flocks = flocks;
 W.rig.position.set(0, groundH(0, 0), 0);
 W.start();

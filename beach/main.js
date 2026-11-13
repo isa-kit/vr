@@ -6,8 +6,9 @@
 
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
-  paint, fbm, smoothstep, rng, hash, makeFlock, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113b';
+  paint, fbm, smoothstep, rng, hash, sectionRow, choiceGrid,
+} from '../seated/common.js?v=20261113c';
+import { createBirds } from '../shared/birds.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(31415);
@@ -293,12 +294,13 @@ const boat = new THREE.Group();
   boat.position.set(-120, 0, -330); scene.add(boat); W.opaque.push(boat);
 }
 
-// ---------------- gulls: loose flocks on long lazy arcs out over the sea ----------------
-const flocks = [
-  makeFlock(scene, { n: 4, c: [10, 12, -55], r: [60, 24], speed: 3.6, dir: 1, span: 1.8, flapEvery: [8, 14], flapFrac: 0.3, flapHz: 2.3, spread: [8, 4, 6] }),
-  makeFlock(scene, { n: 3, c: [-35, 18, -90], r: [80, 32], speed: 4.4, dir: -1, span: 1.9, flapEvery: [9, 15], flapFrac: 0.28, flapHz: 2.2, spread: [9, 5, 6] }),
-  makeFlock(scene, { n: 2, c: [5, 8, -42], r: [48, 16], speed: 3.2, dir: 1, span: 1.7, flapEvery: [10, 16], flapFrac: 0.25, flapHz: 2.0, spread: [6, 3, 4] }),
-];
+// ---------------- gulls: loose flocks on long lazy arcs out over the sea (shared calm-bird module) ----------------
+const birds = createBirds({ parent: scene, color: 0xf4f4ef, wingColor: 0xcfd4da, tipColor: 0x3a3d44, seed: 9, flocks: [
+  { n: 4, cx: 10, cz: -55, ra: 60, rb: 24, y: 12, yv: 3, period: 73, size: 1.8 },
+  { n: 3, cx: -35, cz: -90, ra: 80, rb: 32, y: 18, yv: 4, period: 80, size: 1.9 },
+  { n: 2, cx: 5, cz: -42, ra: 48, rb: 16, y: 8, yv: 2, period: 63, size: 1.7 },
+] });
+W.detailFns.push((f) => { birds.group.visible = f > 0.3; });
 
 // ---------------- frame ----------------
 let sceneT = 0;
@@ -322,7 +324,7 @@ W.onFrame((dt, t) => {
   applyTime(p);
   SU.uTime.value = t; sandU.uTime.value = t; waterU.uTime.value = t;
   boat.position.x = -120 + ((t * 0.55) % 520); boat.position.y = Math.sin(t * 0.7) * 0.12; boat.rotation.z = Math.sin(t * 0.55) * 0.035;
-  for (const f of flocks) f.update(dt, t);
+  birds.update(t);
 });
 
 // ---------------- audio (waves are cued to the visible wave clock) ----------------
@@ -366,6 +368,5 @@ W.buildAudio = (A) => {
   }, 22, 42, 10);
 };
 
-W.flocks = flocks;
 W.rig.position.set(0, seatY, SEAT_Z);
 W.start();
