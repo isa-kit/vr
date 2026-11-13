@@ -13,9 +13,10 @@ import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../
 import { createToolkit, createLens } from '../shared/xrtools.js';
 import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
+import { createBirds } from '../shared/birds.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
-let fx, comfort, touch, wt = 0, qLevel = 0;
+let fx, comfort, touch, wt = 0, qLevel = 0, gulls;
 
 // ---------- sand grid ----------
 const TRAY = 5.0;                       // sculptable patch (m) — blends into the open beach around it
@@ -52,9 +53,11 @@ const sunDir = new THREE.Vector3(-0.75, 0.58, -0.32).normalize();   // raking si
 const horizonColor = new THREE.Color(0xdcecf5);
 
 // desktop orbit camera — from a few cm above the grains to a high overview
-const START_DIST = 6.5, MIN_DIST = 0.12, MAX_DIST = 60;
-const orbit = { yaw: 0, pitch: 0.7, dist: START_DIST, target: new THREE.Vector3(0, 0.05, TRAY_C.z) };
-const VR_HOME = new THREE.Vector3(0, 0, 0.6);
+// Default view: sitting/kneeling on the beach, eye ≈ 1 m, looking across the sand to the picnic with the sea and horizon in frame.
+// The pitch is capped so zooming out rises a little but never becomes a top-down map view.
+const START_DIST = 3.6, MIN_DIST = 0.12, MAX_DIST = 60, PMIN = 0.03, PMAX = 0.5, START_PITCH = 0.22;
+const orbit = { yaw: 0, pitch: START_PITCH, dist: START_DIST, target: new THREE.Vector3(0, 0.25, TRAY_C.z) };
+const VR_HOME = new THREE.Vector3(0, 0, 1.4);       // a few steps back from the patch, so the picnic is across the sand, not under your feet
 const SCALE_MIN = 1 / 30, SCALE_MAX = 10;   // VR: viewer scale (small = giant world / grain-level, large = high overview)
 
 // ---------- helpers ----------
@@ -117,6 +120,9 @@ function init() {
   buildSky();
   buildBeach();
   buildSea();
+  gulls = createBirds({ parent: env, color: 0xf4f4ef, wingColor: 0xdde1e6, tipColor: 0x3a3d44, seed: 5, flocks: [
+    { n: 3, cx: -12, cz: -30, ra: 30, rb: 16, y: 6.5, yv: 1.5, period: 95, size: 1.7 },
+    { n: 2, cx: 22, cz: -42, ra: 36, rb: 18, y: 10, yv: 2, period: 125, size: 1.5 } ] });
   buildSandTable();
   buildWater();
   decoGroup = new THREE.Group(); scene.add(decoGroup);
@@ -126,7 +132,7 @@ function init() {
   buildStatusLabel();
 
   comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
-    onQuality: (q) => { qLevel = q; if (q >= 2) { sun.castShadow = false; } } });
+    onQuality: (q) => { qLevel = q; gulls.group.visible = q < 2; if (q >= 2) { sun.castShadow = false; } } });
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('One finger sculpts · two fingers pinch to zoom & orbit · pick a tool below · ☰ Menu for options', h.textContent); }
 
   menu = createXRMenu({
@@ -251,7 +257,7 @@ function buildBeach() {
     s.position.set(x, -0.0, z); s.rotation.set(-Math.PI / 2 + Math.random() * 0.4, Math.random(), 0); env.add(s);
   }
 }
-const CRATE = { x: 0.95, z: 0.15, top: 0.62 };
+const CRATE = { x: 0.95, z: 1.0, top: 0.62 };
 
 // ---------- the sea (far water) ----------
 function buildSea() {
@@ -860,10 +866,15 @@ function setStatus() {
 const SRC = [];
 function buildCursors() {
   for (let k = 0; k < 3; k++) {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 48),
-      new THREE.MeshBasicMaterial({ color: k === 0 ? 0x5a3d18 : k === 1 ? 0xb8681e : 0x1e6fb8, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
-    ring.rotation.x = -Math.PI / 2; ring.visible = false; ring.renderOrder = 5; scene.add(ring);
-    SRC.push({ id: k, down: false, tool: 'pile', hit: { on: false, lx: 0, lz: 0, y: 0, dist: 0 }, last: null, travel: 0, ring });
+    const col = k === 0 ? 0x6a4a20 : k === 1 ? 0xb8681e : 0x1e6fb8;
+    const g = new THREE.Group();
+    const ringMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), ringMat);
+    // an upright cone above the ring so the cursor reads even at the shallow, grazing view angle
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xfff4d6, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false });
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 12).rotateX(Math.PI), coneMat); cone.position.y = 0.62;
+    g.add(ring, cone); g.visible = false; g.renderOrder = 5; ring.renderOrder = 5; cone.renderOrder = 6; scene.add(g);
+    SRC.push({ id: k, down: false, tool: 'pile', hit: { on: false, lx: 0, lz: 0, y: 0, dist: 0 }, last: null, travel: 0, ring: g, mats: [ringMat, coneMat] });
   }
 }
 function cursorRadius(tl) {
@@ -940,7 +951,7 @@ function zoomBy(d) {
 }
 function recenter() {
   if (renderer.xr.isPresenting) { dolly.scale.setScalar(1); recenterRig(dolly, camera, VR_HOME, 0); dolly.position.y = 0; }
-  else { orbit.yaw = 0; orbit.pitch = 0.7; orbit.dist = START_DIST; orbit.target.set(0, 0.05, TRAY_C.z); }
+  else { orbit.yaw = 0; orbit.pitch = START_PITCH; orbit.dist = START_DIST; orbit.target.set(0, 0.25, TRAY_C.z); }
 }
 function setBackdrop(visible) {            // passthrough on = hide sky/beach/sea/crate; the sand, picnic and tools stay
   env.visible = visible;
@@ -1152,10 +1163,10 @@ function initPointer() {
     if (ptrs.size >= 2) {
       const [p, q] = [...ptrs.values()], d = Math.hypot(p.x - q.x, p.y - q.y), c = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
       if (pinchD > 0 && d > 0) orbit.dist = clamp(orbit.dist * pinchD / d, MIN_DIST, MAX_DIST);
-      if (pinchC) { orbit.yaw -= (c.x - pinchC.x) * 0.005; orbit.pitch = clamp(orbit.pitch + (c.y - pinchC.y) * 0.005, 0.02, 1.55); }
+      if (pinchC) { orbit.yaw -= (c.x - pinchC.x) * 0.005; orbit.pitch = clamp(orbit.pitch + (c.y - pinchC.y) * 0.005, PMIN, PMAX); }
       pinchD = d; pinchC = c;
     } else if (orbitDrag) {
-      orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.005, 0.02, 1.55);
+      orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.005, PMIN, PMAX);
     } else if (panDrag) panTarget(-dx * orbit.dist * 0.0016, dy * orbit.dist * 0.0016);
   });
   const up = (e) => {
@@ -1283,7 +1294,7 @@ function animate() {
 
   if (!xr) {
     if (keys.ArrowLeft) orbit.yaw += dt * 1.2; if (keys.ArrowRight) orbit.yaw -= dt * 1.2;
-    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch + dt, 0.02, 1.55); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch - dt, 0.02, 1.55);
+    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch + dt, PMIN, PMAX); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch - dt, PMIN, PMAX);
     const pr = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), pf = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     if (pr || pf) panTarget(pr * dt * orbit.dist * 0.6, -pf * dt * orbit.dist * 0.6);
     const cp = Math.cos(orbit.pitch);
@@ -1324,7 +1335,7 @@ function animate() {
     if (s.ring.visible) {
       s.ring.position.set(TRAY_C.x + s.hit.lx, s.hit.y + 0.012, TRAY_C.z + s.hit.lz);
       s.ring.scale.setScalar(cursorRadius(s.tool));
-      s.ring.material.opacity = s.down ? 1 : 0.55 + 0.25 * Math.sin(t * 5);
+      const op = s.down ? 1 : 0.6 + 0.25 * Math.sin(t * 5); for (const m of s.mats) m.opacity = op;
     }
   }
   updateTide(comfort.paused ? 0 : dt);
@@ -1334,8 +1345,10 @@ function animate() {
   // floating status label faces you and scales so it stays readable from any zoom
   camera.getWorldPosition(_a);
   statusMesh.lookAt(_a);
+  statusMesh.visible = !touch.isTouch || xr;           // phones already show this in the HUD line
   statusMesh.scale.setScalar(clamp(_a.distanceTo(statusMesh.position) / 5, 0.5, 12));
 
+  gulls.update(t);
   seaMesh.material.uniforms.time.value = t;
   camera.getWorldPosition(seaMesh.material.uniforms.cam.value);
   lens.update(mouseNDC);
