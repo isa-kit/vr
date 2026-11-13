@@ -9,13 +9,13 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114e';
-import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114e';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261114e';
-import { createTouch } from '../shared/touch.js?v=20261114e';
-import { createBirds } from '../shared/birds.js?v=20261114e';
-import * as RZ from './realism.js?v=20261114e';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114e';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114f';
+import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261114f';
+import { createTouch } from '../shared/touch.js?v=20261114f';
+import { createBirds } from '../shared/birds.js?v=20261114f';
+import * as RZ from './realism.js?v=20261114f';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 
 let fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
 const sandMats = [];
@@ -458,7 +458,7 @@ function brushPile(lx, lz, dt, dir) {
     const d = Math.hypot(i - r.ci, j - r.cj) / r.rc; if (d > 1) continue;
     const id = gi(i, j); if (PROT[id]) continue;
     const f = smoothstep(1, 0, d);
-    sand[id] = clamp(sand[id] + rate * f, MINH, MAXH);
+    sand[id] = clamp(sand[id] + rate * f + (Math.random() - 0.5) * 0.0016 * f * (watered ? 0.4 : 1), MINH, MAXH);    // loose grains: tool marks and a little crumble
     if (watered && f > 0.2) wet[id] = 1;
   }
   slumpRect(r, 2); markDirty(r.i0 - 4, r.i1 + 4, r.j0 - 4, r.j1 + 4);
@@ -505,7 +505,7 @@ function stampWall(lx, lz, travel, seg = 0) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > w * 1.6) continue;
     const id = gi(i, j); if (PROT[id]) continue;
     const prof = d < w * 0.7 ? 1 : 1 - smoothstep(w * 0.7, w * 1.6, d);
-    sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + H * crenel * prof));
+    sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + H * crenel * prof + (prof < 0.9 ? (Math.random() - 0.5) * 0.004 * (watered ? 0.5 : 1.2) : 0)));   // ragged crumbly edges
     if (watered && prof > 0.25) wet[id] = 1;
   }
   if (!watered) slumpRect(r, 3);
@@ -541,7 +541,7 @@ function stampTower(lx, lz, R, H) {
       const ang = Math.atan2(j - r.cj, i - r.ci);
       if (Math.cos(ang * k) > 0.25) h += 0.05 * (R / 0.2);
     }
-    sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + h));
+    sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + h + (d > R * 0.7 ? (Math.random() - 0.5) * 0.006 : 0)));
     if (watered) wet[id] = 1;
   }
   if (!watered) slumpRect(r, 5);
