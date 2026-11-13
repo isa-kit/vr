@@ -3,28 +3,29 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js?v=20261113c';
-import { createToolkit } from '../shared/xrtools.js?v=20261113c';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
-import { createTouch } from '../shared/touch.js?v=20261113c';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261113g';
+import { createToolkit } from '../shared/xrtools.js?v=20261113g';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113g';
+import { createTouch } from '../shared/touch.js?v=20261113g';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113g';
 
 let fx, nebula;   // post-processing + nebula backdrop
 
-const BG = 0x03051c;      // deep indigo rather than black: friendlier, and still reads as space
+const bgColor = new THREE.Color(0x03051c);      // follows the theme (set in applyThemeBackdrop)
+const nebU = { uA: { value: new THREE.Color() }, uB: { value: new THREE.Color() }, uN: { value: new THREE.Color() }, uM: { value: new THREE.Color() } };
 
-// deep-space backdrop: a small sphere that travels with the player, drawn first
+// deep-space backdrop: a small sphere that travels with the player, drawn first; tinted by the colour theme
 function buildNebula() {
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthTest: false, depthWrite: false, fog: false,
+    side: THREE.BackSide, depthTest: false, depthWrite: false, fog: false, uniforms: nebU,
     vertexShader: `varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `varying vec3 vD;
+    fragmentShader: `varying vec3 vD; uniform vec3 uA, uB, uN, uM;
       void main(){
         vec3 d = normalize(vD);
-        vec3 col = mix(vec3(0.012,0.010,0.030), vec3(0.016,0.020,0.050), d.y*0.5+0.5);
+        vec3 col = mix(uA, uB, d.y*0.5+0.5);
         float n = sin(d.x*3.1+d.y*1.7)*sin(d.z*2.3-d.y*2.9)*0.5+0.5;
         float m = sin(d.x*5.7-d.z*4.1+1.3)*sin(d.y*3.3+d.x*1.1)*0.5+0.5;
-        col += vec3(0.030,0.010,0.040)*pow(n,3.0) + vec3(0.008,0.018,0.040)*pow(m,4.0);
+        col += uN*pow(n,3.0) + uM*pow(m,4.0);
         gl_FragColor = vec4(col,1.0);
         ${SHADER_TAIL}
       }`,
@@ -35,6 +36,33 @@ function buildNebula() {
   dolly.add(nebula);
 }
 
+// ---------- colour themes: weighted hue bands (h0..h1, weight, sat range, lightness) + a backdrop hue ----------
+const T = (h0, h1, w, s0, s1, l = 0.58) => ({ h0, h1, w, s0, s1, l });
+const THEMES = {
+  jewel:  { name: 'Jewel',  sw: ['#e9b34e', '#e0607a', '#8a6ae0', '#55c8d8'], bg: 0.70, bands: [T(0.08, 0.13, 0.4, 0.75, 1), T(0.93, 0.98, 0.2, 0.75, 1), T(0.72, 0.78, 0.2, 0.75, 1), T(0.5, 0.55, 0.15, 0.75, 1), T(0.12, 0.12, 0.05, 0.15, 0.15)] },
+  gold:   { name: 'Gold', sw: ['#ffcf6b', '#f0a43a', '#ffe9b8', '#d9822b'], bg: 0.07, bands: [T(0.06, 0.12, 0.6, 0.7, 1, 0.6), T(0.1, 0.14, 0.25, 0.5, 0.8, 0.7), T(0.12, 0.12, 0.15, 0.12, 0.2, 0.78)] },
+  aurora: { name: 'Aurora', sw: ['#5df0a0', '#3fd6c8', '#8a7cf0', '#c8ffe8'], bg: 0.45, bands: [T(0.33, 0.42, 0.4, 0.7, 1, 0.55), T(0.45, 0.5, 0.3, 0.7, 1, 0.58), T(0.72, 0.8, 0.2, 0.6, 0.9, 0.62), T(0.4, 0.4, 0.1, 0.12, 0.2, 0.8)] },
+  ocean:  { name: 'Ocean', sw: ['#3b82f0', '#35c4e0', '#6a6ae0', '#d8f4ff'], bg: 0.60, bands: [T(0.56, 0.62, 0.45, 0.7, 1, 0.58), T(0.47, 0.52, 0.3, 0.7, 1, 0.6), T(0.64, 0.7, 0.15, 0.6, 0.9, 0.6), T(0.55, 0.55, 0.1, 0.1, 0.2, 0.8)] },
+  sunset: { name: 'Sunset', sw: ['#ff6f91', '#ff9a4d', '#e04fb5', '#ffcf6b'], bg: 0.93, bands: [T(0.96, 0.99, 0.3, 0.7, 1), T(0.04, 0.08, 0.3, 0.8, 1, 0.6), T(0.86, 0.9, 0.25, 0.6, 0.9, 0.6), T(0.11, 0.13, 0.15, 0.7, 1, 0.65)] },
+  candy:  { name: 'Candy', sw: ['#ffb3d1', '#b3e5ff', '#d4ffb3', '#e0c4ff'], bg: 0.80, bands: [T(0, 1, 1, 0.5, 0.65, 0.78)] },
+  mono:   { name: 'Mono', sw: ['#ffffff', '#ffe9d0', '#d8e8ff', '#c8c8d0'], bg: 0.62, bands: [T(0.08, 0.1, 0.5, 0.06, 0.1, 0.8), T(0.58, 0.6, 0.5, 0.06, 0.1, 0.8)], bgSat: 0.12 },
+  custom: { name: 'Custom', sw: ['#ff4d4d', '#ffd84d', '#4dff88', '#4d88ff'], bg: 0, bands: [] },
+};
+function bandsFor(id) {
+  if (id !== 'custom') return THEMES[id].bands;
+  const h = params.hue / 360;
+  return [T(h - 0.04, h + 0.04, 0.8, 0.7, 1, 0.58), T(h + 0.45, h + 0.5, 0.08, 0.6, 0.9, 0.62), T(h, h, 0.12, 0.12, 0.2, 0.8)];
+}
+const bgHueFor = (id) => (id === 'custom' ? params.hue / 360 : THEMES[id].bg);
+const _c = new THREE.Color();
+function bgTargets(id) {                      // dark, saturated backdrop tints (linear values, like the originals)
+  const h = bgHueFor(id), sat = (THEMES[id].bgSat ?? 0.6);
+  return {
+    a: new THREE.Color().setHSL(h, sat, 0.016), b: new THREE.Color().setHSL((h + 0.03) % 1, sat, 0.022),
+    n: new THREE.Color().setHSL((h + 0.1) % 1, sat, 0.030), m: new THREE.Color().setHSL((h + 0.92) % 1, sat, 0.026),
+  };
+}
+
 // ---------- tunables ----------
 const MAX_LIGHTS = 8000;    // buffer capacity; active count follows spacing/depth
 const MOVE_SPEED = 14;      // flat screens
@@ -43,20 +71,33 @@ const BOOST      = 2.5;     // flat screens only
 const LOOK_SPEED = 0.0025;
 const SPEEDS = [0.25, 0.5, 1, 2, 3];
 
-// user-driven params (menu writes these, then regenerates)
-const params = {
-  pattern: 'random',   // random | grid | diagonal | jitter
-  spacing: 8,          // world units between lattice points  (4..30)
-  depth:   120,        // size of the field cube / draw distance (50..240)
-  seed:    20261111,
-};
+// user-driven params (the menu writes these live; they persist in localStorage)
+const DEFAULTS = { pattern: 'random', spacing: 8, depth: 120, density: 1, size: 1, glow: 0.5, bright: 1, twinkle: 0.3,
+                   driftSpeed: 0, driftDir: 'toward', theme: 'jewel', hue: 200, still: false, speedIdx: 2 };
+const params = { ...DEFAULTS, seed: 20261111 };
+const STORE = 'oortia-infinity-v1';
+function loadSettings() {
+  try {
+    const o = JSON.parse(localStorage.getItem(STORE) || '{}');
+    for (const k of Object.keys(DEFAULTS)) if (typeof o[k] === typeof DEFAULTS[k]) params[k] = o[k];
+    if (typeof o.seed === 'number') params.seed = o.seed;
+  } catch (e) { /* ignore */ }
+  if (!THEMES[params.theme]) params.theme = 'jewel';
+  speedIdx = clamp(params.speedIdx, 0, SPEEDS.length - 1); stillMode = !!params.still;
+}
+function saveSettings() { params.speedIdx = speedIdx; params.still = stillMode; try { localStorage.setItem(STORE, JSON.stringify(params)); } catch (e) { /* private mode */ } }
+const PATTERNS = [['Random', 'random'], ['Grid', 'grid'], ['Diagonal', 'diagonal'], ['Jitter', 'jitter'], ['Spiral', 'spiral'], ['Waves', 'waves'], ['Rings', 'rings'], ['Tunnel', 'tunnel']];
+const DIRS = { toward: [0, 0, 1], away: [0, 0, -1], left: [-1, 0, 0], right: [1, 0, 0], down: [0, -1, 0], up: [0, 1, 0] };
+const DIR_NAMES = [['Toward you', 'toward'], ['Away', 'away'], ['Left', 'left'], ['Right', 'right'], ['Down', 'down'], ['Up', 'up']];
 let speedIdx = 2;
 
 // ---------- state ----------
 let scene, camera, renderer, dolly, points, geometry, lightMat, menu, caps, kit, wand, gridCount = 0;
-let comfort, touch, platform, stillMode = false, qualityScale = 1, worldTime = 0;
+let comfort, touch, platform, stillMode = false, qualityScale = 1, worldTime = 0, tab = 0;
 const drift = new THREE.Vector3();
 let basePositions;                 // Float32Array, length MAX_LIGHTS*3
+const pickR = new Float32Array(MAX_LIGHTS), jitA = new Float32Array(MAX_LIGHTS), jitB = new Float32Array(MAX_LIGHTS);   // per-light random seeds → colour under any theme
+let fromCol = null, toCol = null, themeFade = 1, bgFrom = null, bgTo = null;
 let activeCount = 0;
 const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
@@ -66,7 +107,7 @@ const _p = new THREE.Vector3();
 
 // Defaults come from the engine-agnostic scene config; built-in values above
 // are the fallback if the fetch fails (e.g. opened as a bare file://).
-Promise.all([loadConfig(), detectXR()]).then(([, c]) => { caps = c; init(); });
+Promise.all([loadConfig(), detectXR()]).then(([, c]) => { caps = c; loadSettings(); init(); });
 
 async function loadConfig() {
   try {
@@ -80,7 +121,7 @@ async function loadConfig() {
 
 function init() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(BG);
+  scene.background = bgColor;
 
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, params.depth * 1.6);
 
@@ -107,22 +148,51 @@ function init() {
   buildNebula();
   buildLights();
 
+  const rep10 = { repeat: true };
+  const step = (key, d, lo, hi, dec = 2, after) => () => { params[key] = +clamp(params[key] + d, lo, hi).toFixed(dec); if (after) after(); saveSettings(); };
+  const regen = () => generatePattern();
+  const driftCap = () => 1.0 * [1, 1.6, 2.5][comfort.settings.speed] * (comfort.reducedMotion ? 0.5 : 1);
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Infinity Lights',
-    hint: touch.helpText('Drag to look · thumb-stick flies · ▲▼ rise and sink · ☰ for options', 'Click the view to fly · WASD move · Q/E down/up · Shift boost · 1–4 patterns · R randomize · F plant a light · Esc/M menu. In VR: grip the light wand, trigger plants lights.'),
+    compactCommon: true,
+    hint: touch.helpText('Drag to look · thumb-stick flies · ▲▼ rise and sink · ☰ for options', 'Click the view to fly · WASD move · Q/E down/up · Shift boost · 1–8 patterns · R randomize · F plant a light · Esc/M menu. In VR: grip the light wand, trigger plants lights.'),
     rows: [
-      sectionRow('Pattern'),
-      choiceGrid([['Random', 'random'], ['Grid', 'grid'], ['Diagonal', 'diagonal'], ['Jitter', 'jitter']],
-        () => params.pattern, setPattern, 2),
-      stepperRow('Spacing', () => params.spacing, () => bump('spacing', -1), () => bump('spacing', 1)),
-      stepperRow('Depth', () => params.depth, () => bump('depth', -1), () => bump('depth', 1)),
-      stepperRow('Speed', () => '×' + SPEEDS[speedIdx], () => { speedIdx = Math.max(0, speedIdx - 1); }, () => { speedIdx = Math.min(SPEEDS.length - 1, speedIdx + 1); }),
-      buttonRow('⟳  Randomize', randomize, 'accent'),
-      buttonRow('Clear wand lights', () => generatePattern()),
-      { label: 'Drift', cells: [{ text: () => (stillMode ? 'Stay still · lights drift past' : 'Fly freely'), action: () => { stillMode = !stillMode; }, active: () => stillMode, w: 2 }] },
-      ...comfort.rows({ movement: true, teleport: false }),
-      ...touch.rows(),
+      tabRow(['Pattern', 'Motion', 'Look', 'Theme', 'Comfort'], () => tab, (i) => { tab = i; }),
+      // ---- Pattern
+      ...inTab([
+        ...choiceGrid(PATTERNS, () => params.pattern, setPattern, 4),
+        stepperRow('Spacing', () => params.spacing, step('spacing', -2, 4, 30, 0, regen), step('spacing', 2, 4, 30, 0, regen), rep10),
+        stepperRow('Depth', () => params.depth, step('depth', -15, 50, 240, 0, () => { camera.far = params.depth * 1.6; camera.updateProjectionMatrix(); regen(); }),
+          step('depth', 15, 50, 240, 0, () => { camera.far = params.depth * 1.6; camera.updateProjectionMatrix(); regen(); }), rep10),
+        stepperRow('Density', () => Math.round(params.density * 100) + '%', step('density', -0.05, 0.2, 1, 2, regen), step('density', 0.05, 0.2, 1, 2, regen), rep10),
+        { cells: [{ text: '⟳ Randomize', action: randomize, tone: 'accent' }, { text: 'Clear wand', action: () => generatePattern() }, { text: 'Reset all', action: resetAll }] },
+      ], () => tab === 0),
+      // ---- Motion
+      ...inTab([
+        stepperRow('Drift', () => driftText(), () => { params.driftSpeed = +clamp(params.driftSpeed - 0.1, 0, 2.5).toFixed(1); saveSettings(); },
+          () => { params.driftSpeed = +clamp(params.driftSpeed + 0.1, 0, 2.5).toFixed(1); saveSettings(); }, rep10),
+        ...choiceGrid(DIR_NAMES, () => params.driftDir, (d) => { params.driftDir = d; saveSettings(); }, 3),
+        { label: 'Mode', cells: [
+          { text: 'Fly freely', active: () => !stillMode, action: () => { stillMode = false; saveSettings(); } },
+          { text: 'Stay still', active: () => stillMode, action: () => { stillMode = true; if (params.driftSpeed === 0) params.driftSpeed = 0.6; saveSettings(); } } ] },
+        stepperRow('Fly speed', () => '×' + SPEEDS[speedIdx], () => { speedIdx = Math.max(0, speedIdx - 1); saveSettings(); }, () => { speedIdx = Math.min(SPEEDS.length - 1, speedIdx + 1); saveSettings(); }),
+        stepperRow('Twinkle', () => Math.round(params.twinkle * 100) + '%', step('twinkle', -0.1, 0, 1, 1), step('twinkle', 0.1, 0, 1, 1), rep10),
+      ], () => tab === 1),
+      // ---- Look
+      ...inTab([
+        stepperRow('Size', () => '×' + params.size.toFixed(1), step('size', -0.1, 0.5, 2, 1), step('size', 0.1, 0.5, 2, 1), rep10),
+        stepperRow('Glow', () => Math.round(params.glow * 100) + '%', step('glow', -0.1, 0, 1, 1), step('glow', 0.1, 0, 1, 1), rep10),
+        stepperRow('Bright', () => Math.round(params.bright * 100) + '%', step('bright', -0.05, 0.5, 1.25, 2), step('bright', 0.05, 0.5, 1.25, 2), rep10),
+      ], () => tab === 2),
+      // ---- Theme
+      ...inTab([
+        ...swatchGrid(Object.entries(THEMES).map(([id, t]) => [t.name, id, t.sw]), () => params.theme, setTheme, 4),
+        { ...stepperRow('Hue', () => params.hue + '°', () => { params.hue = (params.hue + 350) % 360; if (params.theme === 'custom') applyTheme(); saveSettings(); },
+          () => { params.hue = (params.hue + 10) % 360; if (params.theme === 'custom') applyTheme(); saveSettings(); }, rep10), visible: () => params.theme === 'custom' },
+      ], () => tab === 3),
+      // ---- Comfort
+      ...inTab([...comfort.rows({ movement: true, teleport: false, header: false }), ...touch.rows()], () => tab === 4),
     ],
     fade: comfort.fade,
     sound: { get: () => soundOn, set: setSound },
@@ -136,6 +206,8 @@ function init() {
   buildWand();
   buildPlatform();
   generatePattern();
+  applyThemeInstant();
+  applyLook3();
 
   renderer.xr.addEventListener('sessionstart', startAudio);
   renderer.xr.addEventListener('sessionend', () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; });   // never carry VR rig yaw into flat mode (it would stack on the camera yaw)
@@ -148,13 +220,13 @@ function init() {
   document.addEventListener('pointerlockchange',
     () => { pointerLocked = document.pointerLockElement === renderer.domElement; });
 
-  if (location.hash === '#debug') window.__inf = { dolly, touch, camera, comfort };
+  if (location.hash === '#debug') window.__inf = { dolly, touch, camera, comfort, menu, renderer };
   renderer.setAnimationLoop(animate);
 }
 
 // passthrough on = hide the opaque backdrop (lights then float in the room)
 function setBackdrop(visible) {
-  scene.background = visible ? new THREE.Color(BG) : null;
+  scene.background = visible ? bgColor : null;
   nebula.visible = visible;
 }
 
@@ -181,20 +253,22 @@ function buildLights() {
       uMax: { value: 150.0 },
       uHalf: { value: params.depth * 0.5 },
       uTime: { value: 0 },
+      uSize: { value: 1 }, uGlow: { value: 0.5 }, uBright: { value: 1 }, uTw: { value: 0.3 },
     },
     vertexShader: `
       attribute vec3 aCol; attribute float aSize;
-      uniform float uHalfH, uMin, uMax, uHalf, uTime;
+      uniform float uHalfH, uMin, uMax, uHalf, uTime, uSize, uGlow, uBright, uTw;
       varying vec3 vCol; varying float vA; varying float vS;
       void main(){
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         float dist = max(-mv.z, 0.01);
-        float px = aSize * projectionMatrix[1][1] * uHalfH / dist;
+        float px = aSize * uSize * projectionMatrix[1][1] * uHalfH / dist;
         float s = clamp(px, uMin, uMax);
         vec3 d = abs(position - cameraPosition) / uHalf;
         float edge = max(d.x, max(d.y, d.z));
         float fade = 1.0 - smoothstep(0.7, 1.0, edge);
-        float tw = 0.95 + 0.05 * sin(uTime * 0.35 + aSize * 41.0 + position.x * 0.31);   // slow, shallow shimmer — never a flash
+        // slow, shallow shimmer — rate ≤ ~0.1 Hz and ≤ 12 % depth at the maximum setting, so it can never strobe
+        float tw = 1.0 - (0.02 + 0.10 * uTw) * (0.5 + 0.5 * sin(uTime * (0.25 + 0.35 * uTw) + aSize * 41.0 + position.x * 0.31));
         vCol = aCol; vS = s;
         vA = fade * tw * clamp(px / uMin, 0.4, 1.0);
         gl_PointSize = s;
@@ -202,6 +276,7 @@ function buildLights() {
       }`,
     fragmentShader: `
       varying vec3 vCol; varying float vA; varying float vS;
+      uniform float uGlow, uBright;
       void main(){
         vec2 p = gl_PointCoord * 2.0 - 1.0;
         float d = length(p);
@@ -210,7 +285,7 @@ function buildLights() {
         float aa = 1.0 / rpx;
         float core = 1.0 - smoothstep(coreR - aa, coreR + aa, d);
         float halo = exp(-d * d * 10.0) * (1.0 - smoothstep(0.8, 1.0, d));
-        vec3 c = mix(vCol, vec3(1.0), 0.5) * core * 1.45 + vCol * halo * 0.3;
+        vec3 c = (mix(vCol, vec3(1.0), 0.5) * core * 1.45 + vCol * halo * 0.6 * uGlow) * uBright;   // brightness capped at 125 %
         gl_FragColor = vec4(c, vA);
         ${SHADER_TAIL}
       }`,
@@ -239,55 +314,122 @@ function generatePattern() {
   let n = Math.round(depth / S);
   n = Math.max(3, Math.min(20, n));
   const step = depth / n;                    // keeps lattice period == wrap period (seamless)
-  activeCount = Math.min(n * n * n, MAX_LIGHTS);
-  gridCount = activeCount;
-  applyDraw();
+  const total = Math.min(n * n * n, MAX_LIGHTS);
   lightMat.uniforms.uHalf.value = depth * 0.5;
 
-  const col = geometry.getAttribute('aCol');
   const siz = geometry.getAttribute('aSize');
-  const rng = mulberry32(params.seed);
-  const tint = new THREE.Color();
+  const rng = mulberry32(params.seed), rngK = mulberry32(params.seed + 7);
+  const TAU = Math.PI * 2;
+  let j = 0;
 
-  for (let i = 0; i < activeCount; i++) {
+  for (let i = 0; i < total; i++) {
+    if (params.density < 0.999 && rngK() > params.density) continue;          // thin the field
     const ix = i % n;
     const iy = Math.floor(i / n) % n;
     const iz = Math.floor(i / (n * n)) % n;
     let x, y, z;
 
-    if (params.pattern === 'grid') {
-      x = ix * step; y = iy * step; z = iz * step;
-    } else if (params.pattern === 'diagonal') {
-      x = (ix * step + (iy + iz) * step * 0.5) % depth; y = iy * step; z = iz * step;
-    } else if (params.pattern === 'jitter') {
-      x = ix * step + (rng() - 0.5) * step * 0.8;
-      y = iy * step + (rng() - 0.5) * step * 0.8;
-      z = iz * step + (rng() - 0.5) * step * 0.8;
-    } else { // random
-      x = rng() * depth; y = rng() * depth; z = rng() * depth;
+    switch (params.pattern) {
+      case 'grid': x = ix * step; y = iy * step; z = iz * step; break;
+      case 'diagonal': x = (ix * step + (iy + iz) * step * 0.5) % depth; y = iy * step; z = iz * step; break;
+      case 'jitter':
+        x = ix * step + (rng() - 0.5) * step * 0.8;
+        y = iy * step + (rng() - 0.5) * step * 0.8;
+        z = iz * step + (rng() - 0.5) * step * 0.8; break;
+      case 'spiral': {                                   // a galaxy: three arms around where you start
+        const t = (i + 0.5) / total, arm = i % 3, th = t * 16 + arm * (TAU / 3), r = Math.sqrt(t) * depth * 0.5;
+        x = r * Math.cos(th); z = r * Math.sin(th); y = (rng() - 0.5) * depth * 0.28 * (1 - 0.6 * t); break;
+      }
+      case 'waves':                                      // rippling sheets
+        x = ix * step; z = iz * step;
+        y = iy * step + Math.sin((x / depth) * Math.PI * 4) * Math.cos((z / depth) * Math.PI * 4) * step * 0.9; break;
+      case 'rings': {                                    // concentric rings, stacked in layers
+        const r = ((ix + 1) / n) * depth * 0.5, a = (iz / n) * TAU + ix * 0.35;
+        x = r * Math.cos(a); z = r * Math.sin(a); y = iy * step; break;
+      }
+      case 'tunnel': {                                   // twisting rings along the view axis, you start inside
+        const r = 3 + (iy % 4) * 1.8, a = (ix / n) * TAU + iz * 0.4;
+        x = r * Math.cos(a); y = r * Math.sin(a); z = iz * step; break;
+      }
+      default: x = rng() * depth; y = rng() * depth; z = rng() * depth;   // random
     }
 
-    basePositions[i * 3] = x;
-    basePositions[i * 3 + 1] = y;
-    basePositions[i * 3 + 2] = z;
-
-    // jewel-tone palette: mostly gold/amber, with rose, violet, cyan and a few white stars
-    const pick = rng();
-    const hue = pick < 0.4 ? 0.08 + rng() * 0.05
-              : pick < 0.6 ? 0.93 + rng() * 0.05
-              : pick < 0.8 ? 0.72 + rng() * 0.06
-              : pick < 0.95 ? 0.50 + rng() * 0.05
-              : 0.12;
-    const sat = pick < 0.95 ? 0.75 + rng() * 0.25 : 0.15;
-    tint.setHSL(hue % 1, sat, 0.58);
-    col.array[i * 3] = tint.r;
-    col.array[i * 3 + 1] = tint.g;
-    col.array[i * 3 + 2] = tint.b;
-    siz.array[i] = 0.85 + rng() * 0.75;
+    basePositions[j * 3] = x;
+    basePositions[j * 3 + 1] = y;
+    basePositions[j * 3 + 2] = z;
+    pickR[j] = rng(); jitA[j] = rng(); jitB[j] = rng();
+    siz.array[j] = 0.85 + rng() * 0.75;
+    j++;
   }
-  col.needsUpdate = true;
+  activeCount = j;
+  gridCount = j;
+  applyDraw();
   siz.needsUpdate = true;
+  paintTarget(true);                                  // colours for the current theme (no fade on regeneration)
   updatePositions();
+}
+
+// colour of light i under the current theme
+function themeColor(pick, ja, jb, out) {
+  const bands = bandsFor(params.theme);
+  let tot = 0; for (const b of bands) tot += b.w;
+  let r = pick * tot, band = bands[bands.length - 1];
+  for (const b of bands) { if (r < b.w) { band = b; break; } r -= b.w; }
+  const h = (((band.h0 + (band.h1 - band.h0) * ja) % 1) + 1) % 1;
+  return out.setHSL(h, band.s0 + (band.s1 - band.s0) * jb, band.l);
+}
+function paintTarget(instant) {
+  const col = geometry.getAttribute('aCol');
+  if (!toCol || toCol.length !== MAX_LIGHTS * 3) { toCol = new Float32Array(MAX_LIGHTS * 3); fromCol = new Float32Array(MAX_LIGHTS * 3); }
+  fromCol.set(col.array);
+  for (let i = 0; i < activeCount; i++) {
+    themeColor(pickR[i], jitA[i], jitB[i], _c);
+    toCol[i * 3] = _c.r; toCol[i * 3 + 1] = _c.g; toCol[i * 3 + 2] = _c.b;
+  }
+  if (instant) { col.array.set(toCol.subarray(0, activeCount * 3)); col.needsUpdate = true; themeFade = 1; }
+  else themeFade = 0;
+}
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+function applyTheme() {                                // short cross-fade of the lights and the backdrop
+  paintTarget(false);
+  const t = bgTargets(params.theme);
+  bgFrom = { a: nebU.uA.value.clone(), b: nebU.uB.value.clone(), n: nebU.uN.value.clone(), m: nebU.uM.value.clone() };
+  bgTo = t;
+}
+function applyThemeInstant() {
+  const t = bgTargets(params.theme);
+  nebU.uA.value.copy(t.a); nebU.uB.value.copy(t.b); nebU.uN.value.copy(t.n); nebU.uM.value.copy(t.m);
+  bgColor.copy(t.a); bgFrom = bgTo = null; paintTarget(true);
+}
+function stepTheme(dt) {
+  if (themeFade >= 1) return;
+  themeFade = Math.min(1, themeFade + dt / 0.9);
+  const e = themeFade * themeFade * (3 - 2 * themeFade);
+  const col = geometry.getAttribute('aCol'), a = col.array;
+  for (let i = 0; i < activeCount * 3; i++) a[i] = fromCol[i] + (toCol[i] - fromCol[i]) * e;
+  col.needsUpdate = true;
+  if (bgFrom && bgTo) {
+    nebU.uA.value.copy(bgFrom.a).lerp(bgTo.a, e); nebU.uB.value.copy(bgFrom.b).lerp(bgTo.b, e);
+    nebU.uN.value.copy(bgFrom.n).lerp(bgTo.n, e); nebU.uM.value.copy(bgFrom.m).lerp(bgTo.m, e);
+    bgColor.copy(nebU.uA.value);
+  }
+}
+// live look uniforms (size / glow / brightness / twinkle) + bloom strength follows the glow setting
+function applyLook3() {
+  const u = lightMat.uniforms;
+  u.uSize.value = params.size; u.uGlow.value = params.glow; u.uBright.value = Math.min(1.25, params.bright); u.uTw.value = comfort && comfort.reducedMotion ? 0 : params.twinkle;
+  if (fx && fx.bloomPass) fx.bloomPass.strength = 0.12 + 0.4 * params.glow;
+}
+function driftText() {
+  const cap = 1.0 * [1, 1.6, 2.5][comfort.settings.speed] * (comfort.reducedMotion ? 0.5 : 1);
+  return params.driftSpeed.toFixed(1) + (params.driftSpeed > cap + 1e-6 ? ' (max ' + cap.toFixed(1) + ')' : '');
+}
+function setTheme(id) { params.theme = id; applyTheme(); saveSettings(); }
+function resetAll() {
+  const seed = params.seed; Object.assign(params, DEFAULTS); params.seed = seed;
+  speedIdx = DEFAULTS.speedIdx; stillMode = false; drift.set(0, 0, 0);
+  camera.far = params.depth * 1.6; camera.updateProjectionMatrix();
+  generatePattern(); applyThemeInstant(); applyLook3(); saveSettings();
 }
 
 // Wrap every light into a depth-sized cube centred on the camera -> feels infinite.
@@ -327,8 +469,9 @@ function applyDraw() { geometry.setDrawRange(0, Math.max(1, Math.floor(activeCou
 // ---------- light wand (grab with grip, trigger plants lights at its tip) ----------
 const _tip = new THREE.Vector3();
 function jewelColor(c, i) {
-  const hues = [0.09, 0.95, 0.74, 0.52, 0.12], h = hues[(Math.random() * hues.length) | 0];
-  const t = new THREE.Color().setHSL(h, 0.8, 0.6); c.array[i * 3] = t.r; c.array[i * 3 + 1] = t.g; c.array[i * 3 + 2] = t.b;
+  pickR[i] = Math.random(); jitA[i] = Math.random(); jitB[i] = Math.random();
+  themeColor(pickR[i], jitA[i], jitB[i], _c); c.array[i * 3] = _c.r; c.array[i * 3 + 1] = _c.g; c.array[i * 3 + 2] = _c.b;
+  if (toCol) { toCol[i * 3] = _c.r; toCol[i * 3 + 1] = _c.g; toCol[i * 3 + 2] = _c.b; fromCol[i * 3] = _c.r; fromCol[i * 3 + 1] = _c.g; fromCol[i * 3 + 2] = _c.b; }
 }
 function plantLight(pos) {
   if (activeCount >= MAX_LIGHTS) return;
@@ -361,21 +504,11 @@ function buildWand() {
 // ---------- menu handlers ----------
 function setPattern(p) {
   params.pattern = p;
-  generatePattern();
-}
-function bump(which, dir) {
-  if (which === 'spacing') {
-    params.spacing = clamp(params.spacing + dir * 2, 4, 30);
-  } else {
-    params.depth = clamp(params.depth + dir * 15, 50, 240);
-    camera.far = params.depth * 1.6;
-    camera.updateProjectionMatrix();
-  }
-  generatePattern();
+  generatePattern(); saveSettings();
 }
 function randomize() {
   params.seed = (Math.random() * 1e9) | 0;
-  generatePattern();
+  generatePattern(); saveSettings();
 }
 
 // ---------- ambient sound (soft evolving pad) ----------
@@ -415,7 +548,12 @@ function animate() {
   const xr = renderer.xr.isPresenting;
   if (!comfort.paused) worldTime += dt;
   const st = handleMovement(dt);
-  if (stillMode && !comfort.paused) drift.z += (comfort.reducedMotion ? 0.35 : 0.8) * dt;     // the lights drift gently past; you stay put
+  if (!comfort.paused && params.driftSpeed > 0) {                    // lights drift in the chosen direction; capped by the comfort speed setting
+    const cap = [1, 1.6, 2.5][comfort.settings.speed] * (comfort.reducedMotion ? 0.5 : 1), v = Math.min(params.driftSpeed, cap), d = DIRS[params.driftDir];
+    drift.x += d[0] * v * dt; drift.y += d[1] * v * dt; drift.z += d[2] * v * dt;
+  }
+  stepTheme(dt);
+  applyLook3();
   if (!xr) applyLook();
   updatePositions();
   platform.position.y = xr ? 0 : -1.6;
@@ -502,10 +640,7 @@ function onClick() {
 }
 
 function onKey(e) {
-  if (e.code === 'Digit1') setPattern('random');
-  if (e.code === 'Digit2') setPattern('grid');
-  if (e.code === 'Digit3') setPattern('diagonal');
-  if (e.code === 'Digit4') setPattern('jitter');
+  if (/^Digit[1-8]$/.test(e.code)) setPattern(PATTERNS[+e.code.slice(5) - 1][1]);
   if (e.code === 'KeyR') randomize();
   if (e.code === 'KeyF' && !renderer.xr.isPresenting) { camera.getWorldDirection(_p); camera.getWorldPosition(_tip); plantLight(_tip.addScaledVector(_p, 6)); }
   menu.refresh();

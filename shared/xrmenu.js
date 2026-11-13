@@ -47,6 +47,9 @@
 //   • On phones (pointer: coarse) the ☰ Menu button is 46 px tall with safe-area insets, the overlay uses 44 px targets,
 //     and the Enter VR button is hidden when the device has no VR (handheld-AR-only would strand the user).
 //   • Companion modules: shared/comfort.js (vignette, snap turn, fades, governor), shared/touch.js (thumb-stick, touch look).
+//   • Helpers (all optional, API additive): stepperRow(label, getText, dec, inc, {repeat:true}) — hold ± to repeat (ray+trigger, touch, mouse);
+//     tabRow(names, get, set) + inTab(rows, () => tab===i) — group long menus into pages; swatchGrid([[name,id,['#hex',…]],…], get, set, cols) — colour chips.
+//   • createXRMenu option compactCommon:true puts Passthrough/Sound/Recenter/Quit on a single row (use with tabbed menus).
 //   Rows: { section }, { label?, cells:[{ text, action?, active?, tone?:'accent'|'danger', w?, visible? }], visible? };
 //   text/label/active/visible may be functions. Anything with `action` is clickable.
 // ===============================================================================
@@ -77,8 +80,21 @@ export const sectionRow = (text) => ({ section: text });
 export const buttonRow = (text, action, tone) => ({ cells: [{ text, action, tone }] });
 export const toggleRow = (label, get, set) =>
   ({ label, cells: [{ text: () => (get() ? 'On' : 'Off'), action: () => set(!get()), active: get }] });
-export const stepperRow = (label, getText, dec, inc) =>
-  ({ label, cells: [{ text: '–', action: dec, tone: 'accent' }, { text: getText, w: 2 }, { text: '+', action: inc, tone: 'accent' }] });
+// opts.repeat: hold the – / + (trigger held on the ray, or finger held on touch/mouse) to repeat
+export const stepperRow = (label, getText, dec, inc, opts = {}) =>
+  ({ label, cells: [{ text: '–', action: dec, tone: 'accent', repeat: !!opts.repeat }, { text: getText, w: 2 }, { text: '+', action: inc, tone: 'accent', repeat: !!opts.repeat }] });
+// Tabs: tabRow(['Pattern','Motion'], () => tab, (i) => (tab = i)) + inTab(rows, () => tab === 0) for each tab's rows
+export const tabRow = (names, get, set) =>
+  ({ cells: names.map((n, i) => ({ text: n, action: () => set(i), active: () => get() === i, tone: 'tab' })) });
+export const inTab = (rows, pred) => flatten([rows]).map((r) => ({ ...r, visible: r.visible ? () => pred() && r.visible() : pred }));
+// Swatch grid: options [[name, id, ['#hex', '#hex', …]], …] → cells that show colour chips + the name
+export const swatchGrid = (options, get, set, cols = 4) => {
+  const rows = [];
+  for (let i = 0; i < options.length; i += cols) {
+    rows.push({ cells: options.slice(i, i + cols).map(([text, id, swatch]) => ({ text, swatch, action: () => set(id), active: () => get() === id })) });
+  }
+  return rows;
+};
 export const choiceGrid = (options, get, set, cols = 2) => {
   const rows = [];
   for (let i = 0; i < options.length; i += cols) {
@@ -185,12 +201,22 @@ function drawPanel(ctx, layout, title, hovered) {
         const bg = on ? 'rgba(255,214,150,0.96)'
                  : c.tone === 'danger' ? (hov ? 'rgba(225,80,80,0.98)' : 'rgba(170,48,56,0.92)')
                  : c.tone === 'accent' ? (hov ? 'rgba(132,160,255,0.98)' : 'rgba(86,112,214,0.92)')
+                 : c.tone === 'tab' ? (hov ? 'rgba(96,108,150,0.98)' : 'rgba(30,36,60,0.95)')
                  : (hov ? 'rgba(78,90,134,0.98)' : 'rgba(38,45,72,0.95)');
         ctx.fillStyle = bg; rr(ctx, p.x, p.y, p.w, p.h, 20); ctx.fill();
         ctx.lineWidth = hov ? 5 : 3;
         ctx.strokeStyle = hov ? 'rgba(255,255,255,0.98)' : on ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.18)';
         rr(ctx, p.x, p.y, p.w, p.h, 20); ctx.stroke();
         ctx.fillStyle = on ? '#1a1407' : '#f2f4ff';
+        if (c.swatch) {                                   // colour chips on top, name underneath
+          const n = c.swatch.length, bx = p.x + 14, bw = p.w - 28, by = p.y + 9, bh = p.h * 0.42;
+          ctx.save(); rr(ctx, bx, by, bw, bh, 9); ctx.clip();
+          c.swatch.forEach((col, k) => { ctx.fillStyle = col; ctx.fillRect(bx + (bw * k) / n, by, bw / n + 1, bh); });
+          ctx.restore();
+          ctx.font = '600 28px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = on ? '#1a1407' : '#f2f4ff';
+          ctx.fillText(text, p.x + p.w / 2, p.y + p.h * 0.76, p.w - 10);
+          continue;
+        }
       } else {
         ctx.fillStyle = '#ffe9c2';
       }
@@ -224,7 +250,7 @@ export function createXRMenu(opts) {
   let passthrough = false;
   let menuMode = 'float';
   try { menuMode = localStorage.getItem('oortia-menu-mode') === 'wrist' ? 'wrist' : 'float'; } catch (e) { /* ignore */ }
-  const panelW = () => (menuMode === 'float' ? PANEL_W * 2.3 : PANEL_W);
+  const panelW = () => (menuMode === 'float' ? PANEL_W * 2.0 : PANEL_W);
   const setMenuMode = (m) => { menuMode = m; try { localStorage.setItem('oortia-menu-mode', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; refresh(); };
   let placed = false;
   let quitArmed = false, quitTimer = 0;
@@ -267,7 +293,15 @@ export function createXRMenu(opts) {
     },
   };
 
-  const commonRows = [
+  const compact = !!opts.compactCommon;                // Passthrough / Sound / Recenter / Quit on ONE row (saves height in tall menus)
+  const commonRows = compact ? [{ cells: [
+    { text: () => 'Passthrough ' + (passthrough ? 'On' : 'Off'), active: () => passthrough, action: () => setPassthrough(!passthrough), visible: () => caps.ar && renderer.xr.isPresenting && inAR() },
+    { text: () => 'Sound ' + (opts.sound && opts.sound.get() ? 'On' : 'Off'), active: () => !!(opts.sound && opts.sound.get()), action: () => opts.sound.set(!opts.sound.get()), visible: () => !!opts.sound },
+    { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
+    quitCell ] },
+    { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
+      { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
+      { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') } ] }] : [
     { section: 'Options' },
     {
       cells: [
@@ -414,12 +448,16 @@ export function createXRMenu(opts) {
         const h = hitCell(c);
         if (h) {                       // this click belongs to the menu, not the world
           c.userData.swallow = true;
-          if (h.cell && h.cell.action) { h.cell.action(); haptic(c); refresh(); }
+          if (h.cell && h.cell.action) {
+            h.cell.action(); haptic(c); refresh();
+            if (h.cell.repeat) c.userData.hold = { cell: h.cell, next: performance.now() + 420 };
+          }
           return;
         }
       }
       for (const f of selStart) f(c, c.userData.hand, ctrls.indexOf(c));
     } else {
+      c.userData.hold = null;
       if (c.userData.swallow) { c.userData.swallow = false; return; }
       for (const f of selEnd) f(c, c.userData.hand, ctrls.indexOf(c));
     }
@@ -475,6 +513,8 @@ export function createXRMenu(opts) {
     let changed = false;
     for (const c of ctrls) {
       const h = hitCell(c);
+      const hold = c.userData.hold;                       // hold-to-repeat on ±steppers while the trigger stays down over the cell
+      if (hold && h && h.cell === hold.cell && performance.now() >= hold.next) { hold.cell.action(); hold.next = performance.now() + 110; haptic(c); refresh(); }
       const cell = h ? h.cell : null;
       c.userData.overMenu = !!h;
       if (cell !== c.userData.hover) { c.userData.hover = cell; changed = true; }
@@ -539,6 +579,11 @@ export function createXRMenu(opts) {
       .xm-cells .xm-accent{background:rgba(86,112,214,.92)}
       .xm-cells .xm-danger{background:rgba(170,48,56,.92)}
       .xm-cells span{background:none;border:0;color:#ffe9c2;cursor:default}
+      .xm-cells .xm-tab{background:rgba(30,36,60,.95);font-size:11px;padding:7px 2px}
+      .xm-cells .xm-tab.xm-on{background:rgba(255,214,150,.96);color:#1a1407}
+      .xm-cells .xm-sw{display:flex;flex-direction:column;gap:4px;align-items:stretch;padding:5px}
+      .xm-cells .xm-sw i{display:block;height:16px;border-radius:6px}
+      .xm-cells .xm-sw b{font:600 12px system-ui,sans-serif}
       .xm-foot{margin-top:10px;font-size:11.5px;color:rgba(238,241,255,.6)}
     `;
     document.head.appendChild(style);
@@ -577,7 +622,20 @@ export function createXRMenu(opts) {
         if (c.w) el.style.flex = String(c.w);
         if (c.active && val(c.active)) el.classList.add('xm-on');
         if (c.tone) el.classList.add('xm-' + c.tone);
-        if (c.action) el.addEventListener('click', () => { c.action(); refresh(); });
+        if (c.swatch) {
+          el.classList.add('xm-sw'); el.textContent = '';
+          const band = document.createElement('i'); band.style.background = 'linear-gradient(90deg,' + c.swatch.map((col, k) => col + ' ' + (k * 100 / c.swatch.length) + '%,' + col + ' ' + ((k + 1) * 100 / c.swatch.length) + '%').join(',') + ')';
+          const nm = document.createElement('b'); nm.textContent = String(val(c.text)); el.append(band, nm);
+        }
+        if (c.action && c.repeat) {                     // hold to repeat (mouse / touch)
+          el.addEventListener('pointerdown', (e) => {
+            e.preventDefault(); el._pd = performance.now(); c.action(); refresh();
+            let tm = setTimeout(() => { tm = setInterval(() => { c.action(); refresh(); }, 110); }, 420);
+            const stop = () => { clearTimeout(tm); clearInterval(tm); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop); };
+            addEventListener('pointerup', stop); addEventListener('pointercancel', stop);
+          });
+          el.addEventListener('click', () => { if (performance.now() - (el._pd || -1e9) > 600) { c.action(); refresh(); } });   // keyboard / synthetic click
+        } else if (c.action) el.addEventListener('click', () => { c.action(); refresh(); });
         wrap.appendChild(el);
       }
       row.appendChild(wrap); domPanel.appendChild(row);

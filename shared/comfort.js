@@ -211,15 +211,16 @@ export function createComfort({ renderer, scene, camera, dolly, menu = null, gro
 
   // ---------- menu rows (collapsible) ----------
   let open = false;
-  C.rows = ({ movement = true, teleport = !!groundHit } = {}) => {
-    const hide = () => !open;
-    const row = (label, names, get, set, cols) => ({ label, visible: () => open, cells: names.map((n, i) => ({ text: n, action: () => { set(i); save(); }, active: () => get() === i })) });
-    const rows = [{ cells: [{ text: () => 'Comfort ' + (open ? '▾' : '▸'), action: () => { open = !open; }, tone: 'accent' }] }];
+  // header:false → rows are always visible (use inside your own tab); header:true → one collapsible 'Comfort ▸' block
+  C.rows = ({ movement = true, teleport = !!groundHit, header = true } = {}) => {
+    const shown = () => !header || open;
+    const row = (label, names, get, set) => ({ label, visible: shown, cells: names.map((n, i) => ({ text: n, action: () => { set(i); save(); }, active: () => get() === i })) });
+    const rows = header ? [{ cells: [{ text: () => 'Comfort ' + (open ? '▾' : '▸'), action: () => { open = !open; }, tone: 'accent' }] }] : [];
     rows.push(row('Vignette', VIGNETTE_NAMES, () => settings.vignette, (i) => { settings.vignette = i; C.update(0, { pulse: 0.8 }); }));
     rows.push(row('Turning', ['Snap', 'Smooth'], () => (settings.snap ? 0 : 1), (i) => { settings.snap = i === 0; }));
     if (movement) rows.push(row('Speed', SPEED_NAMES, () => settings.speed, (i) => { settings.speed = i; }));
     if (movement && teleport) rows.push(row('Move by', ['Walk', 'Teleport'], () => (settings.teleport ? 1 : 0), (i) => { settings.teleport = i === 1; }));
-    rows.push({ label: 'Calm', visible: () => open, cells: [{ text: () => (C.paused ? 'Paused — tap to resume' : 'Pause world motion'), action: () => { C.paused = !C.paused; save(); }, active: () => C.paused, w: 2 }] });
+    rows.push({ label: 'Calm', visible: shown, cells: [{ text: () => (C.paused ? 'Paused — tap to resume' : 'Pause world motion'), action: () => { C.paused = !C.paused; save(); }, active: () => C.paused, w: 2 }] });
     return rows;
   };
 
