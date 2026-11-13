@@ -176,20 +176,34 @@ function grass(S, seed) {
   return fromCanvas(cv, hc, S, 0.78, 0.2, 2.6);
 }
 
+// Generated maps are cached per browser (IndexedDB) keyed by kind+size+seed+TEX_V, so repeat visits skip the slow per-pixel work.
+// Bump TEX_V whenever a generator in this file changes.
+const TEX_V = 3;
+function cacheDB() {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((res) => { try { const rq = indexedDB.open('oortia-procgen', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('tex'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); rq.onblocked = () => res(null); } catch (e) { res(null); } });
+}
+async function cacheGet(key) { const db = await cacheDB(); if (!db) return null; return new Promise((res) => { try { const rq = db.transaction('tex').objectStore('tex').get(key); rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null); } catch (e) { res(null); } }); }
+async function cachePut(key, val) { const db = await cacheDB(); if (!db) return; try { db.transaction('tex', 'readwrite').objectStore('tex').put(val, key); } catch (e) { /* cache is best-effort */ } }
 export async function makeMaterialMaps(kind, { size = 256, seed = 1, tick } = {}) {
+  const key = `${kind}|${size}|${seed}|v${TEX_V}`, hit = await cacheGet(key);
+  if (hit && hit.c && hit.c.length === size * size * 4) { if (tick) await tick(); return { map: dataTex(hit.c, size, true), normalMap: dataTex(hit.n, size, false), roughnessMap: dataTex(hit.r, size, false) }; }
   const N = makeNoise(seed * 7 + 3);
   if (tick) await tick();
   const [k, v] = kind.split(':');
+  let out;
   switch (k) {
-    case 'bark': return bark(size, N, v || 'oak');
-    case 'soil': return soil(size, N);
-    case 'rock': return rock(size, N);
-    case 'sand': return sand(size, N, v === 'wet');
-    case 'moss': return moss(size, N);
-    case 'litter': return litter(size, seed);
-    case 'grass': return grass(size, seed);
+    case 'bark': out = bark(size, N, v || 'oak'); break;
+    case 'soil': out = soil(size, N); break;
+    case 'rock': out = rock(size, N); break;
+    case 'sand': out = sand(size, N, v === 'wet'); break;
+    case 'moss': out = moss(size, N); break;
+    case 'litter': out = litter(size, seed); break;
+    case 'grass': out = grass(size, seed); break;
     default: throw new Error('procgen/textures: unknown kind ' + kind);
   }
+  try { const c = out.map.image.data, n = out.normalMap.image.data, r = out.roughnessMap.image.data; if (c && c.length === size * size * 4) cachePut(key, { c, n, r }); } catch (e) { /* ignore */ }
+  return out;
 }
 export function standardMaterial(maps, { repeat = [1, 1], normalScale = 1, color = 0xffffff, roughness = 1, metalness = 0, ...rest } = {}) {
   for (const t of [maps.map, maps.normalMap, maps.roughnessMap]) if (t) t.repeat.set(repeat[0], repeat[1]);

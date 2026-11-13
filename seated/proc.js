@@ -21,7 +21,7 @@ export function createLoader(total = 20, what = 'Building the scene') {
   label.style.cssText = 'margin-top:9px;font-size:13px;opacity:.85'; bar.appendChild(fill); if (card) card.append(bar, label);
   let steps = 0;
   return {
-    async tick(l) { steps++; fill.style.width = Math.min(96, steps / total * 100) + '%'; label.textContent = what + '… ' + (l || ''); await yieldNow(); },
+    async tick(l) { (window.__TT = window.__TT || []).push([l || '', Math.round(performance.now())]); steps++; fill.style.width = Math.min(96, steps / total * 100) + '%'; label.textContent = what + '… ' + (l || ''); await yieldNow(); },
     done(W) { fill.style.width = '100%'; bar.remove(); label.remove(); if (goBtn) goBtn.style.display = ''; W.loading = false; },
   };
 }

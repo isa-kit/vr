@@ -4,15 +4,15 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114q';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114q';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114w';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114w';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114q';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114q';
-import { createSplatMaterial, createGrass, createFlowers } from '../procgen/terrain.js?v=20261114q';
-import { createRocks } from '../procgen/rocks.js?v=20261114q';
-import { createSky } from '../procgen/sky.js?v=20261114q';
-import { createWater } from '../procgen/water.js?v=20261114q';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114w';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114w';
+import { createSplatMaterial, createGrass, createFlowers } from '../procgen/terrain.js?v=20261114w';
+import { createRocks } from '../procgen/rocks.js?v=20261114w';
+import { createSky } from '../procgen/sky.js?v=20261114w';
+import { createWater } from '../procgen/water.js?v=20261114w';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);
@@ -109,15 +109,46 @@ const slab = window.__slab; delete window.__slab;
 // ---------------- islands, sea-stacks, far headlands (faceted PBR rock, mossy tops) ----------------
 await tick('islands');
 const variants = [{ seed: 21, detail: 4, flatten: 0.5, facets: 15, rough: 0.55, moss: 1.0, texScale: 8 }, { seed: 22, detail: 4, flatten: 1.0, facets: 9, moss: 0.35, texScale: 3 }, { seed: 23, detail: 4, flatten: 0.7, facets: 14, rough: 0.55, moss: 0.9, texScale: 9 }, { seed: 24, detail: 3, flatten: 0.8, facets: 6, texScale: 0.5, moss: 0.4 }];
-const BIG = [   // [x, z, scale, variant]
-  [-70, -185, 8, 1], [95, -215, 9, 1], [-170, -255, 11, 1], [205, -290, 46, 0], [-250, -370, 62, 2], [-175, -470, 44, 0], [130, -560, 90, 2],
-  [560, -950, 240, 0], [-700, -1150, 290, 2], [-80, -1500, 380, 0],
+// Islands and sea stacks are real landforms: a polar mesh whose radius wobbles, with a steep stratified cliff face that rises straight out of the water
+// (base 8 m below the surface, so the sea meets it with foam) and a grassy top. [x, z, radius, height, profile start (small = spire, large = flat-topped island)]
+const ISL = [
+  [-70, -185, 8, 30, 0.38], [95, -215, 9, 36, 0.4], [-170, -255, 11, 42, 0.36],
+  [205, -290, 46, 30, 0.8], [-250, -370, 62, 38, 0.78], [-175, -470, 44, 32, 0.8], [130, -560, 90, 44, 0.76],
+  [560, -950, 240, 60, 0.74], [-700, -1150, 290, 75, 0.74], [-80, -1500, 380, 92, 0.74],
 ];
+const islWob = (i, th) => 1 + 0.3 * (fbm(Math.cos(th) * 1.4 + i * 7.3, Math.sin(th) * 1.4 + i * 3.1) - 0.5) * 2;
+function islY(i, e, x, z) {
+  const [, , R, H, st] = ISL[i];
+  if (e >= 1) return -8 * smoothstep(1.0, 1.12, e);
+  let f = Math.pow(1 - smoothstep(st, 1.0, e), 0.62);
+  const stair = Math.floor(f * 7) / 7 + smoothstep(0, 1, f * 7 - Math.floor(f * 7)) / 7; f = f * 0.5 + stair * 0.5;
+  const apex = 1 + (st > 0.6 ? 0.42 : 0.1) * Math.pow(1 - Math.min(e / st, 1), 1.4); return H * f * apex * (0.86 + 0.26 * fbm(x * 0.9 / R * 4 + i, z * 0.9 / R * 4)) + (f > 0.98 ? 0.6 * fbm(x * 0.12, z * 0.12) : 0);
+}
+const islSurf = (i, x, z) => { const [cx, cz, R] = ISL[i], dx = x - cx, dz = z - cz, th = Math.atan2(dz, dx); return islY(i, Math.hypot(dx, dz) / (R * islWob(i, th)), x, z); };
+const rockDepth = (x, z) => { let d = 99; for (let i = 0; i < ISL.length; i++) { const [cx, cz, R] = ISL[i]; const dx = x - cx, dz = z - cz; if (Math.abs(dx) > R * 1.7 || Math.abs(dz) > R * 1.7) continue; const e = Math.hypot(dx, dz) / (R * islWob(i, Math.atan2(dz, dx))); d = Math.min(d, e < 1 ? 0 : (e - 1) * R * 0.5); } for (const [rx, rz, s] of FOOT) { if (Math.abs(x - rx) > 14) continue; d = Math.min(d, (Math.hypot(x - rx, z - rz) - s * 1.35) * 0.4); } return Math.max(0, d); };
+function buildIsland(i) {
+  const [cx, cz, R] = ISL[i], K = 112, ES = [0, 0.22, 0.4, 0.55, 0.66, 0.74, 0.8, 0.85, 0.89, 0.92, 0.945, 0.965, 0.98, 0.992, 1.0, 1.02, 1.045, 1.075, 1.11, 1.16], NE = ES.length;
+  const pos = [], mix = [], tint = [], uvs = [], idx = [];
+  const strat = [[1.05, 0.98, 0.9], [0.88, 0.88, 0.9], [1.1, 1.0, 0.88], [0.94, 0.92, 0.86], [1.0, 0.9, 0.82]];
+  for (let r = 0; r < NE; r++) for (let k = 0; k < K; k++) {
+    const th = (k / K) * 6.2832, w = islWob(i, th), x = cx + Math.cos(th) * ES[r] * R * w, z = cz + Math.sin(th) * ES[r] * R * w, y = islY(i, ES[r], x, z);
+    pos.push(x, y, z); uvs.push(x * 0.2, z * 0.2); const band = Math.floor(Math.max(0, y) / 2.6 + vnoise(x * 0.05, z * 0.05) * 1.5), st = strat[Math.floor(hash(band, 3.3 + i) * 5) % 5], v = 0.85 + 0.3 * vnoise(x * 0.3, y * 0.9);
+    tint.push(st[0] * v, st[1] * v, st[2] * v); mix.push(0, 0, 0, 1);
+  }
+  for (let r = 0; r < NE - 1; r++) for (let k = 0; k < K; k++) { const a = r * K + k, b = r * K + (k + 1) % K, c = (r + 1) * K + k, d = (r + 1) * K + (k + 1) % K; idx.push(a, c, b, b, c, d); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); geo.setIndex(idx); geo.computeVertexNormals();
+  if (geo.attributes.normal.getY(0) < 0) { for (let q = 0; q < idx.length; q += 3) { const t = idx[q + 1]; idx[q + 1] = idx[q + 2]; idx[q + 2] = t; } geo.setIndex(idx); geo.computeVertexNormals(); }
+  const nrm = geo.attributes.normal; for (let q = 0; q < nrm.count; q++) { const y = pos[q * 3 + 1], gr = smoothstep(0.78, 0.93, nrm.getY(q)) * smoothstep(0.3, 1.5, y); mix[q * 4 + 1] = gr; mix[q * 4 + 2] = gr * 0.12; mix[q * 4 + 3] = 1 - gr; if (gr > 0.5) { tint[q * 3] *= 0.9; tint[q * 3 + 1] *= 1.0; tint[q * 3 + 2] *= 0.85; } if (y < 0.6) { const dk = 0.55 + 0.45 * smoothstep(-3, 0.6, y); tint[q * 3] *= dk; tint[q * 3 + 1] *= dk; tint[q * 3 + 2] *= dk; } }
+  geo.setAttribute('aMix', new THREE.Float32BufferAttribute(mix, 4)); geo.setAttribute('color', new THREE.Float32BufferAttribute(tint, 3)); geo.computeBoundingSphere();
+  return geo;
+}
+{
+  const { material } = createSplatMaterial({ maps, tile: [0.3, 0.26, 0.28, 0.12], normalFrom: maps.grass }); material.side = THREE.DoubleSide;
+  for (let i = 0; i < ISL.length; i++) { const m = new THREE.Mesh(buildIsland(i), material); m.frustumCulled = false; m.receiveShadow = true; scene.add(m); }
+}
 const FOOT = []; for (let i = 0; i < 150; i++) { const x = (R() - 0.5) * 2 * (40 + Math.pow(R(), 2) * 320), z = baseZ(x) - rr(0, 7); FOOT.push([x, z, rr(0.9, 3.4)]); }
-const rockDepth = (x, z) => { let d = 99; for (const [rx, rz, s, v] of BIG) d = Math.min(d, (Math.hypot(x - rx, z - rz) - s * (v === 1 ? 1.4 : 1.15)) * 0.4); for (const [rx, rz, s] of FOOT) { if (Math.abs(x - rx) > 14) continue; d = Math.min(d, (Math.hypot(x - rx, z - rz) - s * 1.35) * 0.4); } return Math.max(0, d); };
-scene.add(createRocks({ items: BIG.map(([x, z, s, v]) => ({ x, y: v === 1 ? -s * 0.45 : -1.5, z, s, sy: v === 1 ? 2.8 : 1, yaw: R() * 6.28, variant: v })), variants, material: rockMat }));
-// rocks at the foot of the cliff and around the seats (sunk so the waterline cuts them; foam comes from rockDepth)
-scene.add(createRocks({ items: FOOT.map(([x, z, s]) => ({ x, y: -s * 0.32, z, s, yaw: R() * 6.28, variant: 3 })), variants, material: rockMat }));
+// rocks at the foot of the cliff and around the seats: sunk to their widest girth so the waterline cuts them (no hovering belly)
+scene.add(createRocks({ items: FOOT.map(([x, z, s]) => ({ x, y: -s * 0.85, z, s, yaw: R() * 6.28, variant: 3 })), variants, material: rockMat }));
 // lighthouse on the far-left headland
 let lamp;
 {
@@ -127,14 +158,14 @@ let lamp;
   const gal = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.0, 0.9, 14), new THREE.MeshStandardMaterial({ color: 0x2a2f36 })); gal.position.y = 22.4; g.add(gal);
   lamp = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 2.2, 12), new THREE.MeshBasicMaterial({ color: 0xffe8a8, fog: false })); lamp.position.y = 24; g.add(lamp);
   const roof = new THREE.Mesh(new THREE.ConeGeometry(1.7, 2.2, 12), red); roof.position.y = 26.2; g.add(roof);
-  g.position.set(-175 + 6, 44 * 0.5 * 0.92 - 1.5, -470 + 4); scene.add(g);
+  g.position.set(-175 + 6, islSurf(5, -175 + 6, -470 + 4) - 0.3, -470 + 4); scene.add(g);
 }
 
 // ---------------- ocean ----------------
 await tick('ocean');
 const WAVES = [{ dir: [0.12, 1], steep: 0.08, len: 120 }, { dir: [-0.35, 1], steep: 0.06, len: 64 }, { dir: [0.55, 0.85], steep: 0.045, len: 29 }, { dir: [-0.7, 0.7], steep: 0.035, len: 13 }];
 const coastDepth = (x, z) => Math.max(0, (baseZ(x) - z) * 0.45);
-const nearSea = createWater({ level: 0, bounds: { cx: 0, cz: -230, w: 1600, d: 1300 }, segments: DETAIL.water, depthFn: (x, z) => Math.min(coastDepth(x, z), rockDepth(x, z) + 0.02), maxDepth: 8, depthRes: 512, waves: WAVES, calm: 0.7, foam: 0.9, colors: { shallow: 0x3a9aa4, deep: 0x0a3a52 } });
+const nearSea = createWater({ level: 0, bounds: { cx: 0, cz: -230, w: 1600, d: 1300 }, segments: DETAIL.water, depthFn: (x, z) => Math.min(coastDepth(x, z), rockDepth(x, z) + 0.02), maxDepth: 8, depthRes: 384, waves: WAVES, calm: 0.7, foam: 0.9, colors: { shallow: 0x3a9aa4, deep: 0x0a3a52 } });
 const farSea = createWater({ level: -0.06, bounds: { cx: 0, cz: -2600, w: 6500, d: 4400 }, segments: 96, waves: WAVES, calm: 0.7, foam: 0.4, colors: { shallow: 0x3a9aa4, deep: 0x0a3a52 } });
 scene.add(farSea.mesh, nearSea.mesh);
 
