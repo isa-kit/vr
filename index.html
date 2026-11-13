@@ -24,6 +24,9 @@
   .list { width: 100%; max-width: 880px; display: flex; flex-direction: column; gap: 22px; }
   .cols, .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .cols { padding: 0 4px; font-size: 11.5px; font-weight: 650; letter-spacing: .8px; text-transform: uppercase; color: rgba(238,241,255,.45); }
+  .sec { margin: 12px 4px -8px; }
+  .sec-title { margin: 0; font-size: 19px; font-weight: 650; color: #ffd27f; letter-spacing: .2px; }
+  .sec-line { margin: 2px 0 0; font-size: 13.5px; color: rgba(238,241,255,.55); }
   .row-title { grid-column: 1 / -1; margin: 0 0 -6px; font-size: 13px; font-weight: 600; color: rgba(238,241,255,.55); display: none; }
   .card {
     position: relative; display: flex; gap: 14px; align-items: center; text-decoration: none; color: inherit;
@@ -84,6 +87,7 @@
       forest:        'linear-gradient(#cfe0c0, #6f9a56 45%, #1f3a22)',
       cliffs:        'linear-gradient(#f6c98a, #f0e4cc 38%, #3f86a8 40%, #1d4f6e)',
       beach:         'linear-gradient(#a9dcf2, #e8f6fb 42%, #5fb5d0 44%, #ecd9a3 70%)',
+      dance:         'radial-gradient(90px 70px at 50% 45%, #ff6fb544, transparent), linear-gradient(#1b1030, #3a1a4f 60%, #120a20)',
     };
     const grid = document.getElementById('grid');
     try {
@@ -114,10 +118,19 @@
           </div>
         </${tag}>`;
       };
-      grid.innerHTML = scenes.map(s => `<section class="row">
-        <h3 class="row-title">${s.name}</h3>
-        ${card(s, 'js')}${card(s, 'godot')}
-      </section>`).join('');
+      const SECTIONS = [
+        ['experience', 'Experiences', 'Sit back and watch. Calm places to be in, no goals.'],
+        ['game', 'Games', 'Do something. Build, move, play.'],
+      ];
+      grid.innerHTML = SECTIONS.map(([id, title, line]) => {
+        const rows = scenes.filter(s => (s.category || 'experience') === id);
+        if (!rows.length) return '';
+        return `<div class="sec"><h2 class="sec-title">${title}</h2><p class="sec-line">${line}</p></div>` +
+          rows.map(s => `<section class="row">
+            <h3 class="row-title">${s.name}</h3>
+            ${card(s, 'js')}${card(s, 'godot')}
+          </section>`).join('');
+      }).join('');
     } catch (e) {
       grid.innerHTML = '<p style="color:#ff9f6b">Could not load worlds. Check scenes/index.json.</p>';
     }

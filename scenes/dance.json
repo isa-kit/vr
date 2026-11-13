@@ -1,0 +1,19 @@
+{
+  "id": "dance",
+  "name": "Dance — Follow the Moves",
+  "kind": "game",
+  "category": "game",
+  "status": "soon",
+  "path": "dance",
+  "blurb": "Follow a dancing figure's moves with two controllers, scored on shape and timing.",
+  "locomotion": {
+    "type": "standing"
+  },
+  "godot": {
+    "path": "godot/dance",
+    "status": "soon"
+  },
+  "controls": {
+    "panel": []
+  }
+}

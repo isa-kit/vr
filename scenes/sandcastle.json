@@ -41,5 +41,6 @@
   "godot": {
     "path": "godot/sandcastle",
     "status": "live"
-  }
+  },
+  "category": "game"
 }
