@@ -3,11 +3,12 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261113g';
-import { createToolkit } from '../shared/xrtools.js?v=20261113g';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113g';
-import { createTouch } from '../shared/touch.js?v=20261113g';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113g';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261113h';
+import { createToolkit } from '../shared/xrtools.js?v=20261113h';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113h';
+import { createTouch } from '../shared/touch.js?v=20261113h';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113h';
 
 let fx, nebula;   // post-processing + nebula backdrop
 
@@ -73,7 +74,7 @@ const SPEEDS = [0.25, 0.5, 1, 2, 3];
 
 // user-driven params (the menu writes these live; they persist in localStorage)
 const DEFAULTS = { pattern: 'random', spacing: 8, depth: 120, density: 1, size: 1, glow: 0.5, bright: 1, twinkle: 0.3,
-                   driftSpeed: 0, driftDir: 'toward', theme: 'jewel', hue: 200, still: false, speedIdx: 2 };
+                   driftSpeed: 0, driftDir: 'toward', theme: 'jewel', hue: 200, still: false, speedIdx: 2, quality: 'auto' };
 const params = { ...DEFAULTS, seed: 20261111 };
 const STORE = 'oortia-infinity-v1';
 function loadSettings() {
@@ -98,6 +99,9 @@ const drift = new THREE.Vector3();
 let basePositions;                 // Float32Array, length MAX_LIGHTS*3
 const pickR = new Float32Array(MAX_LIGHTS), jitA = new Float32Array(MAX_LIGHTS), jitB = new Float32Array(MAX_LIGHTS);   // per-light random seeds → colour under any theme
 let fromCol = null, toCol = null, themeFade = 1, bgFrom = null, bgTo = null;
+let bulbGlass, bulbBase, mirrorPoints, floorMesh, floorRings = [], govLevel = 0, tier = null;
+const TIERS = { high: { name: 'High', R: 16, max: 500, maxPx: 150, pr: 2, idx: 0 }, medium: { name: 'Medium', R: 10, max: 220, maxPx: 120, pr: 1.5, idx: 1 }, light: { name: 'Light', R: 7, max: 120, maxPx: 90, pr: 1, idx: 2 } };
+const TIER_ORDER = ['high', 'medium', 'light'];
 let activeCount = 0;
 const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
@@ -142,7 +146,7 @@ function init() {
     onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.004)); } });
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('Drag to look · thumb-stick flies · ▲▼ rise & sink · ☰ Menu for options', h.textContent); }
   comfort = createComfort({ renderer, scene, camera, dolly,
-    onQuality: (q) => { qualityScale = [1, 0.75, 0.55, 0.4][q]; applyDraw(); } });
+    onQuality: (q) => { govLevel = q; qualityScale = [1, 0.8, 0.6, 0.45][q]; applyDraw(); applyTier(); } });
   // crisp points: tight core, small halo → far less bloom needed
   fx = beautify(renderer, scene, camera, { exposure: 1.0, bloom: 0.3, radius: 0.18, threshold: 0.88 });
   buildNebula();
@@ -184,6 +188,8 @@ function init() {
         stepperRow('Size', () => '×' + params.size.toFixed(1), step('size', -0.1, 0.5, 2, 1), step('size', 0.1, 0.5, 2, 1), rep10),
         stepperRow('Glow', () => Math.round(params.glow * 100) + '%', step('glow', -0.1, 0, 1, 1), step('glow', 0.1, 0, 1, 1), rep10),
         stepperRow('Bright', () => Math.round(params.bright * 100) + '%', step('bright', -0.05, 0.5, 1.25, 2), step('bright', 0.05, 0.5, 1.25, 2), rep10),
+        { label: 'Quality', cells: [['Auto', 'auto'], ['High', 'high'], ['Med', 'medium'], ['Light', 'light']].map(([t, id]) => ({ text: t, active: () => params.quality === id, action: () => { params.quality = id; applyTier(); saveSettings(); } })) },
+        { cells: [{ text: () => 'Now: ' + tierText() }] },
       ], () => tab === 2),
       // ---- Theme
       ...inTab([
@@ -208,9 +214,10 @@ function init() {
   generatePattern();
   applyThemeInstant();
   applyLook3();
+  applyTier();
 
-  renderer.xr.addEventListener('sessionstart', startAudio);
-  renderer.xr.addEventListener('sessionend', () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; });   // never carry VR rig yaw into flat mode (it would stack on the camera yaw)
+  renderer.xr.addEventListener('sessionstart', () => { startAudio(); applyTier(); });
+  renderer.xr.addEventListener('sessionend', () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; applyTier(); });   // never carry VR rig yaw into flat mode (it would stack on the camera yaw)
 
   addEventListener('resize', onResize);
   addEventListener('keydown', (e) => { keys[e.code] = true; onKey(e); });
@@ -245,22 +252,37 @@ function buildLights() {
 
   // Procedural point: a hard-edged bright core + a small soft halo. Point size is
   // angular (world size / distance) with a pixel floor so far lights stay crisp dots.
-  lightMat = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
-    uniforms: {
-      uHalfH: { value: 500 },    // half the eye-buffer height in px
-      uMin: { value: 3.0 },
-      uMax: { value: 150.0 },
-      uHalf: { value: params.depth * 0.5 },
-      uTime: { value: 0 },
-      uSize: { value: 1 }, uGlow: { value: 0.5 }, uBright: { value: 1 }, uTw: { value: 0.3 },
-    },
-    vertexShader: `
+  const U = {
+    uHalfH: { value: 500 },    // half the eye-buffer height in px
+    uMin: { value: 3.0 }, uMax: { value: 150.0 }, uHalf: { value: params.depth * 0.5 }, uTime: { value: 0 },
+    uSize: { value: 1 }, uGlow: { value: 0.5 }, uBright: { value: 1 }, uTw: { value: 0.3 },
+    uBulbR: { value: 16 }, uHaze: { value: 1 }, uFloorY: { value: -1.6 }, uFloorR: { value: 6 }, uFloorC: { value: new THREE.Vector2() },
+  };
+  const vs = `
       attribute vec3 aCol; attribute float aSize;
-      uniform float uHalfH, uMin, uMax, uHalf, uTime, uSize, uGlow, uBright, uTw;
-      varying vec3 vCol; varying float vA; varying float vS;
+      uniform float uHalfH, uMin, uMax, uHalf, uTime, uSize, uGlow, uBright, uTw, uBulbR, uHaze, uFloorY, uFloorR;
+      uniform vec2 uFloorC;
+      varying vec3 vCol; varying float vA; varying float vS; varying float vNear;
       void main(){
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec3 P = position;
+        float vis = 1.0;
+        #ifdef MIRROR
+          // planar reflection: mirror the light about the floor, and show it only where the reflected ray actually crosses the floor disc
+          vis = 0.0;
+          if (P.y > uFloorY + 0.05) {
+            float h = P.y - uFloorY;
+            P.y = 2.0 * uFloorY - P.y;
+            float den = P.y - cameraPosition.y;
+            if (abs(den) > 1e-4) {
+              float t = (uFloorY - cameraPosition.y) / den;
+              if (t > 0.0 && t < 1.0) {
+                vec3 X = cameraPosition + t * (P - cameraPosition);
+                vis = (1.0 - smoothstep(uFloorR * 0.5, uFloorR, length(X.xz - uFloorC))) * 0.5 * (1.0 - smoothstep(8.0, 70.0, h));
+              }
+            }
+          }
+        #endif
+        vec4 mv = modelViewMatrix * vec4(P, 1.0);
         float dist = max(-mv.z, 0.01);
         float px = aSize * uSize * projectionMatrix[1][1] * uHalfH / dist;
         float s = clamp(px, uMin, uMax);
@@ -269,13 +291,19 @@ function buildLights() {
         float fade = 1.0 - smoothstep(0.7, 1.0, edge);
         // slow, shallow shimmer — rate ≤ ~0.1 Hz and ≤ 12 % depth at the maximum setting, so it can never strobe
         float tw = 1.0 - (0.02 + 0.10 * uTw) * (0.5 + 0.5 * sin(uTime * (0.25 + 0.35 * uTw) + aSize * 41.0 + position.x * 0.31));
+        // atmospheric haze: distant lights lose intensity so depth reads
+        float haze = mix(1.0, 0.3 + 0.7 * exp(-dist * 0.016), clamp(uHaze, 0.0, 1.0));
         vCol = aCol; vS = s;
-        vA = fade * tw * clamp(px / uMin, 0.4, 1.0);
+        vNear = 1.0 - smoothstep(uBulbR * 0.65, uBulbR, dist);       // near lights are real 3D bulbs: the sprite keeps only its halo
+        #ifdef MIRROR
+          vNear = 0.0;
+        #endif
+        vA = fade * tw * haze * vis * clamp(px / uMin, 0.4, 1.0);
         gl_PointSize = s;
         gl_Position = projectionMatrix * mv;
-      }`,
-    fragmentShader: `
-      varying vec3 vCol; varying float vA; varying float vS;
+      }`;
+  const fs = `
+      varying vec3 vCol; varying float vA; varying float vS; varying float vNear;
       uniform float uGlow, uBright;
       void main(){
         vec2 p = gl_PointCoord * 2.0 - 1.0;
@@ -283,17 +311,26 @@ function buildLights() {
         float rpx = 0.5 * vS;                       // radius in px
         float coreR = clamp(max(0.17, 1.3 / rpx), 0.0, 1.0);
         float aa = 1.0 / rpx;
-        float core = 1.0 - smoothstep(coreR - aa, coreR + aa, d);
+        float core = (1.0 - smoothstep(coreR - aa, coreR + aa, d)) * (1.0 - 0.92 * vNear);
         float halo = exp(-d * d * 10.0) * (1.0 - smoothstep(0.8, 1.0, d));
-        vec3 c = (mix(vCol, vec3(1.0), 0.5) * core * 1.45 + vCol * halo * 0.6 * uGlow) * uBright;   // brightness capped at 125 %
+        #ifdef MIRROR
+          core *= 0.55; halo *= 1.4;                // a polished (not mirror-perfect) floor: softer, dimmer image
+        #endif
+        vec3 c = (mix(vCol, vec3(1.0), 0.5) * core * 1.9 + vCol * halo * 0.6 * uGlow) * uBright;
         gl_FragColor = vec4(c, vA);
         ${SHADER_TAIL}
-      }`,
-  });
-
+      }`;
+  const mk = (defs) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, uniforms: U, vertexShader: vs, fragmentShader: fs, defines: defs });
+  lightMat = mk({});
+  const mirrorMat = mk({ MIRROR: 1 });
+  mirrorPoints = new THREE.Points(geometry, mirrorMat);
+  mirrorPoints.frustumCulled = false; mirrorPoints.renderOrder = 0;
+  scene.add(mirrorPoints);
   points = new THREE.Points(geometry, lightMat);
   points.frustumCulled = false;   // positions are rewritten around the camera each frame
+  points.renderOrder = 1;
   scene.add(points);
+  buildBulbs();
 }
 
 function eyeBufferHalfHeight() {
@@ -390,13 +427,16 @@ function paintTarget(instant) {
   else themeFade = 0;
 }
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
+function tintFloor() { const h = bgHueFor(params.theme); for (const m of floorRings) m.color.setHSL(h, 0.55, 0.62); }
 function applyTheme() {                                // short cross-fade of the lights and the backdrop
+  tintFloor();
   paintTarget(false);
   const t = bgTargets(params.theme);
   bgFrom = { a: nebU.uA.value.clone(), b: nebU.uB.value.clone(), n: nebU.uN.value.clone(), m: nebU.uM.value.clone() };
   bgTo = t;
 }
 function applyThemeInstant() {
+  tintFloor();
   const t = bgTargets(params.theme);
   nebU.uA.value.copy(t.a); nebU.uB.value.copy(t.b); nebU.uN.value.copy(t.n); nebU.uM.value.copy(t.m);
   bgColor.copy(t.a); bgFrom = bgTo = null; paintTarget(true);
@@ -429,7 +469,7 @@ function resetAll() {
   const seed = params.seed; Object.assign(params, DEFAULTS); params.seed = seed;
   speedIdx = DEFAULTS.speedIdx; stillMode = false; drift.set(0, 0, 0);
   camera.far = params.depth * 1.6; camera.updateProjectionMatrix();
-  generatePattern(); applyThemeInstant(); applyLook3(); saveSettings();
+  generatePattern(); applyThemeInstant(); applyLook3(); applyTier(); saveSettings();
 }
 
 // Wrap every light into a depth-sized cube centred on the camera -> feels infinite.
@@ -447,21 +487,128 @@ function updatePositions() {
   pos.needsUpdate = true;
 }
 
+// ---------- real bulbs: faceted glass, white-hot core, filament rings, metal cap — built from numbers, instanced, only for nearby lights ----------
+const MAXB = 500;
+let bulbIcol, bulbIfade;
+function buildBulbs() {
+  const part = (geo, v) => { let g = geo.index ? geo.toNonIndexed() : geo.clone(); g.deleteAttribute('uv'); g.setAttribute('aPart', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(v), 1)); return g; };
+  const glass = part(new THREE.IcosahedronGeometry(0.5, 1), 0);
+  const core = part(new THREE.SphereGeometry(0.17, 12, 9), 1);
+  const f1 = part(new THREE.TorusGeometry(0.13, 0.014, 5, 20), 2);
+  const f2 = part(new THREE.TorusGeometry(0.13, 0.014, 5, 20).rotateX(Math.PI / 2), 2);
+  const f3 = part(new THREE.TorusGeometry(0.13, 0.014, 5, 20).rotateY(Math.PI / 2), 2);
+  const gGeo = mergeGeometries([glass, core, f1, f2, f3]);
+  bulbIcol = new THREE.InstancedBufferAttribute(new Float32Array(MAXB * 3), 3); bulbIfade = new THREE.InstancedBufferAttribute(new Float32Array(MAXB), 1);
+  bulbIcol.setUsage(THREE.DynamicDrawUsage); bulbIfade.setUsage(THREE.DynamicDrawUsage);
+  gGeo.setAttribute('iCol', bulbIcol); gGeo.setAttribute('iFade', bulbIfade);
+  const common = `
+      attribute vec3 iCol; attribute float iFade;
+      varying vec3 vW, vCol, vC; varying float vPart; varying vec3 vN;
+      `;
+  const vs = (hasPart) => common + (hasPart ? 'attribute float aPart;' : '') + `
+      void main(){
+        mat4 M = modelMatrix * instanceMatrix;
+        vec3 C = (M * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vec3 wp = (M * vec4(position, 1.0)).xyz;
+        wp = C + (wp - C) * iFade;                      // bulbs grow in from nothing at the edge of the range — no pop
+        vW = wp; vCol = iCol; vC = C; vN = normalize(mat3(M) * normal);
+        vPart = ${hasPart ? 'aPart' : '3.0'};
+        gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+      }`;
+  const glassMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uBright: U_ref().uBright },
+    vertexShader: vs(true),
+    fragmentShader: `varying vec3 vW, vCol, vC; varying float vPart; varying vec3 vN; uniform float uBright;
+      void main(){
+        vec3 fn = normalize(cross(dFdx(vW), dFdy(vW)));           // flat facet normal → each facet catches light on its own
+        vec3 V = normalize(cameraPosition - vW);
+        float f = 1.0 - abs(dot(fn, V));
+        vec3 col;
+        if (vPart < 0.5) col = vCol * (0.10 + 1.6 * pow(f, 2.2)) + vCol * 0.10;       // glass: bright rim, faceted
+        else if (vPart < 1.5) col = mix(vCol, vec3(1.0), 0.8) * 5.0;                    // hot core (HDR → real bloom)
+        else col = mix(vCol, vec3(1.0), 0.55) * 3.2;                                    // filament rings
+        gl_FragColor = vec4(col * uBright, 1.0);
+        ${SHADER_TAIL}
+      }`,
+  });
+  bulbGlass = new THREE.InstancedMesh(gGeo, glassMat, MAXB);
+  bulbGlass.frustumCulled = false; bulbGlass.renderOrder = 2; bulbGlass.count = 0;
+  const cap = new THREE.CylinderGeometry(0.1, 0.13, 0.17, 10); cap.translate(0, -0.56, 0);
+  const ring = new THREE.CylinderGeometry(0.115, 0.115, 0.02, 10); ring.translate(0, -0.5, 0);
+  const bGeo = mergeGeometries([cap.index ? cap.toNonIndexed() : cap, ring.index ? ring.toNonIndexed() : ring]);
+  bGeo.setAttribute('iCol', bulbIcol); bGeo.setAttribute('iFade', bulbIfade);
+  const baseMat = new THREE.ShaderMaterial({
+    vertexShader: vs(false),
+    fragmentShader: `varying vec3 vW, vCol, vC; varying float vPart; varying vec3 vN;
+      void main(){
+        vec3 n = normalize(vN);
+        float l = max(dot(n, normalize(vC - vW)), 0.0);
+        vec3 col = vec3(0.07, 0.055, 0.04) + vCol * (0.10 + 0.75 * l);        // dark bronze, lit by its own bulb
+        gl_FragColor = vec4(col, 1.0);
+        ${SHADER_TAIL}
+      }`,
+  });
+  bulbBase = new THREE.InstancedMesh(bGeo, baseMat, MAXB);
+  bulbBase.instanceMatrix = bulbGlass.instanceMatrix;                         // same transforms
+  bulbBase.frustumCulled = false; bulbBase.renderOrder = 0; bulbBase.count = 0;
+  scene.add(bulbBase, bulbGlass);
+}
+function U_ref() { return lightMat.uniforms; }
+const _m4 = new THREE.Matrix4(), _q4 = new THREE.Quaternion(), _e4 = new THREE.Euler(), _s4 = new THREE.Vector3(), _pp = new THREE.Vector3();
+function updateBulbs() {
+  if (!bulbGlass) return;
+  const R = tier.R, R2 = R * R, R07 = R * 0.7;
+  const pos = geometry.getAttribute('position').array, col = geometry.getAttribute('aCol').array, siz = geometry.getAttribute('aSize').array;
+  const lim = Math.floor(activeCount * qualityScale), cap = Math.min(MAXB, tier.max);
+  let n = 0;
+  for (let i = 0; i < lim && n < cap; i++) {
+    const dx = pos[i * 3] - _p.x, dy = pos[i * 3 + 1] - _p.y, dz = pos[i * 3 + 2] - _p.z, d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 > R2) continue;
+    const d = Math.sqrt(d2);
+    const t = Math.min(1, Math.max(0, (d - R07) / (R - R07))), fade = (1 - t * t * (3 - 2 * t)) * Math.min(1, d / 0.6);
+    _e4.set(pickR[i] * 6.283, jitA[i] * 6.283, jitB[i] * 6.283); _q4.setFromEuler(_e4);
+    const sc = siz[i] * params.size * 0.3;
+    _m4.compose(_pp.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]), _q4, _s4.set(sc, sc, sc));
+    bulbGlass.setMatrixAt(n, _m4);
+    bulbIcol.setXYZ(n, col[i * 3], col[i * 3 + 1], col[i * 3 + 2]); bulbIfade.setX(n, fade);
+    n++;
+  }
+  bulbGlass.count = bulbBase.count = n;
+  bulbGlass.instanceMatrix.needsUpdate = true; bulbIcol.needsUpdate = true; bulbIfade.needsUpdate = true;
+}
+
+// ---------- quality tiers: High (desktop) / Medium (phone) / Light (headset); Auto picks one, the governor can step it down ----------
+function baseTierName() {
+  if (params.quality !== 'auto' && TIERS[params.quality]) return params.quality;
+  return renderer && renderer.xr.isPresenting ? 'light' : (touch && touch.isTouch ? 'medium' : 'high');
+}
+function applyTier() {
+  const base = TIERS[baseTierName()], gi = Math.max(base.idx, govLevel >= 2 ? 2 : govLevel >= 1 ? 1 : 0);
+  tier = TIERS[TIER_ORDER[gi]];
+  if (lightMat) {
+    lightMat.uniforms.uBulbR.value = tier.R; lightMat.uniforms.uMax.value = tier.maxPx;
+    mirrorPoints.visible = govLevel < 3;
+  }
+}
+function tierText() { return TIERS[baseTierName()].name + (tier && tier.idx !== TIERS[baseTierName()].idx ? ' → ' + tier.name : '') + (params.quality === 'auto' ? ' (auto)' : ''); }
+
 // ---------- a stable 'ground' under you: a faint glowing disc + rings that travel with you at foot level ----------
 function buildPlatform() {
   platform = new THREE.Group();
+  // a dark, polished surface: soft-edged disc; the reflection of nearby lights is drawn by the mirrored point pass
   const cv = document.createElement('canvas'); cv.width = cv.height = 256; const g = cv.getContext('2d');
   const rg = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-  rg.addColorStop(0, 'rgba(255,226,170,0.50)'); rg.addColorStop(0.55, 'rgba(255,210,150,0.22)'); rg.addColorStop(1, 'rgba(255,200,140,0)');
+  rg.addColorStop(0, 'rgba(6,8,16,0.86)'); rg.addColorStop(0.55, 'rgba(8,10,20,0.78)'); rg.addColorStop(1, 'rgba(8,10,20,0)');
   g.fillStyle = rg; g.fillRect(0, 0, 256, 256);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, fog: false }));
-  platform.add(disc);
-  for (const r of [0.55, 0.95, 1.35]) {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.006, r + 0.006, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffe2aa, transparent: true, opacity: 0.55 - r * 0.2, depthWrite: false, toneMapped: false, fog: false }));
-    platform.add(ring);
+  floorMesh = new THREE.Mesh(new THREE.CircleGeometry(6, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, fog: false }));
+  platform.add(floorMesh);
+  for (const r of [0.55, 1.1, 1.9, 3.0]) {
+    const m = new THREE.MeshBasicMaterial({ color: 0xffe2aa, transparent: true, opacity: 0.5 - r * 0.1, depthWrite: false, toneMapped: false, fog: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.006, r + 0.006, 80).rotateX(-Math.PI / 2), m);
+    ring.position.y = 0.002; platform.add(ring); floorRings.push(m);
   }
-  platform.renderOrder = -0.5; platform.traverse((o) => { o.renderOrder = -0.5; });
+  platform.traverse((o) => { o.renderOrder = -0.5; });
   dolly.add(platform);
 }
 function applyDraw() { geometry.setDrawRange(0, Math.max(1, Math.floor(activeCount * qualityScale))); }
@@ -557,6 +704,8 @@ function animate() {
   if (!xr) applyLook();
   updatePositions();
   platform.position.y = xr ? 0 : -1.6;
+  { const u = lightMat.uniforms; u.uFloorY.value = dolly.position.y + platform.position.y; u.uFloorC.value.set(dolly.position.x, dolly.position.z); }
+  updateBulbs();
   lightMat.uniforms.uHalfH.value = eyeBufferHalfHeight();
   lightMat.uniforms.uMin.value = xr ? 3.5 : 2.5 * Math.min(renderer.getPixelRatio(), 2);
   lightMat.uniforms.uTime.value = comfort.reducedMotion ? 0 : worldTime;
