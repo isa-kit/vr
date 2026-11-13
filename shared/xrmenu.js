@@ -1,3 +1,48 @@
+// ============================ USAGE (read me first) ============================
+//
+//   import { detectXR, createXRMenu, recenterRig,
+//            sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid } from '../shared/xrmenu.js';
+//
+//   const caps = await detectXR();                       // {vr, ar} — call BEFORE making the renderer
+//   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });
+//   if (caps.ar) renderer.setClearColor(0x000000, 0);    // alpha only so passthrough can be toggled
+//   renderer.xr.enabled = true;                          // camera must be a child of `dolly`, dolly in scene
+//
+//   const menu = createXRMenu({
+//     renderer, camera, dolly, caps,
+//     title: 'Forest',                                   // header of the menu
+//     rows: [ sectionRow('View'),                        // YOUR items; common ones are appended for you
+//             stepperRow('Speed', () => '×' + s, () => s--, () => s++),
+//             toggleRow('Fog', () => fog, (v) => (fog = v)),
+//             ...choiceGrid([['Day','day'],['Dusk','dusk']], () => mode, (id) => (mode = id), 2),
+//             buttonRow('Reset', reset, 'accent') ],
+//     sound: { get: () => soundOn, set: setSound },      // optional → adds Sound On/Off
+//     setBackdrop: (visible) => { world.visible = visible; scene.background = visible ? sky : null; },
+//                                                        // REQUIRED for passthrough: hide/show everything opaque
+//     recenter: () => recenterRig(dolly, camera, homeVec3, homeYaw),   // optional
+//     onBeforeEnter: startAudio,                         // user-gesture hook (Enter VR click)
+//     onSessionStart, onSessionEnd,                      // optional
+//     startOpenDesktop: false, hint: 'text shown under the desktop overlay',
+//     quitUrl: '../',
+//   });
+//   // each frame, BEFORE renderer.render():   menu.update();
+//
+//  What you get for free:
+//   • An "Enter VR" button (enters immersive-ar when available — opaque backdrop by default — else immersive-vr).
+//   • VR: wrist menu on the LEFT controller (X/Y toggles), clicked with either controller's ray + trigger;
+//     visible ray on both controllers; Passthrough (only when AR), Sound, Recenter, Quit(2-tap) rows appended.
+//   • Desktop: the same rows as an overlay (☰ button, Esc or M; Esc from pointer-lock opens it).
+//   • menu.controllers[0|1]  XR controller groups (already added to dolly); controller.userData.hand
+//     ('left'|'right'|'none'), .userData.overMenu (ray is on the menu), .userData.src (XRInputSource).
+//   • menu.rays[i].setLength(worldMetres)  shorten a ray to your own hit point — only when !overMenu.
+//   • menu.onSelectStart/onSelectEnd((controller, hand, index) => …)   trigger events NOT consumed by the menu.
+//   • menu.onButton((hand, buttonIndex|'squeeze', controller) => …)    X/Y/A/B (4,5) and grip-down.
+//   • menu.refresh() after you change state from outside the menu; menu.open()/close()/toggle()/isOpen().
+//   • menu.withoutUI(fn) hides the wrist menu while fn runs (e.g. render-to-texture passes).
+//   Rows: { section }, { label?, cells:[{ text, action?, active?, tone?:'accent'|'danger', w?, visible? }], visible? };
+//   text/label/active/visible may be functions. Anything with `action` is clickable.
+// ===============================================================================
+
 // Shared options menu + XR session helper for every Oortia world.
 //
 //  • VR:      a wrist menu attached to the LEFT controller. X / Y (left) opens and
