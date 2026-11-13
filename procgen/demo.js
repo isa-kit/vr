@@ -2,6 +2,8 @@
 import * as THREE from 'three';
 import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from './textures.js';
 import { TREE_PRESETS, QUALITY, createTreeLibrary, createTreeField } from './trees.js';
+import { createSky } from './sky.js';
+import { createWater, createShoreline } from './water.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const mode = new URLSearchParams(location.search).get('m') || 'textures';
@@ -51,6 +53,25 @@ async function trees() {
   window.__demo.lib = lib; window.__demo.field = field; msg.textContent = 'trees ok';
   renderer.setAnimationLoop(() => { lib.update(performance.now() / 1000); renderer.render(scene, camera); });
 }
-const modes = { textures, trees };
+async function shore() {
+  const sky = createSky({ renderer, scene, sun: { elevation: 14, azimuth: 20 } }); scene.environment = sky.env; scene.fog = new THREE.FogExp2(sky.haze, 0.0015); scene.background = null;
+  sun.color.copy(sky.sunColor); sun.position.copy(sky.sunDir).multiplyScalar(50);
+  const slope = 0.07, H = (x, z) => z >= 0 ? z * slope : -9 * (1 - Math.exp(-(-z) * 0.02));   // z = 0 is the still-water line, land is +z
+  const maps = await makeMaterialMaps('sand', { size: 512, seed: 2 });
+  const sandMat = standardMaterial(maps, { repeat: [1, 1] });
+  const geo = new THREE.PlaneGeometry(300, 300, 150, 150).rotateX(-Math.PI / 2); const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setY(i, H(p.getX(i), p.getZ(i))); geo.computeVertexNormals();
+  const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, p.getX(i) * 0.4, p.getZ(i) * 0.4);
+  const sand = new THREE.Mesh(geo, sandMat); scene.add(sand);
+  const shore = createShoreline({ base: { x: 0, z: 0 }, land: [0, 1], runup: 6, period: 12, groundH: (x, z) => H(x, z) });
+  shore.patchMaterial(sandMat);
+  const water = createWater({ level: 0, bounds: { cx: 0, cz: -60, w: 300, d: 130 }, segments: 160, depthFn: (x, z) => -H(x, z), maxDepth: 8, calm: 0.6, colors: { shallow: 0x58a39a, deep: 0x0f3f4c } });
+  scene.add(water.mesh);
+  camera.position.set(0, 1.7, 14); camera.lookAt(0, 0.5, -10);
+  window.__demo.shore = shore; window.__demo.sky = sky;
+  renderer.setAnimationLoop(() => { const t = performance.now() / 1000; shore.update(t); water.update(t); sky.update(t, camera.position); renderer.render(scene, camera); });
+  msg.textContent = 'shore ok';
+}
+const modes = { textures, trees, shore };
 await modes[mode]?.();
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
