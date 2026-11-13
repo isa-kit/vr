@@ -2,7 +2,7 @@
   "id": "sandcastle",
   "name": "Sand Castle",
   "kind": "sandbox",
-  "status": "soon",
+  "status": "live",
   "blurb": "Drag sand together to build castles; fill cups and tip them out. Simple cheated physics, light enough for any headset.",
   "environment": {
     "sky": { "type": "gradient", "top": "#9fd2f0", "bottom": "#fdf4dc" },
