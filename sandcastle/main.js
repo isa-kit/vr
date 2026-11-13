@@ -16,11 +16,11 @@ import { createTouch } from '../shared/touch.js?v=20261114f';
 import { createBirds } from '../shared/birds.js?v=20261114f';
 import * as RZ from './realism.js?v=20261114f';
 import { createSky } from '../procgen/sky.js?v=20261114g';
-import { createWater } from '../procgen/water.js?v=20261114g';
+import { createWater, createShoreline } from '../procgen/water.js?v=20261115d';
 import { makeMaterialMaps } from '../procgen/textures.js?v=20261114g';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 
-let sky, ocean, fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
+let sky, ocean, shore, fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
 const sandMats = [];
 let quality = 'auto';
 try { quality = localStorage.getItem('oortia-sand-quality') || 'auto'; } catch (e) { /* ignore */ }
@@ -284,7 +284,11 @@ function buildBeach() {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
   const uvs = new Float32Array(pos.count * 2); for (let i = 0; i < pos.count; i++) { uvs[i * 2] = pos.getX(i) / 0.3; uvs[i * 2 + 1] = pos.getZ(i) / 0.3; }
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2)); geo.setAttribute('aWet', new THREE.BufferAttribute(new Float32Array(pos.count), 1));
-  const beach = new THREE.Mesh(geo, sandMaterial(true));   // cut out under the patch so holes are real
+  const beachMat = sandMaterial(true);
+  // waves that run up the sloped beach and retreat: water film, foam lace at the leading edge, wet darkening and a tide mark (procgen/water.js)
+  shore = createShoreline({ base: { x: 0, z: -9.1 }, land: [0, 1], runup: 3.2, period: 12, groundH: (x, z) => groundH(x, z) });
+  shore.patchMaterial(beachMat);
+  const beach = new THREE.Mesh(geo, beachMat);   // cut out under the patch so holes are real
   beach.receiveShadow = true; env.add(beach);
 
   // a driftwood crate at hand height; the spade, bucket and magnifier live on it
@@ -1343,7 +1347,7 @@ function animate() {
   statusMesh.scale.setScalar(clamp(_a.distanceTo(statusMesh.position) / 5, 0.5, 12));
 
   gulls.update(t);
-  camera.getWorldPosition(_a); sky.update(t, _a); ocean.update(t);
+  camera.getWorldPosition(_a); sky.update(t, _a); ocean.update(t); shore.update(t);
   lens.update(mouseNDC);
   touch.tick(dt);
   comfort.update(dt, vst);
