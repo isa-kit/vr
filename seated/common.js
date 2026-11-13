@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js';
+import { createComfort } from '../shared/comfort.js';
+import { createTouch } from '../shared/touch.js';
 
 export { THREE, SHADER_TAIL, sectionRow, toggleRow, choiceGrid };
 
@@ -177,46 +179,96 @@ export function swayMaterial({ k = 0.05, y0 = 1.2, power = 1, lambert = true } =
 }
 
 // ---------------------------------------------------------------- birds
-// Front of the model is +z, so Object3D.lookAt(target) points the bird at target.
-export function makeBird({ body = 0xf4f1ec, wing = 0xf6f4f0, tip = 0x2b2d33, wingSpan = 1 } = {}) {
+// A bird is: tapered body, head + beak, fanned tail, and two wings each made of an inner segment (arm) and an
+// outer segment (hand) that bend progressively on the flap.  Front of the model is +z, so Object3D.lookAt(target)
+// points the bird at target; the child `model` is rolled to bank.
+export function makeBird({ body = 0xf6f3ee, wing = 0xdde1e6, tip = 0x25262b, beak = 0xe9a43a, wingSpan = 1.3 } = {}) {
   const root = new THREE.Group(), model = new THREE.Group();
-  const mk = (verts, cols, idx) => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cols), 3));
+  const col = (c) => new THREE.Color(c);
+  const poly = (pts, colors, idx) => {
+    const g = new THREE.BufferGeometry(), v = [], c = [];
+    pts.forEach((p, i) => { v.push(...p); const k = col(colors[i]); c.push(k.r, k.g, k.b); });
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c), 3));
     g.setIndex(idx); g.computeVertexNormals(); return g;
   };
-  const W = new THREE.Color(wing), T = new THREE.Color(tip);
-  const inner = mk([0, 0, 0.18, 0, 0, -0.12, 0.55, 0, -0.06, 0.55, 0, 0.12],
-    [W.r, W.g, W.b, W.r, W.g, W.b, W.r, W.g, W.b, W.r, W.g, W.b], [0, 1, 2, 0, 2, 3]);
-  const outer = mk([0, 0, 0.12, 0, 0, -0.06, 0.62, 0, 0.12, 0.62, 0, 0.26],
-    [W.r, W.g, W.b, W.r, W.g, W.b, T.r, T.g, T.b, T.r, T.g, T.b], [0, 1, 2, 0, 2, 3]);
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const mid = new THREE.Color(wing).lerp(new THREE.Color(tip), 0.35).getHex();
+  // inner wing: broad, trailing edge notched
+  const inner = poly([[0, 0, 0.12], [0.52, 0, 0.06], [0.52, 0, -0.14], [0, 0, -0.25]], [wing, wing, wing, wing], [0, 1, 2, 0, 2, 3]);
+  // outer wing: tapers to a swept, dark tip
+  const outer = poly([[0, 0, 0.06], [0.28, 0, 0.03], [0.52, 0, -0.26], [0.3, 0, -0.2], [0, 0, -0.14]], [wing, mid, tip, mid, wing], [0, 1, 4, 1, 3, 4, 1, 2, 3]);
   const wings = [];
   for (const s of [1, -1]) {
-    const arm = new THREE.Group(); arm.position.set(0, 0.03, 0.02); arm.scale.x = s;
+    const arm = new THREE.Group(); arm.position.set(0, 0.035, 0.06); arm.scale.x = s;
     arm.add(new THREE.Mesh(inner, mat));
-    const out = new THREE.Group(); out.position.set(0.55, 0, 0); out.add(new THREE.Mesh(outer, mat)); arm.add(out);
-    model.add(arm); wings.push({ arm, out });
+    const hand = new THREE.Group(); hand.position.set(0.52, 0, 0); hand.add(new THREE.Mesh(outer, mat)); arm.add(hand);
+    model.add(arm); wings.push({ arm, hand });
   }
-  const bodyGeo = paint(new THREE.SphereGeometry(0.1, 8, 6).scale(0.85, 0.8, 2.6), body);
-  const head = paint(new THREE.SphereGeometry(0.065, 6, 5).translate(0, 0.02, 0.27), body);
-  const tail = new THREE.BufferGeometry();
-  tail.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0.02, -0.2, 0.09, 0.02, -0.5, -0.09, 0.02, -0.5]), 3));
-  const bc = new THREE.Color(body);
-  tail.setAttribute('color', new THREE.BufferAttribute(new Float32Array([bc.r, bc.g, bc.b, bc.r, bc.g, bc.b, bc.r, bc.g, bc.b]), 3)); tail.computeVertexNormals();
-  model.add(new THREE.Mesh(bodyGeo, mat)); model.add(new THREE.Mesh(head, mat)); model.add(new THREE.Mesh(tail, mat));
-  model.scale.setScalar(wingSpan * 0.95);
+  const bodyG = paint(new THREE.SphereGeometry(1, 10, 8).scale(0.075, 0.07, 0.25), body);
+  const headG = paint(new THREE.SphereGeometry(0.055, 8, 6).translate(0, 0.03, 0.27), body);
+  const beakG = paint(new THREE.ConeGeometry(0.02, 0.1, 6).rotateX(Math.PI / 2).translate(0, 0.022, 0.355), beak);
+  const tailG = poly([[-0.05, 0.01, -0.2], [0.05, 0.01, -0.2], [0.14, 0.0, -0.52], [-0.14, 0.0, -0.52]], [body, body, wing, wing], [0, 1, 2, 0, 2, 3]);
+  for (const g of [bodyG, headG, beakG, tailG]) model.add(new THREE.Mesh(g, mat));
+  model.scale.setScalar(wingSpan / 2.2);
   root.add(model);
   root.userData = { model, wings };
   return root;
 }
-// flap: 0 = glide, 1 = full flap. phase in radians.
+// flap: 0 = glide, 1 = full flap; phase = wing-beat phase (rad); bank = roll (rad, + = bank right)
 export function poseBird(b, flap, phase, bank = 0) {
   const { model, wings } = b.userData;
-  const a = Math.sin(phase) * 0.7 * flap + (1 - flap) * 0.08 + 0.1;
-  for (const w of wings) { w.arm.rotation.z = a; w.out.rotation.z = a * 0.7 - 0.12 + (1 - flap) * -0.1; }
+  const up = Math.sin(phase) * 0.6 * flap;                         // arm beats up/down
+  const hand = Math.sin(phase - 0.9) * 0.85 * flap;                // hand lags the arm, so the wing visibly bends
+  for (const w of wings) {
+    w.arm.rotation.z = 0.1 + up + (1 - flap) * 0.06;               // gliding: slight dihedral
+    w.hand.rotation.z = -0.12 + hand - (1 - flap) * 0.12;          // gliding: tips droop (the gull "M")
+    w.hand.rotation.x = -Math.cos(phase - 0.9) * 0.18 * flap;      // feather twist on the beat
+  }
   model.rotation.z = bank;
+  model.position.y = Math.sin(phase) * 0.012 * flap;
+}
+
+// A loose flock flying a long lazy arc.  Members follow the leader's path a little behind, each at its own height,
+// facing their direction of travel, banking into the turn, gliding most of the time with short bursts of slow flaps.
+// update(dt, t) takes the world's scaled clock, so Pause / calm freezes the flock.
+export function makeFlock(scene, o = {}) {
+  const { n = 3, c = [0, 10, -100], r = [100, 50], speed = 5, dir = 1, span = 1.3, birdOpts = {},
+          flapEvery = [8, 14], flapFrac = 0.28, flapHz = 2.2, spread = [7, 3, 6] } = o;
+  const ph = o.ph ?? Math.random() * 6.283, w = dir * speed / ((r[0] + r[1]) / 2);
+  const rnd2 = (a, b) => a + Math.random() * (b - a);
+  const members = [];
+  for (let i = 0; i < n; i++) {
+    const b = makeBird({ ...birdOpts, wingSpan: span * rnd2(0.88, 1.12) });
+    scene.add(b);
+    members.push({ b, lag: i * 1.1 + Math.random() * 1.2, sx: (Math.random() - 0.5) * spread[0], sz: (Math.random() - 0.5) * spread[0],
+      dy: (Math.random() - 0.5) * spread[1], per: rnd2(...flapEvery), off: Math.random(), phase: Math.random() * 6.283, hz: flapHz * rnd2(0.9, 1.15), wob: Math.random() * 6.283 });
+  }
+  const P = (m, t, out) => {
+    const th = ph + w * (t - m.lag);
+    return out.set(
+      c[0] + r[0] * Math.cos(th) + 0.12 * r[0] * Math.cos(2 * th + 1.3) + m.sx,
+      c[1] + m.dy + spread[2] * 0.3 * Math.sin(th * 1.7 + ph) + 1.1 * Math.sin(t * 0.17 + m.wob),
+      c[2] + r[1] * Math.sin(th) + 0.1 * r[1] * Math.sin(3 * th) + m.sz);
+  };
+  const a = new THREE.Vector3(), b2 = new THREE.Vector3(), c2 = new THREE.Vector3();
+  const sstep = (e0, e1, x) => { const q = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return q * q * (3 - 2 * q); };
+  return {
+    members,
+    update(dt, t) {
+      for (const m of members) {
+        P(m, t, a); P(m, t + 0.7, b2); P(m, t + 1.4, c2);
+        m.b.position.copy(a); m.b.lookAt(b2);
+        let turn = Math.atan2(c2.x - b2.x, c2.z - b2.z) - Math.atan2(b2.x - a.x, b2.z - a.z);
+        turn = Math.atan2(Math.sin(turn), Math.cos(turn)) / 0.7;                 // rad/s
+        const bank = Math.max(-0.5, Math.min(0.5, -turn * 7));
+        const u = (t / m.per + m.off) % 1;
+        const env = sstep(0, 0.05, u) * (1 - sstep(flapFrac, flapFrac + 0.07, u));
+        m.phase += m.hz * 6.283 * dt * env;
+        poseBird(m.b, env, m.phase, bank);
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------- audio kit
@@ -308,16 +360,6 @@ export async function createWorld(o = {}) {
     const a = innerWidth / innerHeight;
     return a >= 1 ? fov : Math.min(100, 2 * Math.atan(Math.tan(56 * Math.PI / 360) / a) * 180 / Math.PI);
   };
-  const styleFix = document.createElement('style');   // touch-size and safe-area overrides for the shared menu's on-screen controls
-  styleFix.textContent = `@media (pointer: coarse) {
-    #xm-btn{top:calc(env(safe-area-inset-top,0px) + 46px)!important;right:calc(env(safe-area-inset-right,0px) + 12px)!important;min-height:44px;padding:0 18px!important;font-size:15px!important}
-    #xm-panel{top:calc(env(safe-area-inset-top,0px) + 98px)!important;right:calc(env(safe-area-inset-right,0px) + 12px)!important;
-      width:min(340px,calc(100vw - 24px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)))!important;
-      max-height:calc(100vh - 112px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))!important}
-    .xm-cells button{min-height:44px;font-size:14px!important}.xm-x{min-width:44px;min-height:44px;font-size:20px!important}.xm-lab{flex-basis:84px!important}
-    a.back{padding:10px 6px}
-  }`;
-  document.head.appendChild(styleFix);
   const scene = new THREE.Scene();
   const bgColor = new THREE.Color(bg);
   scene.background = bgColor;
@@ -346,6 +388,7 @@ export async function createWorld(o = {}) {
   };
 
   // ----- desktop look: drag (mouse / touch / pen), arrow keys, gentle inertia
+  const _e = new THREE.Euler();
   let vy = 0, vp = 0, dragging = false, lx = 0, ly = 0;
   const el = renderer.domElement;
   el.style.touchAction = 'none'; el.style.cursor = 'grab';
@@ -360,19 +403,8 @@ export async function createWorld(o = {}) {
   const rmq = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   W.reducedMotion = !!(rmq && rmq.matches); if (W.reducedMotion) W.timeScale = 0.3;
   if (rmq && rmq.addEventListener) rmq.addEventListener('change', (e) => { W.reducedMotion = e.matches; W.timeScale = e.matches ? 0.3 : 1; });
-  // ----- optional "look by moving the phone" (off by default; iOS needs a tap to grant permission)
-  const gyro = { on: false, has: false, a: 0, b: 0, g: 0, base: null, listening: false };
-  const rad = (d) => d * Math.PI / 180, _e = new THREE.Euler(), _qd = new THREE.Quaternion(), _q0 = new THREE.Quaternion(), _q1 = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2), _z = new THREE.Vector3(0, 0, 1);
-  const onOrient = (ev) => { if (ev.alpha == null) return; gyro.a = ev.alpha; gyro.b = ev.beta; gyro.g = ev.gamma; gyro.has = true; };
-  const setGyro = (v) => {
-    if (!v) { gyro.on = false; return; }
-    const enable = () => { if (!gyro.listening) { addEventListener('deviceorientation', onOrient); gyro.listening = true; } gyro.on = true; gyro.base = null; };
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') enable(); }).catch(() => {});
-    } else enable();
-  };
-  const phoneRows = (isTouch && typeof DeviceOrientationEvent !== 'undefined')
-    ? [sectionRow('Phone'), toggleRow('Move to look', () => gyro.on, setGyro)] : [];
+  const touch = createTouch({ canvas: renderer.domElement, look: false });   // phone gyro toggle + helpers (touch drag is handled below)
+  touch.onChange = () => { if (W.menu) W.menu.refresh(); };
   const keys = {};
   addEventListener('keydown', (e) => { keys[e.code] = true; });
   addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -409,7 +441,8 @@ export async function createWorld(o = {}) {
 
   // ----- loop
   const clock = new THREE.Clock();
-  let centered = false, slowAcc = 0, slowN = 0, level = 0, direct = false;
+  let centered = false, direct = false;
+  const DETAIL = [1, 0.6, 0.35, 0.2];
   W.detailFns = [];
   W.start = () => {
     // everything except the rig goes into `world` so passthrough can hide it in one go
@@ -417,13 +450,19 @@ export async function createWorld(o = {}) {
     W.world = new THREE.Group();
     for (const c of [...scene.children]) if (c !== rig) W.world.add(c);
     scene.add(W.world);
+    const comfort = W.comfort = createComfort({ renderer, scene, camera, dolly: rig, onQuality: (lv) => {   // frame-time governor asks us to cut load
+      if (lv >= 1) direct = true;                                  // skip post-processing (bloom) first
+      for (const fn of W.detailFns) fn(DETAIL[Math.min(lv, 3)]);   // then thin foliage
+    } });
     W.menu = createXRMenu({
-      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...phoneRows],
+      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...touch.rows(), ...comfort.rows({ movement: false })], fade: comfort.fade,
       sound: { get: () => W.soundOn, set: W.setSound },
       setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(), quitUrl: '../',
     });
+    comfort.attachMenu(W.menu);
     renderer.setAnimationLoop(() => {
       const rdt = Math.min(clock.getDelta(), 0.05);
+      W.paused = !!W.comfort.paused;                     // "Pause / calm" from the comfort section of the menu
       const dt = W.paused ? 0 : rdt * W.timeScale; W.simT += dt; const t = W.simT;
       windU.value = t;
       if (!renderer.xr.isPresenting) {
@@ -433,12 +472,10 @@ export async function createWorld(o = {}) {
         if (keys.ArrowUp || keys.KeyW) W.pitch += kk; if (keys.ArrowDown || keys.KeyS) W.pitch -= kk;
         if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.92; vp *= 0.92; } else if (!dragging) { vy = vp = 0; }
         W.pitch = Math.max(pitchMin, Math.min(pitchMax, W.pitch));
-        if (gyro.on && gyro.has) {
-          const so = (screen.orientation ? screen.orientation.angle : window.orientation) || 0;
-          _e.set(rad(gyro.b), rad(gyro.a), -rad(gyro.g), 'YXZ'); _qd.setFromEuler(_e); _qd.multiply(_q1); _qd.multiply(_q0.setFromAxisAngle(_z, -rad(so)));
-          _e.setFromQuaternion(_qd, 'YXZ'); if (gyro.base === null) gyro.base = _e.y;
+        if (touch.gyro.on) {
+          touch.tick(rdt); _e.setFromQuaternion(touch.gyro.quat, 'YXZ');
           // phone gives pitch + heading; dragging still turns the heading. Roll is dropped so the horizon stays level.
-          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y - gyro.base + W.yaw + startYaw, 0, 'YXZ');
+          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y + W.yaw + startYaw, 0, 'YXZ');
         } else {
           // "grab the world": drag right -> view turns left (+yaw), drag down -> look up (+pitch)
           camera.rotation.set(W.pitch, W.yaw + startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
@@ -447,20 +484,10 @@ export async function createWorld(o = {}) {
       } else if (!centered) { centered = true; W.recenter(); }  // face the scene on entering VR
       W.menu.update();
       for (const fn of W.frameFns) fn(dt, t);
-      // frame-rate governor (desktop / phone): slow frames first drop bloom + post-processing and thin the foliage, then lower resolution
-      if (!renderer.xr.isPresenting && !W.paused) {
-        slowAcc += rdt; slowN++;
-        if (slowN >= 90) {
-          const avg = slowAcc / slowN; slowAcc = 0; slowN = 0;
-          if (avg > 0.034 && level < 3) {
-            level++;
-            if (level === 1) { direct = true; for (const fn of W.detailFns) fn(0.6); }
-            else { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); renderer.setSize(innerWidth, innerHeight); if (level === 2) for (const fn of W.detailFns) fn(0.35); }
-          }
-        }
-      }
+      W.comfort.update(rdt, { moving: 0, turning: 0 });   // fades, vignette (idle for seated worlds) and the frame-time governor
       if (direct && !renderer.xr.isPresenting) renderer.render(scene, camera); else fx.render();
     });
   };
+  if (location.hash === '#debug') window.__W = W;   // dev aid: inspect the world from the console
   return W;
 }

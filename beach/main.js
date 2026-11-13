@@ -6,8 +6,8 @@
 
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
-  paint, fbm, smoothstep, rng, hash, makeBird, poseBird, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261113a';
+  paint, fbm, smoothstep, rng, hash, makeFlock, sectionRow, choiceGrid,
+} from '../seated/common.js?v=20261113b';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(31415);
@@ -293,16 +293,12 @@ const boat = new THREE.Group();
   boat.position.set(-120, 0, -330); scene.add(boat); W.opaque.push(boat);
 }
 
-// ---------------- gulls ----------------
-const gulls = [];
-for (let i = 0; i < 11; i++) {
-  const hero = i < 3;
-  const b = makeBird({ wingSpan: hero ? 1.1 : rr(0.8, 1.2), tip: 0x2b2a30 });
-  b.userData.p = { cx: rr(-60, 60), cz: hero ? rr(-30, -14) : rr(-45, -170), cy: hero ? rr(4, 8) : rr(7, 26), ax: hero ? rr(14, 26) : rr(40, 110), az: hero ? rr(6, 10) : rr(14, 40), ay: rr(1, 4), w: rr(0.06, 0.12) * (R() < 0.5 ? 1 : -1), ph: R() * 6.28, ph2: R() * 6.28, fl: rr(3.5, 5) };
-  scene.add(b); gulls.push(b);
-}
-const gp = (p, t, o) => { const a = t * p.w + p.ph; return o.set(p.cx + Math.sin(a) * p.ax, p.cy + Math.sin(a * 0.8 + p.ph2) * p.ay, p.cz + Math.sin(a * 2 + 1) * p.az); };
-const gA = new THREE.Vector3(), gB = new THREE.Vector3(), gC = new THREE.Vector3();
+// ---------------- gulls: loose flocks on long lazy arcs out over the sea ----------------
+const flocks = [
+  makeFlock(scene, { n: 4, c: [10, 12, -55], r: [60, 24], speed: 3.6, dir: 1, span: 1.8, flapEvery: [8, 14], flapFrac: 0.3, flapHz: 2.3, spread: [8, 4, 6] }),
+  makeFlock(scene, { n: 3, c: [-35, 18, -90], r: [80, 32], speed: 4.4, dir: -1, span: 1.9, flapEvery: [9, 15], flapFrac: 0.28, flapHz: 2.2, spread: [9, 5, 6] }),
+  makeFlock(scene, { n: 2, c: [5, 8, -42], r: [48, 16], speed: 3.2, dir: 1, span: 1.7, flapEvery: [10, 16], flapFrac: 0.25, flapHz: 2.0, spread: [6, 3, 4] }),
+];
 
 // ---------------- frame ----------------
 let sceneT = 0;
@@ -326,13 +322,7 @@ W.onFrame((dt, t) => {
   applyTime(p);
   SU.uTime.value = t; sandU.uTime.value = t; waterU.uTime.value = t;
   boat.position.x = -120 + ((t * 0.55) % 520); boat.position.y = Math.sin(t * 0.7) * 0.12; boat.rotation.z = Math.sin(t * 0.55) * 0.035;
-  for (const b of gulls) {
-    const pr = b.userData.p;
-    gp(pr, t, gA); gp(pr, t + 0.35, gB); gp(pr, t + 0.7, gC); b.position.copy(gA); b.lookAt(gB);
-    let turn = Math.atan2(gC.x - gB.x, gC.z - gB.z) - Math.atan2(gB.x - gA.x, gB.z - gA.z); turn = Math.atan2(Math.sin(turn), Math.cos(turn)) * 4;
-    const env = smoothstep(0.3, 0.75, Math.sin(t * 0.23 + pr.ph) * Math.sin(t * 0.14 + pr.ph2) + 0.25);
-    poseBird(b, env, t * pr.fl + pr.ph, Math.max(-0.7, Math.min(0.7, -turn)));
-  }
+  for (const f of flocks) f.update(dt, t);
 });
 
 // ---------------- audio (waves are cued to the visible wave clock) ----------------
@@ -376,5 +366,6 @@ W.buildAudio = (A) => {
   }, 22, 42, 10);
 };
 
+W.flocks = flocks;
 W.rig.position.set(0, seatY, SEAT_Z);
 W.start();
