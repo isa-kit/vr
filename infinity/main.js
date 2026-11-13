@@ -6,6 +6,31 @@ import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { ARButton } from 'three/addons/webxr/ARButton.js';
 import { buildControlPanel } from './ui.js';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js';
+
+let fx, nebula;   // post-processing + nebula backdrop
+
+// deep-space backdrop: a small sphere that travels with the player, drawn first
+function buildNebula() {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthTest: false, depthWrite: false, fog: false,
+    vertexShader: `varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vD;
+      void main(){
+        vec3 d = normalize(vD);
+        vec3 col = mix(vec3(0.0015,0.001,0.005), vec3(0.003,0.004,0.014), d.y*0.5+0.5);
+        float n = sin(d.x*3.1+d.y*1.7)*sin(d.z*2.3-d.y*2.9)*0.5+0.5;
+        float m = sin(d.x*5.7-d.z*4.1+1.3)*sin(d.y*3.3+d.x*1.1)*0.5+0.5;
+        col += vec3(0.022,0.005,0.03)*pow(n,3.0) + vec3(0.004,0.012,0.028)*pow(m,4.0);
+        gl_FragColor = vec4(col,1.0);
+        ${SHADER_TAIL}
+      }`,
+  });
+  nebula = new THREE.Mesh(new THREE.SphereGeometry(40, 32, 16), mat);
+  nebula.renderOrder = -1;
+  nebula.frustumCulled = false;
+  dolly.add(nebula);
+}
 
 // ---------- tunables ----------
 const MAX_LIGHTS = 8000;    // buffer capacity; active count follows spacing/depth
@@ -69,6 +94,8 @@ function init() {
   dolly.add(camera);
   scene.add(dolly);
 
+  fx = beautify(renderer, scene, camera, { exposure: 1.0, bloom: 0.75, radius: 0.5, threshold: 0.76 });
+  buildNebula();
   buildLights();
 
   // control panel floats in front of the view (child of camera so it's always reachable)
@@ -163,6 +190,7 @@ function generatePattern() {
 
   const col = geometry.getAttribute('color');
   const rng = mulberry32(params.seed);
+  const tint = new THREE.Color();
 
   for (let i = 0; i < activeCount; i++) {
     const ix = i % n;
@@ -186,10 +214,18 @@ function generatePattern() {
     basePositions[i * 3 + 1] = y;
     basePositions[i * 3 + 2] = z;
 
-    const warm = 0.6 + rng() * 0.4;
-    col.array[i * 3] = 1.0;
-    col.array[i * 3 + 1] = 0.82 + 0.18 * warm;
-    col.array[i * 3 + 2] = 0.55 + 0.45 * warm;
+    // jewel-tone palette: mostly gold/amber, with rose, violet, cyan and a few white stars
+    const pick = rng();
+    const hue = pick < 0.4 ? 0.08 + rng() * 0.05
+              : pick < 0.6 ? 0.93 + rng() * 0.05
+              : pick < 0.8 ? 0.72 + rng() * 0.06
+              : pick < 0.95 ? 0.50 + rng() * 0.05
+              : 0.12;
+    const sat = pick < 0.95 ? 0.7 + rng() * 0.25 : 0.15;
+    tint.setHSL(hue % 1, sat, 0.6);
+    col.array[i * 3] = tint.r;
+    col.array[i * 3 + 1] = tint.g;
+    col.array[i * 3 + 2] = tint.b;
   }
   col.needsUpdate = true;
   updatePositions();
@@ -290,7 +326,7 @@ function animate() {
   handleMovement(dt);
   updatePositions();
   updateInteraction();
-  renderer.render(scene, camera);
+  fx.render();
 }
 
 function handleMovement(dt) {
@@ -358,10 +394,11 @@ function onKey(e) {
 function onSessionStart() {
   const s = renderer.xr.getSession();
   const isAR = s && s.environmentBlendMode && s.environmentBlendMode !== 'opaque';
-  if (isAR) scene.background = null;   // let camera passthrough show in AR
+  if (isAR) { scene.background = null; nebula.visible = false; }   // let camera passthrough show in AR
 }
 function onSessionEnd() {
   scene.background = new THREE.Color(0x000006);
+  nebula.visible = true;
 }
 
 function onResize() {

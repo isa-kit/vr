@@ -6,6 +6,28 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js';
+
+let fx;
+const windU = { value: 0 };   // shared wind clock for swaying foliage
+
+// Lambert material whose upper vertices sway in the wind (trunks stay planted).
+function swayMaterial() {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = windU;
+    shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        float ph = instanceMatrix[3].x * 0.21 + instanceMatrix[3].z * 0.17;
+      #else
+        float ph = 0.0;
+      #endif
+      float sway = max(0.0, position.y - 1.2) * 0.05;
+      transformed.x += sin(uTime * 1.4 + ph) * sway;
+      transformed.z += cos(uTime * 1.1 + ph) * sway * 0.6;`);
+  };
+  return m;
+}
 
 // ---------- config (overridable from scenes/nature-glade.json) ----------
 const cfg = { trees: 150, sheep: 14, birds: 16, mountains: 18 };
@@ -67,6 +89,7 @@ async function init() {
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
   document.body.appendChild(VRButton.createButton(renderer));
+  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.45, radius: 0.6, threshold: 0.96 });
 
   dolly = new THREE.Group();
   dolly.add(camera);
@@ -114,12 +137,12 @@ async function init() {
 function buildSky() {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { top: { value: new THREE.Color(0x4b7fc0) }, mid: { value: new THREE.Color(0xf0dcb8) }, bot: { value: new THREE.Color(0xf7ead2) } },
+    uniforms: { top: { value: new THREE.Color(0x2f68b4) }, mid: { value: new THREE.Color(0xf0d2a6) }, bot: { value: new THREE.Color(0xf4e3c6) } },
     vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
     fragmentShader: `varying vec3 vP; uniform vec3 top,mid,bot;
       void main(){ float h=normalize(vP).y;
         vec3 c = h>0.0 ? mix(mid,top,pow(clamp(h,0.0,1.0),0.7)) : mix(mid,bot,clamp(-h*5.0,0.0,1.0));
-        gl_FragColor=vec4(c,1.0); }`,
+        gl_FragColor=vec4(c,1.0); ${SHADER_TAIL} }`,
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(700, 24, 16), mat));
 
@@ -189,6 +212,7 @@ function buildWater() {
         float fog = smoothstep(fogNear, fogFar, length(cam - vW));
         col = mix(col, fogColor, fog);
         gl_FragColor = vec4(col, 0.93);
+        ${SHADER_TAIL}
       }`,
   });
   water = new THREE.Mesh(geo, mat); water.position.y = WL; scene.add(water);
@@ -204,7 +228,7 @@ function makeTreeGeo() {
 }
 function buildTrees() {
   const geo = makeTreeGeo();
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), cfg.trees);
+  const mesh = new THREE.InstancedMesh(geo, swayMaterial(), cfg.trees);
   const d = new THREE.Object3D(); let n = 0, tries = 0;
   while (n < cfg.trees && tries++ < cfg.trees * 40) {
     const a = Math.random() * Math.PI * 2, r = 26 + Math.random() * 150;
@@ -227,7 +251,7 @@ function makeBroadleafGeo() {
   return mergeGeometries([trunk, c1, c2, c3], false);
 }
 function buildBroadleaf() {
-  const mesh = new THREE.InstancedMesh(makeBroadleafGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), 55);
+  const mesh = new THREE.InstancedMesh(makeBroadleafGeo(), swayMaterial(), 55);
   const d = new THREE.Object3D(); let n = 0, tries = 0;
   while (n < 55 && tries++ < 3000) {
     const a = Math.random() * Math.PI * 2, r = 24 + Math.random() * 150;
@@ -316,12 +340,13 @@ function buildSheep() {
 
 // ---------- distant mountains ----------
 function makeMountainGeo() {
-  const base = paint(new THREE.ConeGeometry(1, 1.6, 5).translate(0, 0.8, 0), 0x47586f);
-  const cap = paint(new THREE.ConeGeometry(0.42, 0.5, 5).translate(0, 1.42, 0), 0x6b7d96);
+  const base = paint(new THREE.ConeGeometry(1, 1.6, 5).translate(0, 0.8, 0), 0x9aaecb);
+  const cap = paint(new THREE.ConeGeometry(0.42, 0.5, 5).translate(0, 1.42, 0), 0xf1f4f9);
   return mergeGeometries([base, cap], false);
 }
 function buildMountains() {
-  const mesh = new THREE.InstancedMesh(makeMountainGeo(), new THREE.MeshLambertMaterial({ vertexColors: true }), cfg.mountains);
+  // own cool "atmospheric blue" instead of the warm ground fog → layered distant peaks
+  const mesh = new THREE.InstancedMesh(makeMountainGeo(), new THREE.MeshLambertMaterial({ vertexColors: true, fog: false }), cfg.mountains);
   const d = new THREE.Object3D();
   for (let i = 0; i < cfg.mountains; i++) {
     const a = -Math.PI / 2 + (i / cfg.mountains - 0.5) * 1.7 + (Math.random() - 0.5) * 0.16;  // across the sea (north, −z)
@@ -346,7 +371,7 @@ function buildClouds() {
   }
   const tex = new THREE.CanvasTexture(cv);
   for (let i = 0; i < 12; i++) {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.8, depthWrite: false, fog: true }));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xece6df, transparent: true, opacity: 0.75, depthWrite: false, fog: true }));
     s.position.set((Math.random() - 0.5) * 600, 70 + Math.random() * 60, (Math.random() - 0.5) * 600);
     s.scale.set(60 + Math.random() * 70, 34 + Math.random() * 30, 1);
     s.userData.sp = 1.5 + Math.random() * 2.5; clouds.push(s); scene.add(s);
@@ -469,7 +494,8 @@ function animate() {
     const f = Math.sin(t * u.flap + u.ph) * 0.6;
     u.l.rotation.z = f; u.r.rotation.z = f;
   }
-  renderer.render(scene, camera);
+  windU.value = t;
+  fx.render();
 }
 
 function lockPointer() {

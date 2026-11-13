@@ -5,6 +5,9 @@
 
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js';
+
+let fx, grain;
 
 // ---------- sand grid ----------
 const GN = 64;                 // cells per side
@@ -23,7 +26,7 @@ const ray = new THREE.Raycaster();
 const mouseNDC = new THREE.Vector2(0, 0);
 const tmpM = new THREE.Matrix4();
 const hit = { on: false, lx: 0, lz: 0 };     // last sand hit, in table-local coords
-const sunDir = new THREE.Vector3(0.3, 0.55, -0.7).normalize();
+const sunDir = new THREE.Vector3(-0.75, 0.58, -0.32).normalize();   // raking side-light from the left: lit faces, shadows stretch right
 const panelButtons = [];
 let hoverBtn = null;
 const controllers = [];
@@ -48,8 +51,11 @@ async function init() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.xr.enabled = true;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   document.body.appendChild(renderer.domElement);
   document.body.appendChild(VRButton.createButton(renderer));
+  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.08, bloom: 0.35, radius: 0.5, threshold: 0.96 });
 
   dolly = new THREE.Group();
   dolly.add(camera);
@@ -57,8 +63,13 @@ async function init() {
   dolly.position.set(0, 0, 1.15);     // seated just in front of the sand
 
   scene.add(new THREE.HemisphereLight(0xdff0ff, 0xbfa87e, 1.0));
-  const sun = new THREE.DirectionalLight(0xfff4de, 1.2);
-  sun.position.copy(sunDir).multiplyScalar(40); scene.add(sun);
+  const sun = new THREE.DirectionalLight(0xffe6c0, 1.45);
+  sun.position.copy(sunDir).multiplyScalar(6); scene.add(sun);
+  // tight shadow box around the sand tray only → crisp, cheap shadows
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  Object.assign(sun.shadow.camera, { left: -1.6, right: 1.6, top: 1.6, bottom: -1.6, near: 0.5, far: 14 });
+  sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.015; sun.shadow.radius = 3;
 
   buildSky();
   buildBeach();
@@ -91,7 +102,7 @@ function buildSky() {
     uniforms: { top: { value: new THREE.Color(0x4a90d8) }, mid: { value: new THREE.Color(0xcfe7f3) }, bot: { value: new THREE.Color(0xeaf5fb) } },
     vertexShader: `varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
     fragmentShader: `varying vec3 vP; uniform vec3 top,mid,bot; void main(){ float h=normalize(vP).y;
-      vec3 c=h>0.0?mix(mid,top,pow(clamp(h,0.0,1.0),0.7)):mix(mid,bot,clamp(-h*5.0,0.0,1.0)); gl_FragColor=vec4(c,1.0);}`,
+      vec3 c=h>0.0?mix(mid,top,pow(clamp(h,0.0,1.0),0.7)):mix(mid,bot,clamp(-h*5.0,0.0,1.0)); gl_FragColor=vec4(c,1.0); ${SHADER_TAIL} }`,
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(300, 24, 16), mat));
   const cv = document.createElement('canvas'); cv.width = cv.height = 128;
@@ -120,7 +131,8 @@ function buildBeach() {
     col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-  scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const beach = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  beach.receiveShadow = true; scene.add(beach);
 }
 
 // ---------- sea (cheated) ----------
@@ -144,6 +156,7 @@ function buildWater() {
         vec3 H=normalize(V+normalize(sun)); col+=vec3(1.0,0.97,0.85)*pow(max(dot(N,H),0.0),120.0)*1.2;
         float fog=smoothstep(fogNear,fogFar,length(cam-vW)); col=mix(col,fogColor,fog);
         gl_FragColor=vec4(col,0.94);
+        ${SHADER_TAIL}
       }`,
   });
   water = new THREE.Mesh(geo, mat); water.position.y = -0.52; scene.add(water);
@@ -158,6 +171,7 @@ function buildDecor() {
   const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 20), new THREE.MeshLambertMaterial({ color: 0xc8402c }));
   rim.rotation.x = Math.PI / 2; rim.position.y = 0.16; bucket.add(rim);
   bucket.position.set(0.72, 0, 0.1); bucket.rotation.y = -0.4; scene.add(bucket);
+  bucket.traverse(o => { o.castShadow = true; });
   // spade
   const spade = new THREE.Group();
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 8), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 }));
@@ -165,6 +179,7 @@ function buildDecor() {
   const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.008), new THREE.MeshLambertMaterial({ color: 0xf4c23a }));
   blade.position.y = 0.02; blade.rotation.x = -0.2; spade.add(blade);
   spade.position.set(-0.72, 0, 0.18); spade.rotation.set(0.5, 0.3, 0.2); scene.add(spade);
+  spade.traverse(o => { o.castShadow = true; });
   // shells + starfish
   const shellMat = [0xf3d9d0, 0xeabfcb, 0xf0e4d2];
   for (let i = 0; i < 6; i++) {
@@ -190,12 +205,16 @@ function buildSandTable() {
   sandGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
   sandMesh = new THREE.Mesh(sandGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   sandMesh.position.set(0, 0.001, 0); scene.add(sandMesh);
+  sandMesh.castShadow = true; sandMesh.receiveShadow = true;   // castles shade the sand around them
+  grain = new Float32Array(pos.count);
+  for (let v = 0; v < pos.count; v++) grain[v] = (Math.random() - 0.5) * 0.09;   // static sand-grain speckle
   // a little wooden rim around the sand patch
   const rimMat = new THREE.MeshLambertMaterial({ color: 0x9c6b3a });
   const rG = new THREE.Group();
   for (const [w, d, x, z] of [[TABLE + 0.08, 0.04, 0, TABLE / 2 + 0.02], [TABLE + 0.08, 0.04, 0, -TABLE / 2 - 0.02], [0.04, TABLE + 0.08, TABLE / 2 + 0.02, 0], [0.04, TABLE + 0.08, -TABLE / 2 - 0.02, 0]]) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), rimMat); m.position.set(x, 0.0, z); rG.add(m);
   }
+  rG.traverse(o => { o.castShadow = true; o.receiveShadow = true; });
   scene.add(rG);
 }
 
@@ -281,7 +300,7 @@ function updateSandGeo() {
   const wet = new THREE.Color(0xb49a68), dry = new THREE.Color(0xe8d4a4), tmp = new THREE.Color();
   for (let v = 0; v < pos.count; v++) {
     const h = sand[vmap[v]]; pos.setY(v, h);
-    tmp.copy(wet).lerp(dry, smoothstep(0, 0.28, h));
+    tmp.copy(wet).lerp(dry, smoothstep(0, 0.28, h)).multiplyScalar(1 + grain[v]);
     col.setXYZ(v, tmp.r, tmp.g, tmp.b);
   }
   pos.needsUpdate = true; col.needsUpdate = true; sandGeo.computeVertexNormals();
@@ -397,7 +416,7 @@ function animate() {
   water.material.uniforms.time.value = t;
   camera.getWorldPosition(water.material.uniforms.cam.value);
   if (cursor.visible) cursor.material.opacity = 0.5 + 0.3 * Math.sin(t * 5);
-  renderer.render(scene, camera);
+  fx.render();
 }
 
 function onResize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
