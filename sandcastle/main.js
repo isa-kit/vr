@@ -200,7 +200,7 @@ async function init() {
     if (hand === 'right' && b === 5) cycleTool(-1);       // B
   });
   menu.onSqueeze((c, hand, i, down) => { gripDown[i] = down; });
-  applyQuality();
+  applyQuality(); setStatus();
   renderer.xr.addEventListener('sessionstart', applyQuality); renderer.xr.addEventListener('sessionend', applyQuality);
 
   addEventListener('resize', onResize);
