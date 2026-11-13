@@ -34,6 +34,7 @@ const MAXH = 0.8;
 const BASE = 0.05;                      // untouched beach level; you can dig BELOW this (down to MINH) to make holes
 const MINH = BASE - 0.5;                // deepest hole: 50 cm
 const wet = new Float32Array(GN * GN);  // 0 dry … 1 soaked: wet sand is dark and holds steep walls; dry sand slumps flat
+const wetSea = new Float32Array(GN * GN);   // sand the swash has just soaked: dries in ~30 s (built walls keep `wet` much longer)
 const pw = new Float32Array(GN * GN);   // pooled water depth (m) sitting in holes; seeps away once the tide pulls back
 const BUCKET_CAP = 10;                  // water units; one unit ≈ a litre
 let bucketWater = 0, cupWater = 0;
@@ -380,7 +381,7 @@ function updateSandGeo() {
       const nz = (sand[gi(i, Math.max(0, j - 1))] - sand[gi(i, Math.min(GN - 1, j + 1))]) / (2 * CELL);
       const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
       N[k] = nx * inv; N[k + 1] = inv; N[k + 2] = nz * inv;
-      const w = Math.max(wet[id], smoothstep(BASE - 0.015, BASE - 0.06, h)), dryness = 1 - w; WA[id] = Math.max(w * 0.9, Math.min(1, (fd[id] + pw[id]) * 40));
+      const w = Math.max(wet[id], wetSea[id], smoothstep(BASE - 0.015, BASE - 0.06, h)), dryness = 1 - w; WA[id] = Math.max(w * 0.9, Math.min(1, (fd[id] + pw[id]) * 40));
       const _dry = dryness, slope = 0.86 + 0.14 * inv, g = (1 + grain[id]) * slope;
       C[k] = (WET[0] + (DRY[0] - WET[0]) * dryness) * g;
       C[k + 1] = (WET[1] + (DRY[1] - WET[1]) * dryness) * g;
@@ -641,7 +642,7 @@ function undo() {
   const u = undoStack.pop(); if (!u) return;
   sand.set(u.sand); wet.set(u.wet); clearDecos(); u.decos.forEach((d) => addDeco({ ...d })); markAll();
 }
-function resetSand() { pushUndo(); sand.fill(BASE); wet.fill(0); pw.fill(0); clearDecos(); markAll(); }
+function resetSand() { pushUndo(); sand.fill(BASE); wet.fill(0); wetSea.fill(0); pw.fill(0); clearDecos(); markAll(); }
 
 // ============================ the picnic ============================
 const picnicItems = [];
@@ -723,7 +724,7 @@ function computeFlood(dtEro) {
     const dep = Math.max(0, hole ? depthRaw : Math.min(depthRaw, lead));            // holes fill all the way to the water line
     fd[c] = dep;
     if (hole && dep > pw[c]) pw[c] = dep;                                           // …and keep that water after the sea draws back
-    if (dep > 0.005 && wet[c] < 1) { wet[c] = 1; touch(c); }
+    if (dep > 0.005 && wetSea[c] < 1) { wetSea[c] = 1; touch(c); }
     if (dep > 0.01 && h > BASE + 0.003 && !PROT[c]) {                              // the sea nibbles at low mounds (dry ones fastest)
       sand[c] -= (h - BASE) * 0.6 * dtEro * (1 - 0.85 * wet[c]); touch(c);
     }
@@ -754,8 +755,8 @@ function drainPools(step) {
   if (any) waterDirty = true;
   wetTimer += step;
   if (wetTimer > 3) {
-    let ch = false; const dec = wetTimer * 0.004; wetTimer = 0;
-    for (let c = 0; c < GN * GN; c++) if (wet[c] > 0) { wet[c] = Math.max(0, wet[c] - dec); ch = true; }
+    let ch = false; const dec = wetTimer * 0.004, dec2 = wetTimer / 30; wetTimer = 0;
+    for (let c = 0; c < GN * GN; c++) { if (wet[c] > 0) { wet[c] = Math.max(0, wet[c] - dec); ch = true; } if (wetSea[c] > 0) { wetSea[c] = Math.max(0, wetSea[c] - dec2); ch = true; } }
     if (ch) markAll();
   }
 }
