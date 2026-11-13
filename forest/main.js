@@ -6,7 +6,7 @@
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, makeSky, softTexture, swayMaterial,
   paint, fbm, smoothstep, rng, makeBird, poseBird,
-} from '../seated/common.js';
+} from '../seated/common.js?v=20261113a';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const R = rng(20260);

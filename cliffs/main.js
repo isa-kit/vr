@@ -6,7 +6,7 @@
 import {
   THREE, SHADER_TAIL, SKY_GLSL, createWorld, makeNoiseTexture, makeSky, swayMaterial,
   paint, fbm, vnoise, smoothstep, rng, hash, makeBird, poseBird, sectionRow, choiceGrid,
-} from '../seated/common.js';
+} from '../seated/common.js?v=20261113a';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);
