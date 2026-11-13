@@ -10,6 +10,12 @@ import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
 import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
 import { createTouch } from '../shared/touch.js?v=20261113c';
 import { createBirds } from '../shared/birds.js?v=20261113c';
+import { createSky } from '../procgen/sky.js?v=20261115a';
+import { createWater } from '../procgen/water.js?v=20261115a';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261115a';
+import { createTerrain } from '../procgen/terrain.js?v=20261115a';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261115a';
+import { createRocks } from '../procgen/rocks.js?v=20261115a';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
 
 let fx;
@@ -43,7 +49,7 @@ let scene, camera, renderer, dolly, world, menu, caps, horizonColor, kit, spy;
 let soundOn = true, comfort, touch, wt = 0, fenceBuilt = false;
 const VR_WALK = 1.6;          // m/s in a headset / on a phone: slow, constant, no ramps
 const EDGE_Z = -34;           // hard stop well back from the cliff; speed eases off over the last 8 m
-let water, flockBirds, clouds = [], sheepMesh;
+let ocean, sky, terrain, treeLib, treeField, hemiL, flockBirds, clouds = [], sheepMesh, treeLodK = 1, lastLayout = { x: 1e9, z: 1e9 };
 const clock = new THREE.Clock();
 const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
@@ -71,8 +77,22 @@ function terrainH(x, z) {
   hills *= (0.18 + 0.82 * smoothstep(4, 34, d));   // flatten the glade
   const land = smoothstep(-74, -44, z);             // 1 = land, 0 = sea
   const seabed = -12;
-  return seabed + (hills - seabed) * land;
+  let h = seabed + (hills - seabed) * land;
+  // a distant mountain range far across the sea (beyond z = −300): ridged noise, so it reads as real ranges
+  const mk = smoothstep(-280, -380, z);
+  if (mk > 0) { const r = 1 - Math.abs(2 * fbm(x * 0.0042 + 40, z * 0.0042 + 13) - 1); h += mk * (Math.pow(r, 2.2) * 150 + fbm(x * 0.02, z * 0.02) * 12); }
+  return h;
 }
+
+const hf = { height: (x, z) => terrainH(x, z), slope: (x, z) => { const e = 1.5, dx = (terrainH(x + e, z) - terrainH(x - e, z)) / (2 * e), dz = (terrainH(x, z + e) - terrainH(x, z - e)) / (2 * e); return 1 - 1 / Math.hypot(dx, 1, dz); } };
+let qpref = 'auto'; try { qpref = localStorage.getItem('oortia-nature-quality') || 'auto'; } catch (e) { /* ignore */ }
+function pickTier() {
+  if (qpref !== 'auto' && QUALITY[qpref]) return qpref;
+  if (/OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent)) return 'light';
+  return touch && touch.isTouch ? 'medium' : 'high';
+}
+const loadMsg = (m) => { const g = document.querySelector('#enter .go'); if (g) g.textContent = m; };
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
 init();
 
@@ -86,10 +106,10 @@ async function init() {
 
   caps = await detectXR();
   scene = new THREE.Scene();
-  const horizon = new THREE.Color(0xeadcc0);   // warm hazy horizon
+  const horizon = new THREE.Color(0xdfe6ea);
   horizonColor = horizon;
   scene.background = horizon.clone();
-  scene.fog = new THREE.Fog(horizon, 60, 300);
+  scene.fog = new THREE.FogExp2(horizon, 0.0034);        // exponential haze: far trees and mountains melt into the sky colour
 
   camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 1200);
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });   // alpha only if passthrough can be toggled
@@ -102,7 +122,7 @@ async function init() {
     onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.2, Math.min(1.2, pitch - dy * 0.004)); } });
   renderer.setPixelRatio(touch.pixelRatio(2));
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · ☰ Menu for options', h.textContent); }
-  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.45, radius: 0.6, threshold: 0.96 });
+  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.12, radius: 0.4, threshold: 2.2 });
 
   dolly = new THREE.Group();
   dolly.add(camera);
@@ -110,23 +130,65 @@ async function init() {
   dolly.position.set(0, 0, 20);   // start in the glade, facing the sea (−z)
   yaw = 0;                          // default camera faces −z (toward the cliff & sea)
 
-  // lights
-  scene.add(new THREE.HemisphereLight(0xe9f0e2, 0x55663c, 0.92));
-  const sun = new THREE.DirectionalLight(0xffe6bf, 1.2);
+  // ---- everything below is generated from numbers by procgen/ (no downloads) ----
+  loadMsg('Growing the glade…'); await nextFrame();
+  const tierName = pickTier(), T = QUALITY[tierName];
+  sky = createSky({ renderer, scene, sun: { elevation: 16, azimuth: -17 }, clouds: { cover: 0.38 }, seed: 5 });
+  sunDir.copy(sky.sunDir);
+  sky.mesh.scale.setScalar(500); sky.dome.scale.setScalar(0.38);
+  scene.fog.color.copy(sky.haze); scene.background = sky.haze.clone();
+  scene.environment = sky.env; scene.environmentIntensity = 0.7;
+  hemiL = new THREE.HemisphereLight(0xe9f0e2, 0x55663c, 0.35); scene.add(hemiL);
+  const sun = new THREE.DirectionalLight(sky.sunColor, 1.6 * sky.sunIntensity / 3.2);
   sun.position.copy(sunDir).multiplyScalar(100);
   scene.add(sun);
 
-  buildSky();
-  buildTerrain();
-  buildWater();
-  buildTrees();
-  buildBroadleaf();
-  buildRocks();
+  const maps = {};
+  for (const k of ['litter', 'grass', 'soil', 'rock']) { maps[k] = await makeMaterialMaps(k, { size: T.tex, seed: 4 }); await nextFrame(); }
+  const sandM = await makeMaterialMaps('sand', { size: T.tex, seed: 6 }); maps.soil = sandM;                  // the 'soil' slot becomes shoreline sand
+  terrain = createTerrain({ hf, maps, radius: 760, seed: 2,
+    extraWeights: (x, z, h) => {
+      if (z < -26 && h < WL + 0.9) return { litter: 0.04, grass: 0.04, soil: 8 };                         // shoreline sand
+      const g = 1 - smoothstep(22, 70, Math.hypot(x, z - 10));                                  // the glade is meadow; litter lives under the trees
+      return { litter: 1 - 0.9 * g, grass: 1 + 6 * g, soil: 0.02 };
+    } });
+  terrain.rebuild(0, 20); terrain.cx = 0; terrain.cz = 20; scene.add(terrain.mesh);
+  ocean = createWater({
+    level: WL, bounds: { cx: 0, cz: -420, w: 1500, d: 740 }, segments: tierName === 'light' ? 90 : tierName === 'medium' ? 140 : 220, maxDepth: 10,
+    depthFn: (x, z) => Math.max(0, WL - terrainH(x, z)),
+    waves: [{ dir: [0.1, 1], steep: 0.08, len: 60, speed: 0.8 }, { dir: [-0.3, 1], steep: 0.06, len: 30, speed: 0.9 }, { dir: [0.4, 0.9], steep: 0.04, len: 14, speed: 1 }],
+    colors: { shallow: 0x4a9db2, deep: 0x154f66 }, calm: 0.5, foam: 0.9,
+  });
+  scene.add(ocean.mesh);
+  loadMsg('Growing trees…'); await nextFrame();
+  treeLib = await createTreeLibrary({ renderer, scene, quality: T, species: ['oak', 'birch', 'pine', 'fir'], seed: 3,
+    sun: { dir: sunDir, color: sky.sunColor.getHex(), intensity: sky.sunIntensity }, env: sky.env, tick: async (m) => { loadMsg(m + '…'); await nextFrame(); } });
+  {
+    const items = [], R = (() => { let a = 12345; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
+    const want = Math.round((cfg.trees + 55) * (tierName === 'light' ? 0.6 : 1)); let tries = 0;
+    while (items.length < want && tries++ < want * 40) {
+      const a = R() * Math.PI * 2, r = 22 + Math.pow(R(), 0.8) * 170, x = Math.cos(a) * r, z = Math.sin(a) * r + 0;
+      if (z < -40) continue;
+      const h = terrainH(x, z); if (h < WL + 0.8 || h > 9) continue;
+      const conif = R() < 0.62, sp = conif ? (R() < 0.6 ? 'pine' : 'fir') : (R() < 0.62 ? 'oak' : 'birch');
+      items.push({ x, y: h - 0.1, z, s: 0.5 + R() * 0.4, yaw: R() * 6.28, species: sp, variant: items.length % T.variants, tint: [0.9 + R() * 0.2, 0.9 + R() * 0.2, 0.88 + R() * 0.16] });
+    }
+    treeField = createTreeField(treeLib, items, scene);
+  }
+  {
+    const R = (() => { let a = 777; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
+    const items = []; let tries = 0;
+    while (items.length < 70 && tries++ < 2500) {
+      const a = R() * Math.PI * 2, r = 10 + R() * 160, x = Math.cos(a) * r, z = Math.sin(a) * r; if (z < -42) continue;
+      const h = terrainH(x, z); if (h < WL + 0.1 || h > 9) continue;
+      items.push({ x, y: h - 0.05, z, s: 0.35 + Math.pow(R(), 2) * 1.5, yaw: R() * 6.28, variant: items.length });
+    }
+    const rockMat = standardMaterial(await makeMaterialMaps('rock', { size: T.tex, seed: 2 }), { vertexColors: true });
+    scene.add(createRocks({ items, variants: [1, 2, 3, 4, 5].map((sd) => ({ seed: sd, detail: tierName === 'light' ? 2 : 3, flatten: 0.55 + sd * 0.05, facets: 6 + sd, rough: 0.1 })), material: rockMat }));
+  }
   buildFlowers();
   buildSheep();
   buildDeer();
-  buildMountains();
-  buildClouds();
   buildBirds();
 
   // everything but the rig lives in `world` so the menu can hide it for passthrough
@@ -136,14 +198,15 @@ async function init() {
 
   buildFence();
   comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
-    onQuality: (q) => { for (const m of instanced) m.count = Math.floor(m.userData.full * [1, 0.8, 0.55, 0.35][q]); flockBirds.group.visible = q < 1; } });
-  const instanced = []; world.traverse((o) => { if (o.isInstancedMesh && o.count > 30) { o.userData.full = o.count; instanced.push(o); } });
+    onQuality: (q) => { treeLodK = [1, 0.75, 0.55, 0.4][q]; lastLayout.x = 1e9; flockBirds.group.visible = q < 1; } });
 
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Nature — Glade & Cliffs',
     hint: touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · Pause world motion in Comfort', 'WASD walk · mouse look · Shift run · hold Z for binoculars · click the view to look around · Esc/M menu. In VR: grip the spyglass at your side and raise it to your eye.'),
     rows: [
+      { label: 'Quality', cells: [['Auto', 'auto'], ['High', 'high'], ['Med', 'medium'], ['Light', 'light']].map(([t, id]) => ({ text: t, active: () => qpref === id, action: () => { try { localStorage.setItem('oortia-nature-quality', id); } catch (e) { /* ignore */ } location.reload(); } })) },
+      { cells: [{ text: () => 'Tier: ' + pickTier() + ' (change reloads)' }] },
       ...comfort.rows({ movement: true, teleport: true }),
       ...touch.rows(),
     ],
@@ -184,6 +247,7 @@ async function init() {
   renderer.xr.addEventListener('sessionstart', startAudio);
 
   if (location.hash === '#debug') window.__nat = { dolly, comfort, touch, camera };
+  loadMsg('Enter →');
   renderer.setAnimationLoop(animate);
 }
 
@@ -590,9 +654,12 @@ function animate() {
   const t = wt;
   const st = handleMovement(dt);
   camera.getWorldPosition(camWorld);
-  water.material.uniforms.time.value = t;
-  water.material.uniforms.cam.value.copy(camWorld);
-  if (!comfort.paused) for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 320) c.position.x = -320; }
+  sky.update(t, camWorld); ocean.update(t); treeLib.update(t);
+  if (Math.hypot(camWorld.x - lastLayout.x, camWorld.z - lastLayout.z) > 6) {            // re-pick tree LODs and re-centre the terrain mesh when you have moved
+    lastLayout.x = camWorld.x; lastLayout.z = camWorld.z;
+    const Q = treeLib.quality; treeField.layout({ x: camWorld.x, z: camWorld.z, lod0: Q.lod0 * treeLodK, lod1: Q.lod1 * treeLodK, far: 800 });
+  }
+  if (Math.hypot(camWorld.x - terrain.cx, camWorld.z - terrain.cz) > 40) { terrain.cx = camWorld.x; terrain.cz = camWorld.z; terrain.rebuild(camWorld.x, camWorld.z); }   // rare: a rebuild costs a few ms
   flockBirds.update(t);
   windU.value = t;
   menu.update();

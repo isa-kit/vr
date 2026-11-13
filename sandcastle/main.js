@@ -15,9 +15,12 @@ import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfor
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { createBirds } from '../shared/birds.js?v=20261114f';
 import * as RZ from './realism.js?v=20261114f';
+import { createSky } from '../procgen/sky.js?v=20261114g';
+import { createWater } from '../procgen/water.js?v=20261114g';
+import { makeMaterialMaps } from '../procgen/textures.js?v=20261114g';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 
-let fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
+let sky, ocean, fx, comfort, touch, wt = 0, qLevel = 0, gulls, hemi, sandTex, envTex, smallStuff, pebbleFull = 0;
 const sandMats = [];
 let quality = 'auto';
 try { quality = localStorage.getItem('oortia-sand-quality') || 'auto'; } catch (e) { /* ignore */ }
@@ -47,7 +50,7 @@ const TOOLS = [['Pile', 'pile'], ['Dig', 'dig'], ['Scoop', 'scoop'], ['Smooth', 
 const CLICK_TOOLS = new Set(['tower', 'flag', 'shell', 'star']);
 let tool = 'pile';
 
-let scene, camera, renderer, dolly, env, sandMesh, sandGeo, waterMesh, seaMesh, menu, kit, caps, decoGroup, sun, lens, picnic;
+let scene, camera, renderer, dolly, env, sandMesh, sandGeo, waterMesh, menu, kit, caps, decoGroup, sun, lens, picnic;
 const clock = new THREE.Clock();
 const keys = {};
 const ray = new THREE.Raycaster();
@@ -73,7 +76,7 @@ const gi = (i, j) => j * GN + i;
 function groundH(x, z) {
   const edge = TRAY_C.z - HALF;
   if (z > edge) return -0.004;
-  return -0.004 - 0.55 * smoothstep(edge, edge - 3.5, z);
+  return -0.004 - 0.5 * smoothstep(edge, edge - 3.5, z) - 6.0 * smoothstep(edge - 3.5, edge - 70, z);
 }
 // world height of whatever you'd stand a tool on
 function surfaceY(x, z) {
@@ -83,9 +86,9 @@ function surfaceY(x, z) {
 }
 
 // ---------- boot ----------
-Promise.resolve().then(async () => { caps = await detectXR(); init(); });
+Promise.resolve().then(async () => { caps = await detectXR(); await init(); });
 
-function init() {
+async function init() {
   scene = new THREE.Scene();
   scene.background = horizonColor.clone();
   scene.fog = new THREE.Fog(horizonColor, 30, 220);
@@ -103,7 +106,7 @@ function init() {
   renderer.shadowMap.needsUpdate = true;
   document.body.appendChild(renderer.domElement);
   renderer.domElement.style.touchAction = 'none';
-  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.2, bloom: 0.3, radius: 0.4, threshold: 0.97 });
+  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.12, radius: 0.3, threshold: 2.2 });
 
   dolly = new THREE.Group();
   dolly.add(camera);
@@ -122,12 +125,19 @@ function init() {
 
   env = new THREE.Group();            // sky, beach, sea, crate — hidden when passthrough is on
   scene.add(env);
-  sandTex = RZ.makeSandTextures();
-  envTex = RZ.makeEnvironment(renderer, sunDir);              // procedural sky + sand ground + HDR sun → believable ambient and reflections
-  scene.environment = envTex; scene.environmentIntensity = 0.6;
-  buildSky();
+  // sky, clouds, ambient light, haze: procgen/sky.js (physically based, deterministic)
+  sky = createSky({ renderer, scene, sun: { elevation: 35, azimuth: 67 }, clouds: { cover: 0.32 }, seed: 3 });
+  sunDir.copy(sky.sunDir);
+  sky.mesh.scale.setScalar(500); sky.dome.scale.setScalar(0.38);      // keep the dome inside the camera far plane
+  env.add(sky.mesh, sky.dome);
+  envTex = sky.env; scene.environment = envTex; scene.environmentIntensity = 0.55;
+  scene.fog.color.copy(sky.haze); scene.background = sky.haze.clone();
+  sun.color.copy(sky.sunColor); sun.intensity = 1.45 * sky.sunIntensity / 3.2;
+  // sand: procgen/textures.js 'sand' (colour + normal + roughness)
+  const sm = await makeMaterialMaps('sand', { size: touch.isTouch ? 256 : 512, seed: 6 });
+  sandTex = { albedo: sm.map, normal: sm.normalMap, rough: sm.roughnessMap };
   buildBeach();
-  buildSea();
+  buildOcean();
   gulls = createBirds({ parent: env, color: 0xf4f4ef, wingColor: 0xdde1e6, tipColor: 0x3a3d44, seed: 5, flocks: [
     { n: 3, cx: -12, cz: -30, ra: 30, rb: 16, y: 6.5, yv: 1.5, period: 95, size: 1.7 },
     { n: 2, cx: 22, cz: -42, ra: 36, rb: 18, y: 10, yv: 2, period: 125, size: 1.5 } ] });
@@ -200,7 +210,7 @@ function init() {
   enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
-  if (location.hash === '#debug') window.__sc = { tide, orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
+  if (location.hash === '#debug') window.__sc = { scene, sky, tide, orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
   renderer.setAnimationLoop(animate);
 }
 
@@ -216,7 +226,7 @@ function applyQuality() {
   const b = QTIERS[baseQuality()], idx = Math.max(b.idx, qLevel >= 2 ? 2 : qLevel >= 1 ? 1 : 0);
   const t = QTIERS[QORDER[idx]]; curTier = t;
   scene.environment = t.env ? envTex : null; hemi.intensity = t.env ? 0.45 : 1.0;
-  for (const m of sandMats) { m.normalMap = t.normal ? sandTex.normal : null; m.map = t.normal ? sandTex.albedo : null; m.needsUpdate = true; }
+  for (const m of sandMats) { m.normalMap = t.normal ? sandTex.normal : null; m.map = t.normal ? sandTex.albedo : null; m.roughnessMap = t.normal ? sandTex.rough : null; m.needsUpdate = true; }
   if (sun.shadow.mapSize.x !== t.shadow) { sun.shadow.mapSize.set(t.shadow, t.shadow); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
   renderer.shadowMap.needsUpdate = true;
   if (smallStuff) smallStuff.children[0].count = Math.floor(pebbleFull * t.pebbles);
@@ -243,7 +253,7 @@ function buildSky() {
 
 // fine procedural grain (fades with distance) so close-ups and the magnifier have detail
 function sandMaterial(cutPatch = false) {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: sandTex.albedo, normalMap: sandTex.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.93, metalness: 0, color: new THREE.Color(1.55, 1.38, 1.1) });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: sandTex.albedo, normalMap: sandTex.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.93, metalness: 0, roughnessMap: sandTex.rough, color: new THREE.Color(1, 1, 1) });
   m.customProgramCacheKey = () => (cutPatch ? 'sandpbr-cut' : 'sandpbr');
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = 'attribute float aWet; varying float vWet; varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
@@ -256,7 +266,7 @@ function sandMaterial(cutPatch = false) {
   sandMats.push(m);
   return m;
 }
-const DRY_C = new THREE.Color(0xf4e0b2), WET_C = new THREE.Color(0xb59862);
+const DRY_C = new THREE.Color(0xfff4e2), WET_C = new THREE.Color(0xc4b49c);
 
 // ---------- open beach ----------
 function buildBeach() {
@@ -291,30 +301,16 @@ function buildBeach() {
 const CRATE = { x: 0.95, z: 1.0, top: 0.62 };
 
 // ---------- the sea (far water) ----------
-function buildSea() {
-  const geo = new THREE.PlaneGeometry(1200, 1200, 1, 1); geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.ShaderMaterial({
-    transparent: true,
-    uniforms: {
-      time: { value: 0 }, cam: { value: new THREE.Vector3() }, sun: { value: sunDir },
-      deep: { value: new THREE.Color(0x1d6f8f) }, shallow: { value: new THREE.Color(0x58b0c4) }, sky: { value: new THREE.Color(0xcfe7f3) },
-      fogColor: { value: scene.fog.color }, fogNear: { value: scene.fog.near }, fogFar: { value: scene.fog.far },
-    },
-    vertexShader: `varying vec3 vW; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }`,
-    fragmentShader: `varying vec3 vW; uniform float time; uniform vec3 cam,sun,deep,shallow,sky;
-      uniform vec3 fogColor; uniform float fogNear,fogFar;
-      void main(){
-        float r=sin(vW.x*0.8+time*1.3)+sin(vW.z*0.7-time)+sin((vW.x+vW.z)*0.5+time*0.7);
-        vec3 N=normalize(vec3(0.06*cos(vW.x*0.8+time*1.3),1.0,0.06*cos(vW.z*0.7-time)));
-        vec3 V=normalize(cam-vW); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
-        vec3 col=mix(mix(deep,shallow,clamp(0.5+0.12*r,0.0,1.0)),sky,fres*0.8);
-        vec3 H=normalize(V+normalize(sun)); col+=vec3(1.0,0.97,0.85)*pow(max(dot(N,H),0.0),120.0)*1.2;
-        float fog=smoothstep(fogNear,fogFar,length(cam-vW)); col=mix(col,fogColor,fog);
-        gl_FragColor=vec4(col,0.94);
-        ${SHADER_TAIL}
-      }`,
+// ---------- the ocean: procgen/water.js (Gerstner swell rolling toward the beach, fresnel, glitter, shore foam from the real beach depth) ----------
+const SEA_LEVEL = -0.52;
+function buildOcean() {
+  ocean = createWater({
+    level: SEA_LEVEL, bounds: { cx: 0, cz: -130, w: 320, d: 250 }, segments: touch.isTouch ? 90 : 170, maxDepth: 6,
+    depthFn: (x, z) => Math.max(0, SEA_LEVEL - groundH(x, z)),
+    waves: [{ dir: [0.12, 1], steep: 0.10, len: 26, speed: 0.9 }, { dir: [-0.25, 1], steep: 0.07, len: 14, speed: 1 }, { dir: [0.3, 0.9], steep: 0.045, len: 7, speed: 1.1 }, { dir: [0.0, 1], steep: 0.03, len: 3.5, speed: 1.2 }],
+    colors: { shallow: 0x5fb3a8, deep: 0x0f4a5e }, foam: 1.0, ripples: 1, calm: 0.55,
   });
-  seaMesh = new THREE.Mesh(geo, mat); seaMesh.position.set(0, -0.52, 0); env.add(seaMesh);
+  env.add(ocean.mesh);
 }
 
 // ---------- the sand patch (hand-built grid so we can update only the changed rows) ----------
@@ -1347,8 +1343,7 @@ function animate() {
   statusMesh.scale.setScalar(clamp(_a.distanceTo(statusMesh.position) / 5, 0.5, 12));
 
   gulls.update(t);
-  seaMesh.material.uniforms.time.value = t;
-  camera.getWorldPosition(seaMesh.material.uniforms.cam.value);
+  camera.getWorldPosition(_a); sky.update(t, _a); ocean.update(t);
   lens.update(mouseNDC);
   touch.tick(dt);
   comfort.update(dt, vst);
