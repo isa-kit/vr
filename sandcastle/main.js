@@ -9,12 +9,12 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js';
-import { createToolkit, createLens } from '../shared/xrtools.js';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js';
-import { createTouch } from '../shared/touch.js';
-import { createBirds } from '../shared/birds.js';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261113c';
+import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
+import { createTouch } from '../shared/touch.js?v=20261113c';
+import { createBirds } from '../shared/birds.js?v=20261113c';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
 
 let fx, comfort, touch, wt = 0, qLevel = 0, gulls;
 

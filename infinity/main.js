@@ -3,11 +3,11 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js';
-import { createToolkit } from '../shared/xrtools.js';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js';
-import { createTouch } from '../shared/touch.js';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js?v=20261113c';
+import { createToolkit } from '../shared/xrtools.js?v=20261113c';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
+import { createTouch } from '../shared/touch.js?v=20261113c';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
 
 let fx, nebula;   // post-processing + nebula backdrop
 
