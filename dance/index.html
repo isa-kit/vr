@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Dance — Oortia</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #070918; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+  a.back { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 12px); z-index: 11; font: 13px system-ui, sans-serif; color: #cfd8ff; text-decoration: none; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  @media (pointer: coarse) { a.back { padding: 12px 6px; font-size: 15px; top: calc(env(safe-area-inset-top, 0px) + 4px); } }
+  #hud { display: none; position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); left: calc(env(safe-area-inset-left, 0px) + 12px); z-index: 10; width: min(380px, calc(100vw - 110px)); font: 600 14px/1.35 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); pointer-events: none; }
+  #hud #hudMove { font-size: 24px; font-weight: 800; letter-spacing: .01em; } #hud #hudNext { opacity: .8; } #hud #hudScore { margin-top: 4px; color: #ffd24a; }
+  #hud .bar { height: 5px; margin-top: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; } #hud .bar i { display: block; height: 100%; width: 0; background: #3fd8ff; }
+  #hudJudge { position: fixed; left: 0; right: 0; top: 18%; text-align: center; font: 800 44px system-ui, sans-serif; opacity: 0; text-shadow: 0 2px 12px rgba(0,0,0,.6); pointer-events: none; z-index: 10; }
+  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #cfd8ff; font: 16px system-ui, sans-serif; z-index: 5; }
+</style>
+</head>
+<body>
+  <a class="back" href="../">← Worlds</a>
+  <div id="hud"><div id="hudMove"></div><div id="hudNext"></div><div id="hudScore"></div><div class="bar"><i id="hudBar"></i></div></div>
+  <div id="hudJudge"></div>
+  <div id="loading"><span id="status">Setting the stage…</span></div>
+  <script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/" } }
+  </script>
+  <script type="module" src="./main.js?v=20261116g"></script>
+</body>
+</html>
