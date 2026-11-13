@@ -21,7 +21,12 @@ const GN = 256;                         // cells per side → ~2 cm cells
 const CELL = TRAY / (GN - 1);
 const HALF = TRAY / 2;
 const MAXH = 0.8;
-const BASE = 0.05;                      // untouched sand level; digging below this exposes wet sand
+const BASE = 0.05;                      // untouched beach level; you can dig BELOW this (down to MINH) to make holes
+const MINH = BASE - 0.5;                // deepest hole: 50 cm
+const wet = new Float32Array(GN * GN);  // 0 dry … 1 soaked: wet sand is dark and holds steep walls; dry sand slumps flat
+const pw = new Float32Array(GN * GN);   // pooled water depth (m) sitting in holes; seeps away once the tide pulls back
+const BUCKET_CAP = 10;                  // water units; one unit ≈ a litre
+let bucketWater = 0, cupWater = 0;
 const TRAY_C = new THREE.Vector3(0, 0, -3.0);
 const sand = new Float32Array(GN * GN).fill(BASE);
 const grain = new Float32Array(GN * GN);
@@ -30,8 +35,8 @@ const PROT = new Uint8Array(GN * GN);   // cells you cannot edit: the picnic pad
 
 const BRUSHES = [0.04, 0.06, 0.09, 0.12, 0.16, 0.22, 0.3, 0.4];
 let brushIdx = 3, brush = BRUSHES[3];
-const TOOLS = [['Pile', 'pile'], ['Dig', 'dig'], ['Smooth', 'smooth'], ['Tower', 'tower'], ['Wall', 'wall'],
-               ['Moat', 'moat'], ['Flag', 'flag'], ['Shell', 'shell'], ['Starfish', 'star']];
+const TOOLS = [['Pile', 'pile'], ['Dig', 'dig'], ['Scoop', 'scoop'], ['Smooth', 'smooth'], ['Tower', 'tower'], ['Wall', 'wall'],
+               ['Moat', 'moat'], ['Flag', 'flag'], ['Shell', 'shell'], ['Star', 'star']];
 const CLICK_TOOLS = new Set(['tower', 'flag', 'shell', 'star']);
 let tool = 'pile';
 
@@ -121,9 +126,9 @@ function init() {
     renderer, camera, dolly, caps,
     title: 'Sand Castle',
     startOpenDesktop: innerWidth > 760,
-    hint: 'Protect the picnic from the tide! Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L loupe',
+    hint: 'Protect the picnic from the tide! Dig holes — the sea fills them; Scoop (3) water into your bucket, then build Walls/Towers: wet sand holds, dry sand slumps. Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L loupe',
     rows: [
-      choiceGrid(TOOLS, () => tool, selectTool, 3),
+      choiceGrid(TOOLS, () => tool, selectTool, 4),
       stepperRow('Brush', () => Math.round(brush * 100) + ' cm', () => stepBrush(-1), () => stepBrush(1)),
       { cells: [{ text: '↶  Undo', action: undo }, { text: 'Reset sand', action: resetSand }] },
       stepperRow('Zoom', zoomText, () => zoomBy(-1), () => zoomBy(1)),
@@ -132,6 +137,9 @@ function init() {
         { text: '–', action: () => lensZoomStep(-1), tone: 'accent' },
         { text: () => '×' + lens.zoom, w: 1.1 },
         { text: '+', action: () => lensZoomStep(1), tone: 'accent' } ] },
+      { label: 'Bucket', cells: [
+        { text: () => '💧 ' + bucketWater.toFixed(1) + ' / ' + BUCKET_CAP, w: 2.2 },
+        { text: 'Empty', action: () => { bucketWater = 0; cupWater = 0; }, w: 1 } ] },
       { label: 'Tide', cells: [
         { text: () => (tide.on ? 'On' : 'Off'), action: () => { tide.on = !tide.on; if (tide.on) restartTide(); }, active: () => tide.on, w: 0.9 },
         { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; }, w: 1.2 },
@@ -164,7 +172,7 @@ function init() {
   enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
-  if (location.hash === '#debug') window.__sc = { tide, orbit, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
+  if (location.hash === '#debug') window.__sc = { tide, orbit, sand, src: SRC, camera: () => camera.position.toArray(), ndc: mouseNDC, getTool: () => tool, wet, pw, state: () => ({ bucketWater, cupWater, maxPool: pw.reduce((a, v) => (v > a ? v : a), 0), wetCells: wet.reduce((a, v) => a + (v > 0.5 ? 1 : 0), 0) }), dig: (lx, lz, r = 0.2, depth = 0.25) => { const rc = r / CELL, ci = (lx + HALF) / CELL, cj = (lz + HALF) / CELL; for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const d = Math.hypot(i - ci, j - cj); if (d < rc && !PROT[gi(i, j)]) sand[gi(i, j)] = BASE - depth * (1 - smoothstep(0.6 * rc, rc, d)); } markAll(); }, fillBucket: (lx, lz) => fillBucketAt(lx, lz, 5), project: (lx, lz) => { const v = new THREE.Vector3(TRAY_C.x + lx, TRAY_C.y + heightAt(lx, lz) - BASE, TRAY_C.z + lz).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
   renderer.setAnimationLoop(animate);
 }
 
@@ -187,7 +195,8 @@ function buildSky() {
 }
 
 // fine procedural grain (fades with distance) so close-ups and the magnifier have detail
-function sandify(mat) {
+function sandify(mat, cutPatch = false) {
+  mat.customProgramCacheKey = () => (cutPatch ? 'sand-cut' : 'sand');      // the two variants must not share a compiled program
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = 'varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n vSandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -196,7 +205,8 @@ function sandify(mat) {
         float sFade = 1.0 - smoothstep(0.5, 3.2, length(vSandW - cameraPosition));
         vec2 sg = vSandW.xz * 230.0;
         float sN = sandHash(floor(sg)) * 0.65 + sandHash(floor(sg * 0.37) + 7.0) * 0.35;
-        diffuseColor.rgb *= 1.0 + (sN - 0.5) * 0.34 * sFade;`);
+        diffuseColor.rgb *= 1.0 + (sN - 0.5) * 0.34 * sFade;
+        ${cutPatch ? `if (abs(vSandW.x - (${TRAY_C.x.toFixed(3)})) < ${HALF.toFixed(3)} && abs(vSandW.z - (${TRAY_C.z.toFixed(3)})) < ${HALF.toFixed(3)}) discard;` : ''}`);
   };
   return mat;
 }
@@ -215,7 +225,7 @@ function buildBeach() {
     col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-  const beach = new THREE.Mesh(geo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const beach = new THREE.Mesh(geo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true }), true));   // cut out under the patch so holes are real
   beach.receiveShadow = true; env.add(beach);
 
   // a driftwood crate at hand height; the spade, bucket and magnifier live on it
@@ -288,7 +298,7 @@ function buildSandTable() {
   sandGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   sandGeo.setIndex(new THREE.BufferAttribute(idx, 1));
   sandGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3, 0), TRAY * 0.8);
-  sandGeo.boundingBox = new THREE.Box3(new THREE.Vector3(-HALF, 0, -HALF), new THREE.Vector3(HALF, MAXH, HALF));
+  sandGeo.boundingBox = new THREE.Box3(new THREE.Vector3(-HALF, MINH, -HALF), new THREE.Vector3(HALF, MAXH, HALF));
   sandMesh = new THREE.Mesh(sandGeo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true })));
   sandMesh.position.set(TRAY_C.x, TRAY_C.y - BASE, TRAY_C.z);        // untouched sand sits at y = 0, flush with the beach
   sandMesh.frustumCulled = false;
@@ -303,7 +313,7 @@ function buildSandTable() {
   markAll();
 }
 
-let WET = [WET_C.r, WET_C.g, WET_C.b], DRY = [DRY_C.r, DRY_C.g, DRY_C.b];
+let WET = [WET_C.r * 0.8, WET_C.g * 0.78, WET_C.b * 0.74], DRY = [DRY_C.r, DRY_C.g, DRY_C.b];
 function updateSandGeo() {
   if (!dirty) return;
   const r = { i0: Math.max(0, dirty.i0 - 1), i1: Math.min(GN - 1, dirty.i1 + 1), j0: Math.max(0, dirty.j0 - 1), j1: Math.min(GN - 1, dirty.j1 + 1) };
@@ -318,7 +328,7 @@ function updateSandGeo() {
       const nz = (sand[gi(i, Math.max(0, j - 1))] - sand[gi(i, Math.min(GN - 1, j + 1))]) / (2 * CELL);
       const inv = 1 / Math.sqrt(nx * nx + 1 + nz * nz);
       N[k] = nx * inv; N[k + 1] = inv; N[k + 2] = nz * inv;
-      const dryness = smoothstep(0.0, 0.05, h), slope = 0.86 + 0.14 * inv, g = (1 + grain[id]) * slope;
+      const w = Math.max(wet[id], smoothstep(BASE - 0.015, BASE - 0.06, h)), dryness = 1 - w, slope = 0.86 + 0.14 * inv, g = (1 + grain[id]) * slope;
       C[k] = (WET[0] + (DRY[0] - WET[0]) * dryness) * g;
       C[k + 1] = (WET[1] + (DRY[1] - WET[1]) * dryness) * g;
       C[k + 2] = (WET[2] + (DRY[2] - WET[2]) * dryness) * g;
@@ -353,7 +363,7 @@ function raySand(origin, dir, out) {
     let a = (lo - o) / d, b = (hi - o) / d; if (a > b) { const x = a; a = b; b = x; }
     t0 = Math.max(t0, a); t1 = Math.min(t1, b); return t0 <= t1;
   };
-  if (!slab(ox, dx, -HALF, HALF) || !slab(oy, dy, 0, MAXH + 0.02) || !slab(oz, dz, -HALF, HALF)) return false;
+  if (!slab(ox, dx, -HALF, HALF) || !slab(oy, dy, MINH, MAXH + 0.02) || !slab(oz, dz, -HALF, HALF)) return false;
   const step = CELL * 0.7;
   let prev = t0, t = t0;
   const below = (tt) => (oy + dy * tt) <= heightAt(ox + dx * tt, oz + dz * tt);
@@ -380,13 +390,24 @@ function cellRect(lx, lz, rm, extra = 0) {
   return { ci, cj, rc, i0: Math.max(0, Math.floor(ci - rc)), i1: Math.min(GN - 1, Math.ceil(ci + rc)), j0: Math.max(0, Math.floor(cj - rc)), j1: Math.min(GN - 1, Math.ceil(cj + rc)) };
 }
 
+// ----- water economy: building costs bucket water; wet sand holds steep walls, dry sand slumps flat -----
+function spendWater(units) {
+  if (units <= 0) return bucketWater > 0.02;
+  if (bucketWater >= units) { bucketWater -= units; return true; }
+  bucketWater = 0; return false;
+}
+const wetEff = (c) => (sand[c] < BASE - 0.02 ? 1 : wet[c]);      // sand below beach level is naturally damp
+
 function brushPile(lx, lz, dt, dir) {
   const r = cellRect(lx, lz, brush);
-  const rate = 0.55 * dt * dir;
+  const rate = (dir > 0 ? 0.55 : 0.4) * dt * dir;
+  const watered = dir > 0 && spendWater(0.7 * dt);                // piling uses water; the pile is wet only if it got some
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) / r.rc; if (d > 1) continue;
     const id = gi(i, j); if (PROT[id]) continue;
-    sand[id] = clamp(sand[id] + rate * smoothstep(1, 0, d), 0, MAXH);
+    const f = smoothstep(1, 0, d);
+    sand[id] = clamp(sand[id] + rate * f, MINH, MAXH);
+    if (watered && f > 0.2) wet[id] = 1;
   }
   slumpRect(r, 2); markDirty(r.i0 - 4, r.i1 + 4, r.j0 - 4, r.j1 + 4);
 }
@@ -401,18 +422,19 @@ function brushSmooth(lx, lz, dt) {
   }
   markDirty(r.i0, r.i1, r.j0, r.j1);
 }
-// angle-of-repose cheat, only around where the hand just worked
+// angle-of-repose cheat, only around where the hand just worked. Wet sand holds a far steeper slope.
 function slumpRect(r, iter) {
-  const maxStep = 0.75 * CELL;
   const i0 = Math.max(0, r.i0 - 3), i1 = Math.min(GN - 1, r.i1 + 3), j0 = Math.max(0, r.j0 - 3), j1 = Math.min(GN - 1, r.j1 + 3);
   for (let k = 0; k < iter; k++) {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = gi(i, j), hc = sand[c];
       if (PROT[c]) continue;
+      const wc = wetEff(c);
       for (let q = 0; q < 4; q++) {
         const ni = i + (q === 0 ? -1 : q === 1 ? 1 : 0), nj = j + (q === 2 ? -1 : q === 3 ? 1 : 0);
         if (ni < 0 || nj < 0 || ni >= GN || nj >= GN) continue;
         const n = gi(ni, nj); if (PROT[n]) continue;
+        const maxStep = CELL * (0.75 + 3.4 * Math.max(wc, wetEff(n)));
         const diff = hc - sand[n];
         if (diff > maxStep) { const m = (diff - maxStep) * 0.25; sand[c] -= m; sand[n] += m; }
       }
@@ -420,34 +442,40 @@ function slumpRect(r, iter) {
   }
 }
 
-// wall: a ridge with crenellations along the stroke
-function stampWall(lx, lz, travel) {
-  const w = Math.max(brush * 0.35, 2.2 * CELL), H = clamp(0.1 + brush * 1.2, 0.15, 0.36);
-  const crenel = Math.floor(travel / (w * 2.2)) % 2 ? 0.8 : 1;
+// wall: a ridge with crenellations along the stroke. With water it is tall, steep and wet; dry it is a low, wide mound.
+function stampWall(lx, lz, travel, seg = 0) {
+  const watered = spendWater(0.3 * seg) || (seg === 0 && bucketWater > 0.02);
+  const w0 = Math.max(brush * 0.35, 2.2 * CELL), H0 = clamp(0.1 + brush * 1.2, 0.15, 0.36);
+  const w = watered ? w0 : w0 * 1.6, H = watered ? H0 : H0 * 0.42;
+  const crenel = watered && Math.floor(travel / (w * 2.2)) % 2 ? 0.8 : 1;
   const r = cellRect(lx, lz, w * 1.6);
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > w * 1.6) continue;
     const id = gi(i, j); if (PROT[id]) continue;
     const prof = d < w * 0.7 ? 1 : 1 - smoothstep(w * 0.7, w * 1.6, d);
     sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + H * crenel * prof));
+    if (watered && prof > 0.25) wet[id] = 1;
   }
-  markDirty(r.i0, r.i1, r.j0, r.j1);
+  if (!watered) slumpRect(r, 3);
+  markDirty(r.i0 - 3, r.i1 + 3, r.j0 - 3, r.j1 + 3);
 }
-// moat: a flat-bottomed channel down to the wet sand
+// moat: a flat-bottomed channel dug well below beach level (12 cm), so the tide can fill it
 function stampMoat(lx, lz) {
-  const m = Math.max(brush * 0.8, 3 * CELL);
+  const m = Math.max(brush * 0.8, 3 * CELL), floor = BASE - 0.12;
   const r = cellRect(lx, lz, m * 1.35);
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > m * 1.35) continue;
     const id = gi(i, j); if (PROT[id]) continue;
     const t = d < m * 0.55 ? 1 : 1 - smoothstep(m * 0.55, m * 1.35, d);
-    sand[id] = Math.min(sand[id], sand[id] * (1 - t));
+    sand[id] = Math.min(sand[id], sand[id] * (1 - t) + floor * t);
   }
   slumpRect(r, 1); markDirty(r.i0 - 3, r.i1 + 3, r.j0 - 3, r.j1 + 3);
 }
-// bucket-molded tower: flat-topped, lightly tapered, battlements — holds its shape
+// bucket-molded tower: flat-topped, lightly tapered, battlements — wet sand holds it; dry sand gives a low slumped mound
 function stampTower(lx, lz, R, H) {
   R = R ?? clamp(brush * 1.6, 0.12, 0.6); H = H ?? Math.min(MAXH, R * 1.9);
+  const watered = spendWater(1.0 * (R / 0.2));
+  if (!watered) H *= 0.5;
   const r = cellRect(lx, lz, R * 1.15);
   const k = Math.max(6, Math.round(R / 0.035));
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
@@ -457,13 +485,45 @@ function stampTower(lx, lz, R, H) {
     if (d < R * 0.78) h = H;
     else if (d < R) h = H * (1 - ((d - R * 0.78) / (R * 0.22)) * 0.5);
     else h = H * 0.5 * (1 - (d - R) / (R * 0.15));
-    if (d > R * 0.6 && d < R * 0.82) {
+    if (watered && d > R * 0.6 && d < R * 0.82) {
       const ang = Math.atan2(j - r.cj, i - r.ci);
       if (Math.cos(ang * k) > 0.25) h += 0.05 * (R / 0.2);
     }
     sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + h));
+    if (watered) wet[id] = 1;
   }
-  markDirty(r.i0, r.i1, r.j0, r.j1);
+  if (!watered) slumpRect(r, 5);
+  markDirty(r.i0 - 3, r.i1 + 3, r.j0 - 3, r.j1 + 3);
+}
+
+// ----- pools: reading, scooping and draining water that sits in holes / floods the beach -----
+function waterDepthAt(lx, lz) {
+  const i = clamp(Math.round((lx + HALF) / CELL), 0, GN - 1), j = clamp(Math.round((lz + HALF) / CELL), 0, GN - 1);
+  const c = gi(i, j);
+  return Math.max(pw[c], fd[c]);
+}
+// take `units` of water out of the pool around a point; returns how much was actually gathered
+function drawWater(lx, lz, units) {
+  const r = cellRect(lx, lz, 0.16);
+  let avail = 0, n = 0;
+  for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
+    const c = gi(i, j); if (pw[c] > 0.004 && Math.hypot(i - r.ci, j - r.cj) <= r.rc) { avail += pw[c]; n++; }
+  }
+  if (!n) return 0;
+  const AREA = n * CELL * CELL * 1000;                  // litres per metre of depth over those cells
+  const got = Math.min(units, avail / n * AREA * 0.9);
+  const dec = got / AREA;                               // metres removed from each cell
+  for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
+    const c = gi(i, j); if (pw[c] > 0.004 && Math.hypot(i - r.ci, j - r.cj) <= r.rc) pw[c] = Math.max(0, pw[c] - dec);
+  }
+  waterDirty = true;
+  return got;
+}
+// the bucket (or the desktop Scoop tool) filling from a pool
+function fillBucketAt(lx, lz, units) {
+  if (bucketWater >= BUCKET_CAP) return;
+  const got = drawWater(lx, lz, Math.min(units, BUCKET_CAP - bucketWater));
+  bucketWater += got;
 }
 
 // ---------- decorations (flag / shell / starfish) ----------
@@ -526,14 +586,14 @@ function placeDecoAt(type, lx, lz) {
 // ---------- undo ----------
 const undoStack = [];
 function pushUndo() {
-  undoStack.push({ sand: sand.slice(), decos: decos.map((d) => ({ type: d.type, x: d.x, z: d.z, rot: d.rot, s: d.s, color: d.color })) });
+  undoStack.push({ sand: sand.slice(), wet: wet.slice(), decos: decos.map((d) => ({ type: d.type, x: d.x, z: d.z, rot: d.rot, s: d.s, color: d.color })) });
   if (undoStack.length > 20) undoStack.shift();
 }
 function undo() {
   const u = undoStack.pop(); if (!u) return;
-  sand.set(u.sand); clearDecos(); u.decos.forEach((d) => addDeco({ ...d })); markAll();
+  sand.set(u.sand); wet.set(u.wet); clearDecos(); u.decos.forEach((d) => addDeco({ ...d })); markAll();
 }
-function resetSand() { pushUndo(); sand.fill(BASE); clearDecos(); markAll(); }
+function resetSand() { pushUndo(); sand.fill(BASE); wet.fill(0); pw.fill(0); clearDecos(); markAll(); }
 
 // ============================ the picnic ============================
 const picnicItems = [];
@@ -611,24 +671,51 @@ function computeFlood(reachM, lvl, dtEro) {
   fdist.fill(-1);
   let qh = 0, qt = 0;
   for (let i = 0; i < GN; i++) for (let j = 0; j < 3; j++) { const c = gi(i, j); if (sand[c] <= S) { fdist[c] = 0; fq[qt++] = c; } }
-  let e0 = GN, e1 = 0, f0 = GN, f1 = 0, eroded = false;
+  let e0 = GN, e1 = 0, f0 = GN, f1 = 0, changed = false;
+  const touch = (c) => { const ci = c % GN, cj = (c / GN) | 0; e0 = Math.min(e0, ci); e1 = Math.max(e1, ci); f0 = Math.min(f0, cj); f1 = Math.max(f1, cj); changed = true; };
   while (qh < qt) {
-    const c = fq[qh++], d = fdist[c];
-    const depthRaw = S - sand[c], front = (maxSteps - d) * CELL * 0.35;
-    const dep = Math.max(0, Math.min(depthRaw, front));
+    const c = fq[qh++], d = fdist[c], h = sand[c];
+    const depthRaw = S - h, front = (maxSteps - d) * CELL * 0.35;
+    const hole = h < BASE - 0.004;
+    const dep = Math.max(0, hole ? depthRaw : Math.min(depthRaw, front));      // holes fill all the way to the water line
     fd[c] = dep;
-    if (dep > 0.01 && sand[c] > BASE + 0.003 && !PROT[c]) {             // the sea nibbles at low mounds
-      sand[c] -= (sand[c] - BASE) * 0.6 * dtEro; eroded = true;
-      const ci = c % GN, cj = (c / GN) | 0; e0 = Math.min(e0, ci); e1 = Math.max(e1, ci); f0 = Math.min(f0, cj); f1 = Math.max(f1, cj);
+    if (hole && dep > pw[c]) pw[c] = dep;                                         // …and keep that water after the sea draws back
+    if (dep > 0.005 && wet[c] < 1) { wet[c] = 1; touch(c); }
+    if (dep > 0.01 && h > BASE + 0.003 && !PROT[c]) {                            // the sea nibbles at low mounds (dry ones fastest)
+      sand[c] -= (h - BASE) * 0.6 * dtEro * (1 - 0.85 * wet[c]); touch(c);
     }
     if (d >= maxSteps) continue;
     const ci = c % GN, cj = (c / GN) | 0;
-    if (ci > 0) { const n = c - 1; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
-    if (ci < GN - 1) { const n = c + 1; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
-    if (cj > 0) { const n = c - GN; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
-    if (cj < GN - 1) { const n = c + GN; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
+    for (let q = 0; q < 4; q++) {
+      if ((q === 0 && ci === 0) || (q === 1 && ci === GN - 1) || (q === 2 && cj === 0) || (q === 3 && cj === GN - 1)) continue;
+      const n = c + (q === 0 ? -1 : q === 1 ? 1 : q === 2 ? -GN : GN);
+      if (fdist[n] >= 0) continue;
+      if (sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; }
+      else if (!PROT[n] && sand[n] > S) {                                         // water lapping at a wall: wet walls shrug it off, dry ones crumble
+        sand[n] -= (sand[n] - BASE) * 0.05 * dtEro * (1 - 0.88 * wet[n]);
+        if (wet[n] < 0.6) wet[n] = Math.min(1, wet[n] + 0.1);
+        touch(n);
+      }
+    }
   }
-  if (eroded) markDirty(e0, e1, f0, f1);
+  if (changed) markDirty(e0 - 1, e1 + 1, f0 - 1, f1 + 1);
+}
+
+// pools seep away once the sea has pulled back; wet sand slowly dries
+let wetTimer = 0;
+function drainPools(step) {
+  let any = false;
+  const drain = 0.0065 * step;                                  // ≈ 40 cm per minute: a window to use the water
+  for (let c = 0; c < GN * GN; c++) {
+    if (pw[c] > 0) { pw[c] = Math.max(0, pw[c] - drain); any = true; }
+  }
+  if (any) waterDirty = true;
+  wetTimer += step;
+  if (wetTimer > 3) {
+    let ch = false; const dec = wetTimer * 0.004; wetTimer = 0;
+    for (let c = 0; c < GN * GN; c++) if (wet[c] > 0) { wet[c] = Math.max(0, wet[c] - dec); ch = true; }
+    if (ch) markAll();
+  }
 }
 
 function updateTide(dt) {
@@ -649,18 +736,19 @@ function updateTide(dt) {
 
   if (tide.acc >= 0.2) {                                     // flood-fill 5×/s
     const step = tide.acc; tide.acc = 0;
+    drainPools(step);
     if (tide.reach > 0.02 || floodActive) {
       computeFlood(tide.reach, tide.lvl, step);
       floodActive = tide.reach > 0.02;
       waterDirty = true;
       // picnic damage: how much of the blanket is under water?
       if (tide.state === 'play') {
-        let wet = 0, n = 0;
+        let wetN = 0, n = 0;
         for (let x = -0.6; x <= 0.61; x += 0.15) for (let z = -0.45; z <= 0.46; z += 0.15) {
           const i = clamp(Math.round((x + HALF) / CELL), 0, GN - 1), j = clamp(Math.round((z + HALF) / CELL), 0, GN - 1);
-          n++; if (fd[gi(i, j)] > 0.012) wet++;
+          n++; if (fd[gi(i, j)] > 0.012) wetN++;
         }
-        const frac = wet / n;
+        const frac = wetN / n;
         if (frac > 0) tide.health = Math.max(0, tide.health - frac * step * 0.07);
         if (tide.health <= 0) { tide.state = 'lost'; tide.reach = 0; }
       }
@@ -688,9 +776,8 @@ function updateWater(t) {
   if (!waterDirty || waterAcc < 4) return;           // ≤ 15 Hz
   waterDirty = false; waterAcc = 0;
   const P = waterMesh.geometry.attributes.position, D = waterMesh.geometry.attributes.aDepth;
-  const POOL = BASE - 0.012;
   for (let c = 0; c < GN * GN; c++) {
-    const h = sand[c], pool = POOL - h, d = Math.max(fd[c], pool > 0 ? pool : 0);
+    const h = sand[c], d = Math.max(fd[c], pw[c]);
     P.array[c * 3 + 1] = h + d + 0.004; D.array[c] = d;
   }
   P.needsUpdate = true; D.needsUpdate = true;
@@ -715,8 +802,8 @@ function buildWater() {
         if (a < 0.01) discard;
         vec3 shallow = vec3(0.30, 0.62, 0.62), deep = vec3(0.05, 0.25, 0.42);
         vec3 col = mix(shallow, deep, smoothstep(0.0, 0.12, vD));
-        float rip = sin(vW.x * 9.0 + time * 2.0) * sin(vW.z * 8.0 - time * 1.7);
-        col += 0.05 * rip;
+        float rip = 0.5 * sin((vW.x + vW.z * 0.6) * 7.0 + time * 1.6) + 0.5 * sin((vW.x * 0.4 - vW.z) * 9.0 - time * 1.3);
+        col += 0.03 * rip;
         float foam = 1.0 - smoothstep(0.0, 0.035, vD);
         col = mix(col, vec3(0.95), foam * 0.55);
         gl_FragColor = vec4(col, a * 0.88);
@@ -744,17 +831,18 @@ function setStatus() {
   else if (tide.state === 'lost') line2 = 'Washed away… press Restart in the menu';
   else if (tide.phase === 'grace') line2 = 'First wave in ' + Math.max(0, Math.ceil(tide.grace - tide.t)) + ' s — build!';
   else line2 = 'Wave ' + Math.min(tide.waves, tide.wave + 1) + ' / ' + tide.waves + (tide.reach > 0.05 ? '  — incoming!' : '');
-  const text = 'Picnic ' + h + '|' + line2;
+  const bk = ' 💧' + bucketWater.toFixed(1);
+  const text = 'Picnic ' + h + bk + '|' + line2;
   if (text === statusText) return;
   statusText = text;
   const g = statusCtx;
   g.clearRect(0, 0, 768, 192);
   g.fillStyle = 'rgba(12,15,28,0.78)'; g.beginPath(); g.roundRect(4, 4, 760, 184, 40); g.fill();
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = '#ffe9c2'; g.font = '700 70px system-ui, sans-serif'; g.fillText('Picnic ' + h, 384, 66);
+  g.fillStyle = '#ffe9c2'; g.font = '700 70px system-ui, sans-serif'; g.fillText('Picnic ' + h + bk, 384, 66);
   g.fillStyle = tide.state === 'lost' ? '#ff9a9a' : '#cfe8ff'; g.font = '600 46px system-ui, sans-serif'; g.fillText(line2, 384, 140);
   statusTex.needsUpdate = true;
-  const el = document.getElementById('status'); if (el) el.textContent = 'Picnic ' + h + '  ·  ' + line2;
+  const el = document.getElementById('status'); if (el) el.textContent = 'Picnic ' + h + '  ·  Bucket' + bk + '/' + BUCKET_CAP + '  ·  ' + line2;
 }
 
 // ---------- cursors (one per hand + mouse), sized to the brush ----------
@@ -782,7 +870,7 @@ function toolFor(s) {
 function beginStroke(s) {
   s.tool = toolFor(s);
   if (!s.tool || !s.hit.on) return;
-  pushUndo();
+  if (s.tool !== 'scoop') pushUndo();
   s.down = true; s.last = null; s.travel = 0;
   if (CLICK_TOOLS.has(s.tool)) {
     const { lx, lz } = s.hit;
@@ -798,8 +886,8 @@ function strokeLine(s, fn) {
   if (s.last) {
     const dx = lx - s.last.x, dz = lz - s.last.z, len = Math.hypot(dx, dz);
     const step = Math.max(CELL, brush * 0.25), n = Math.max(1, Math.ceil(len / step));
-    for (let q = 1; q <= n; q++) { s.travel += len / n; fn(s.last.x + dx * q / n, s.last.z + dz * q / n, s.travel); }
-  } else fn(lx, lz, 0);
+    for (let q = 1; q <= n; q++) { s.travel += len / n; fn(s.last.x + dx * q / n, s.last.z + dz * q / n, s.travel, len / n); }
+  } else fn(lx, lz, 0, 0);
   s.last = { x: lx, z: lz };
 }
 function applyStroke(s, dt) {
@@ -810,6 +898,7 @@ function applyStroke(s, dt) {
     case 'smooth': brushSmooth(lx, lz, dt); break;
     case 'wall': strokeLine(s, stampWall); break;
     case 'moat': strokeLine(s, stampMoat); break;
+    case 'scoop': fillBucketAt(lx, lz, 4 * dt); break;
     default: break;
   }
 }
@@ -848,7 +937,7 @@ function setBackdrop(visible) {            // passthrough on = hide sky/beach/se
 }
 
 // ============================ hand tools ============================
-let crateTools = [];
+let crateTools = [], bucketWaterMesh, bucketGauge, gaugeCtx, gaugeTex, cupWaterMesh, gaugeShown = -1;
 function buildTools() {
   // spade (working end along −z, origin = grip)
   const spade = new THREE.Group();
@@ -864,29 +953,99 @@ function buildTools() {
   const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 24), new THREE.MeshLambertMaterial({ color: 0xc8402c })); rim.rotation.x = Math.PI / 2; rim.position.y = 0.08;
   const bh = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.007, 6, 20, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf2eee4 })); bh.position.y = 0.08;
   bucket.add(bb, bot, rim, bh);
+  // water inside the bucket + a floating gauge so you can always see how much you have
+  bucketWaterMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.099, 0.09, 0.01, 20), new THREE.MeshBasicMaterial({ color: 0x3aa8d8, transparent: true, opacity: 0.9, toneMapped: false }));
+  bucketWaterMesh.visible = false; bucket.add(bucketWaterMesh);
+  const gc = document.createElement('canvas'); gc.width = 256; gc.height = 96; gaugeCtx = gc.getContext('2d');
+  gaugeTex = new THREE.CanvasTexture(gc); gaugeTex.colorSpace = THREE.SRGBColorSpace;
+  bucketGauge = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.075), new THREE.MeshBasicMaterial({ map: gaugeTex, transparent: true, depthTest: false, toneMapped: false, fog: false }));
+  bucketGauge.renderOrder = 960; bucketGauge.position.y = 0.2; bucket.add(bucketGauge);
+  // cup: dip it in a pool, then tip it over the bucket
+  const cup = new THREE.Group();
+  const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.047, 0.036, 0.07, 18, 1, true), new THREE.MeshLambertMaterial({ color: 0xf4c23a, side: THREE.DoubleSide }));
+  const cbot = new THREE.Mesh(new THREE.CircleGeometry(0.036, 18).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xd9a52a })); cbot.position.y = -0.034;
+  const ch = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf4c23a })); ch.rotation.z = -Math.PI / 2; ch.position.set(0.05, 0, 0);
+  cupWaterMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.038, 0.008, 18), new THREE.MeshBasicMaterial({ color: 0x3aa8d8, transparent: true, opacity: 0.9, toneMapped: false }));
+  cupWaterMesh.visible = false;
+  cup.add(cb, cbot, ch, cupWaterMesh);
   // magnifying glass (gets the menu in registerTools so the wrist UI is hidden during its render pass)
   lens = createLens({ renderer, scene, camera, menu: null, radius: 0.1, zoom: 3 });
-  crateTools = [spade, bucket, lens.group];
-  for (const t of [spade, bucket]) t.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  scene.add(spade, bucket, lens.group);
+  crateTools = [spade, bucket, lens.group, cup];
+  for (const t of [spade, bucket, cup]) t.traverse((o) => { if (o.isMesh && o !== bucketGauge) o.castShadow = true; });
+  scene.add(spade, bucket, lens.group, cup);
 }
 function registerTools() {
   lens.menu = menu;
-  const [spade, bucket] = crateTools;
+  const [spade, bucket, , cup] = crateTools;
   const top = CRATE.top;
   spade.position.set(CRATE.x - 0.2, top + 0.014, CRATE.z + 0.08); spade.rotation.y = 0.35;
   bucket.position.set(CRATE.x + 0.12, top + 0.08, CRATE.z - 0.02);
-  lens.group.position.set(CRATE.x + 0.04, top + 0.016, CRATE.z + 0.12); lens.group.rotation.set(-Math.PI / 2, 0, 0.6);
+  cup.position.set(CRATE.x - 0.03, top + 0.035, CRATE.z + 0.12);
+  lens.group.position.set(CRATE.x + 0.19, top + 0.016, CRATE.z + 0.13); lens.group.rotation.set(-Math.PI / 2, 0, 0.6);
   const groundAt = (x, z) => (Math.abs(x - CRATE.x) < 0.3 && Math.abs(z - CRATE.z) < 0.24) ? top : surfaceY(x, z);
   const pose = (r) => ({ pos: new THREE.Vector3(0, 0, -0.04), rot: new THREE.Euler(r, 0, 0) });
   kit.add({ name: 'Spade', object: spade, radius: 0.28, grip: pose(-0.35), home: 'ground', groundAt, restY: 0.014, restRot: new THREE.Euler(0, 0.35, 0) });
   kit.add({ name: 'Bucket', object: bucket, radius: 0.28, grip: { pos: new THREE.Vector3(0, 0, -0.16), rot: new THREE.Euler(0, 0, 0) }, home: 'ground', groundAt, restY: 0.08, restRot: new THREE.Euler(0, 0, 0) });
+  kit.add({ name: 'Cup', object: cup, radius: 0.26, grip: { pos: new THREE.Vector3(0, 0, -0.1), rot: new THREE.Euler(-0.2, 0, 0) }, home: 'ground', groundAt, restY: 0.035, restRot: new THREE.Euler(0, 0, 0) });
   kit.add({
     name: 'Magnifier', object: lens.group, radius: 0.26, grip: { pos: new THREE.Vector3(0, 0.02, -0.3), rot: new THREE.Euler() },
     home: 'ground', groundAt, restY: 0.016, restRot: new THREE.Euler(-Math.PI / 2, 0, 0.6),
     onGrab: () => lens.setOn(true), onRelease: () => lens.setOn(false), onHeld: () => lens.faceEye(),
   });
 }
+// ---------- water carrying: dip the cup / bucket in a pool, tip the cup into the bucket ----------
+const CUP_UNITS = 1.5;
+function drawGauge() {
+  const v = Math.round(bucketWater * 10);
+  if (v === gaugeShown) return; gaugeShown = v;
+  const g = gaugeCtx;
+  g.clearRect(0, 0, 256, 96);
+  g.fillStyle = 'rgba(12,15,28,0.82)'; g.beginPath(); g.roundRect(3, 3, 250, 90, 22); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.14)'; g.beginPath(); g.roundRect(16, 58, 224, 22, 10); g.fill();
+  g.fillStyle = '#3aa8d8'; g.beginPath(); g.roundRect(16, 58, Math.max(0.001, 224 * bucketWater / BUCKET_CAP), 22, 10); g.fill();
+  g.fillStyle = '#e8f6ff'; g.font = '700 34px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('💧 ' + (bucketWater).toFixed(1) + ' / ' + BUCKET_CAP, 128, 32);
+  gaugeTex.needsUpdate = true;
+}
+const _bp = new THREE.Vector3(), _cp = new THREE.Vector3();
+function surfaceWaterY(lx, lz) {            // world y of the water surface at a patch point (or -inf if dry)
+  const d = waterDepthAt(lx, lz);
+  return d > 0.006 ? TRAY_C.y + heightAt(lx, lz) - BASE + d : -9;
+}
+function toolsTick(dt) {
+  const bt = kit.tools.find((t) => t.name === 'Bucket'), ct = kit.tools.find((t) => t.name === 'Cup');
+  const bucket = bt.object, cup = ct.object;
+  // bucket dipped straight into a deep-enough pool fills itself (forgiving: mouth anywhere near/below the surface)
+  if (bt.state === 'held' && bucketWater < BUCKET_CAP) {
+    bucket.localToWorld(_bp.set(0, 0.06, 0));
+    const lx = _bp.x - TRAY_C.x, lz = _bp.z - TRAY_C.z;
+    if (Math.abs(lx) < HALF && Math.abs(lz) < HALF && waterDepthAt(lx, lz) >= 0.035 && _bp.y <= surfaceWaterY(lx, lz) + 0.08) fillBucketAt(lx, lz, 5 * dt);
+  }
+  // cup: scoop from a pool…
+  if (ct.state === 'held' && cupWater < 1) {
+    cup.localToWorld(_cp.set(0, 0.03, 0));
+    const lx = _cp.x - TRAY_C.x, lz = _cp.z - TRAY_C.z;
+    if (Math.abs(lx) < HALF && Math.abs(lz) < HALF && waterDepthAt(lx, lz) >= 0.02 && _cp.y <= surfaceWaterY(lx, lz) + 0.06) {
+      const got = drawWater(lx, lz, CUP_UNITS); if (got > 0.1) cupWater = Math.min(1, got / CUP_UNITS);
+    }
+  }
+  // …and pour it into the bucket when it is held over it (bucket in hand or still on the crate)
+  if (ct.state === 'held' && cupWater > 0 && bucketWater < BUCKET_CAP) {
+    cup.getWorldPosition(_cp); bucket.getWorldPosition(_bp);
+    const sc = Math.max(0.2, dolly.scale.x);
+    if (Math.hypot(_cp.x - _bp.x, _cp.z - _bp.z) < 0.24 * Math.max(1, sc) && _cp.y > _bp.y - 0.02 && _cp.y < _bp.y + 0.45 * Math.max(1, sc)) {
+      const add = Math.min(cupWater * CUP_UNITS, BUCKET_CAP - bucketWater);
+      bucketWater += add; cupWater -= add / CUP_UNITS; if (cupWater < 0.02) cupWater = 0;
+      if (menu.hapticPulse) menu.hapticPulse(menu.controllers[ct.holder]);
+    }
+  }
+  // visuals
+  bucketWaterMesh.visible = bucketWater > 0.05; bucketWaterMesh.position.y = -0.074 + (bucketWater / BUCKET_CAP) * 0.145;
+  cupWaterMesh.visible = cupWater > 0.03; cupWaterMesh.position.y = -0.03 + cupWater * 0.058;
+  drawGauge();
+  camera.getWorldPosition(_cp); bucketGauge.lookAt(_cp);
+}
+
 // desktop loupe: toggled with L / the menu; floats at the mouse
 let deskLensOn = false, deskLensHome = null;
 function toggleDesktopLens() {
@@ -1015,7 +1174,7 @@ function panTarget(right, up) {
 function onKeyDown(e) {
   keys[e.code] = true;
   if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
-  if (e.code.startsWith('Digit')) { const k = +e.code.slice(5) - 1; if (TOOLS[k]) selectTool(TOOLS[k][1]); }
+  if (e.code.startsWith('Digit')) { const k = (+e.code.slice(5) + 9) % 10; if (TOOLS[k]) selectTool(TOOLS[k][1]); }
   else if (e.code === 'BracketLeft') stepBrush(-1);
   else if (e.code === 'BracketRight') stepBrush(1);
   else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey || !e.shiftKey)) { e.preventDefault(); undo(); }
@@ -1090,6 +1249,7 @@ function animate() {
 
   menu.update();
   kit.update(dt);
+  toolsTick(dt);
 
   // sculpt sources: mouse + both controllers
   updateMouseHit();
