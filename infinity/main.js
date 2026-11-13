@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js';
+import { createToolkit } from '../shared/xrtools.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx, nebula;   // post-processing + nebula backdrop
@@ -49,7 +50,7 @@ const params = {
 let speedIdx = 2;
 
 // ---------- state ----------
-let scene, camera, renderer, dolly, points, geometry, lightMat, menu, caps;
+let scene, camera, renderer, dolly, points, geometry, lightMat, menu, caps, kit, wand, gridCount = 0;
 let basePositions;                 // Float32Array, length MAX_LIGHTS*3
 let activeCount = 0;
 const keys = {};
@@ -99,7 +100,7 @@ function init() {
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Infinity Lights',
-    hint: 'Click the view to fly · WASD move · Q/E down/up · Shift boost · 1–4 patterns · R randomize · Esc/M menu',
+    hint: 'Click the view to fly · WASD move · Q/E down/up · Shift boost · 1–4 patterns · R randomize · F plant a light · Esc/M menu. In VR: grip the light wand, trigger plants lights.',
     rows: [
       sectionRow('Pattern'),
       choiceGrid([['Random', 'random'], ['Grid', 'grid'], ['Diagonal', 'diagonal'], ['Jitter', 'jitter']],
@@ -108,6 +109,7 @@ function init() {
       stepperRow('Depth', () => params.depth, () => bump('depth', -1), () => bump('depth', 1)),
       stepperRow('Speed', () => '×' + SPEEDS[speedIdx], () => { speedIdx = Math.max(0, speedIdx - 1); }, () => { speedIdx = Math.min(SPEEDS.length - 1, speedIdx + 1); }),
       buttonRow('⟳  Randomize', randomize, 'accent'),
+      buttonRow('Clear wand lights', () => generatePattern()),
     ],
     sound: { get: () => soundOn, set: setSound },
     setBackdrop,
@@ -115,6 +117,8 @@ function init() {
     onBeforeEnter: startAudio,
   });
 
+  kit = createToolkit({ renderer, scene, dolly, camera, menu });
+  buildWand();
   generatePattern();
 
   renderer.xr.addEventListener('sessionstart', startAudio);
@@ -218,6 +222,7 @@ function generatePattern() {
   n = Math.max(3, Math.min(20, n));
   const step = depth / n;                    // keeps lattice period == wrap period (seamless)
   activeCount = Math.min(n * n * n, MAX_LIGHTS);
+  gridCount = activeCount;
   geometry.setDrawRange(0, activeCount);
   lightMat.uniforms.uHalf.value = depth * 0.5;
 
@@ -282,6 +287,40 @@ function updatePositions() {
   pos.needsUpdate = true;
 }
 
+// ---------- light wand (grab with grip, trigger plants lights at its tip) ----------
+const _tip = new THREE.Vector3();
+function jewelColor(c, i) {
+  const hues = [0.09, 0.95, 0.74, 0.52, 0.12], h = hues[(Math.random() * hues.length) | 0];
+  const t = new THREE.Color().setHSL(h, 0.8, 0.6); c.array[i * 3] = t.r; c.array[i * 3 + 1] = t.g; c.array[i * 3 + 2] = t.b;
+}
+function plantLight(pos) {
+  if (activeCount >= MAX_LIGHTS) return;
+  const i = activeCount++;
+  basePositions[i * 3] = pos.x; basePositions[i * 3 + 1] = pos.y; basePositions[i * 3 + 2] = pos.z;
+  const col = geometry.getAttribute('aCol'), siz = geometry.getAttribute('aSize');
+  jewelColor(col, i); siz.array[i] = 1.2 + Math.random() * 0.5;
+  col.needsUpdate = true; siz.needsUpdate = true;
+  geometry.setDrawRange(0, activeCount);
+}
+function buildWand() {
+  wand = new THREE.Group();
+  const dark = new THREE.MeshBasicMaterial({ color: 0x2c2548, toneMapped: false }), gold = new THREE.MeshBasicMaterial({ color: 0xe0ac4a, toneMapped: false });
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.013, 0.36, 10).rotateX(Math.PI / 2), dark); stick.position.z = -0.18; wand.add(stick);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.014, 0.004, 6, 14), gold); band.position.z = -0.34; wand.add(band);
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.022, 14, 10), new THREE.MeshBasicMaterial({ color: 0xfff1c8, toneMapped: false })); tip.position.z = -0.38; wand.add(tip);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(0.045, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffc46a, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); glow.position.z = -0.38; wand.add(glow);
+  const home = new THREE.Vector3(0.34, -0.5, -0.45);
+  wand.position.copy(home); wand.rotation.set(0.5, 0, -0.3);
+  dolly.add(wand);
+  let acc = 0;
+  kit.add({
+    name: 'Light wand', object: wand, radius: 0.22,
+    grip: { pos: new THREE.Vector3(0, 0, -0.04), rot: new THREE.Euler(-0.4, 0, 0) },
+    home: 'dolly', homePos: home, homeRot: new THREE.Euler(0.5, 0, -0.3),
+    onUse: (i, dt) => { acc += dt; while (acc > 0.1) { acc -= 0.1; wand.localToWorld(_tip.set(0, 0, -0.38)); plantLight(_tip); } if (menu.hapticPulse) menu.hapticPulse(menu.controllers[i]); },
+  });
+}
+
 // ---------- menu handlers ----------
 function setPattern(p) {
   params.pattern = p;
@@ -342,6 +381,8 @@ function animate() {
   lightMat.uniforms.uMin.value = renderer.xr.isPresenting ? 3.5 : 2.5 * Math.min(devicePixelRatio, 2);
   lightMat.uniforms.uTime.value = clock.elapsedTime;
   menu.update();
+  wand.visible = renderer.xr.isPresenting;
+  kit.update(dt);
   fx.render();
 }
 
@@ -399,6 +440,7 @@ function onKey(e) {
   if (e.code === 'Digit3') setPattern('diagonal');
   if (e.code === 'Digit4') setPattern('jitter');
   if (e.code === 'KeyR') randomize();
+  if (e.code === 'KeyF' && !renderer.xr.isPresenting) { camera.getWorldDirection(_p); camera.getWorldPosition(_tip); plantLight(_tip.addScaledVector(_p, 6)); }
   menu.refresh();
 }
 

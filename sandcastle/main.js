@@ -1,26 +1,32 @@
-// Sand Castle — a big seated-or-standing beach sandbox. The "physics" is cheated: the sand is a
-// heightfield you sculpt. Piling slumps to a natural slope (angle of repose); bucket towers,
-// walls and moats hold their shape. Either hand (or the mouse) can select tools and sculpt.
-// Zoom: mouse wheel / pinch on desktop, lean in or scale yourself down in VR, plus a
-// hold-it-in-your-hand magnifying glass (render-to-texture lens) in VR and a loupe on desktop.
+// Sand Castle — protect the picnic! An open beach with a picnic laid out in the middle and the tide
+// rolling in. Build walls, moats and towers to hold the waves back. The "physics" is cheated: the
+// sand is a heightfield you sculpt (it slumps to a natural slope), and the tide is a flood-fill that
+// only flows where the sand is low enough — so a good wall really does stop the sea.
+//
+// VR: both controllers are drawn with rays. Grip grabs the spade / bucket / magnifying glass (point at
+// one and squeeze, or reach for it); trigger uses it. Squeeze both grips on empty air and pull apart /
+// push together to zoom the whole world. Desktop: wheel + drag to orbit/zoom from sand-grain close-ups
+// to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js';
+import { createToolkit, createLens } from '../shared/xrtools.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx;
 
 // ---------- sand grid ----------
-const TRAY = 3.6;                       // tray size (m)
-const GN = 224;                         // cells per side → ~1.6 cm cells
+const TRAY = 5.0;                       // sculptable patch (m) — blends into the open beach around it
+const GN = 256;                         // cells per side → ~2 cm cells
 const CELL = TRAY / (GN - 1);
 const HALF = TRAY / 2;
 const MAXH = 0.8;
 const BASE = 0.05;                      // untouched sand level; digging below this exposes wet sand
-const TRAY_C = new THREE.Vector3(0, 0, -2.0);
+const TRAY_C = new THREE.Vector3(0, 0, -3.0);
 const sand = new Float32Array(GN * GN).fill(BASE);
 const grain = new Float32Array(GN * GN);
 for (let i = 0; i < grain.length; i++) grain[i] = (Math.random() - 0.5) * 0.09;
+const PROT = new Uint8Array(GN * GN);   // cells you cannot edit: the picnic pad + the patch border
 
 const BRUSHES = [0.04, 0.06, 0.09, 0.12, 0.16, 0.22, 0.3, 0.4];
 let brushIdx = 3, brush = BRUSHES[3];
@@ -29,7 +35,7 @@ const TOOLS = [['Pile', 'pile'], ['Dig', 'dig'], ['Smooth', 'smooth'], ['Tower',
 const CLICK_TOOLS = new Set(['tower', 'flag', 'shell', 'star']);
 let tool = 'pile';
 
-let scene, camera, renderer, dolly, env, sandMesh, sandGeo, water, menu, caps, decoGroup, sun;
+let scene, camera, renderer, dolly, env, sandMesh, sandGeo, waterMesh, seaMesh, menu, kit, caps, decoGroup, sun, lens, picnic;
 const clock = new THREE.Clock();
 const keys = {};
 const ray = new THREE.Raycaster();
@@ -38,24 +44,28 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3
 const sunDir = new THREE.Vector3(-0.75, 0.58, -0.32).normalize();   // raking side-light: lit faces, long shadows
 const horizonColor = new THREE.Color(0xdcecf5);
 
-// desktop orbit camera
-const orbit = { yaw: 0, pitch: 0.66, dist: 4.3, target: new THREE.Vector3(0, 0.05, -2.0) };
-const START_DIST = 4.3;
-
-// VR zoom = shrink the rig (the world looks N× bigger); lean-in works too
-const VR_ZOOMS = [1, 1.5, 2.25, 3.5, 5.5, 9];
-let vrZoomIdx = 0;
+// desktop orbit camera — from a few cm above the grains to a high overview
+const START_DIST = 6.5, MIN_DIST = 0.12, MAX_DIST = 60;
+const orbit = { yaw: 0, pitch: 0.7, dist: START_DIST, target: new THREE.Vector3(0, 0.05, TRAY_C.z) };
 const VR_HOME = new THREE.Vector3(0, 0, 0.6);
+const SCALE_MIN = 1 / 30, SCALE_MAX = 10;   // VR: viewer scale (small = giant world / grain-level, large = high overview)
 
 // ---------- helpers ----------
 const smoothstep = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gi = (i, j) => j * GN + i;
 
-// beach ground height: flat near the tray, sloping down to the sea in front (−z)
+// beach ground: flat around the patch, sloping into the sea beyond the patch's far (−z) edge
 function groundH(x, z) {
-  if (z > -6.5) return -0.02;
-  return -0.02 - 0.55 * smoothstep(-6.5, -12, z);
+  const edge = TRAY_C.z - HALF;
+  if (z > edge) return -0.004;
+  return -0.004 - 0.55 * smoothstep(edge, edge - 3.5, z);
+}
+// world height of whatever you'd stand a tool on
+function surfaceY(x, z) {
+  const lx = x - TRAY_C.x, lz = z - TRAY_C.z;
+  if (Math.abs(lx) < HALF - 0.05 && Math.abs(lz) < HALF - 0.05) return TRAY_C.y + heightAt(lx, lz) - BASE;
+  return groundH(x, z);
 }
 
 // ---------- boot ----------
@@ -64,9 +74,9 @@ Promise.resolve().then(async () => { caps = await detectXR(); init(); });
 function init() {
   scene = new THREE.Scene();
   scene.background = horizonColor.clone();
-  scene.fog = new THREE.Fog(horizonColor, 16, 100);
+  scene.fog = new THREE.Fog(horizonColor, 30, 220);
 
-  camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.03, 400);
+  camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.02, 800);
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar });   // alpha only if passthrough can be toggled
   if (caps.ar) renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -78,7 +88,7 @@ function init() {
   renderer.shadowMap.needsUpdate = true;
   document.body.appendChild(renderer.domElement);
   renderer.domElement.style.touchAction = 'none';
-  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.08, bloom: 0.3, radius: 0.4, threshold: 0.97 });
+  fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.2, bloom: 0.3, radius: 0.4, threshold: 0.97 });
 
   dolly = new THREE.Group();
   dolly.add(camera);
@@ -86,55 +96,56 @@ function init() {
 
   scene.add(new THREE.HemisphereLight(0xdff0ff, 0xbfa87e, 1.0));
   sun = new THREE.DirectionalLight(0xffe6c0, 1.45);
-  sun.position.copy(TRAY_C).addScaledVector(sunDir, 9);
+  sun.position.copy(TRAY_C).addScaledVector(sunDir, 10);
   sun.target.position.copy(TRAY_C);
   scene.add(sun, sun.target);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -2.7, right: 2.7, top: 2.7, bottom: -2.7, near: 1, far: 18 });
-  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+  Object.assign(sun.shadow.camera, { left: -3.7, right: 3.7, top: 3.7, bottom: -3.7, near: 1, far: 20 });
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.025; sun.shadow.radius = 3;
 
-  env = new THREE.Group();            // sky, beach, sea, props — hidden when passthrough is on
+  env = new THREE.Group();            // sky, beach, sea, crate — hidden when passthrough is on
   scene.add(env);
   buildSky();
   buildBeach();
-  buildWater();
-  buildProps();
+  buildSea();
   buildSandTable();
+  buildWater();
   decoGroup = new THREE.Group(); scene.add(decoGroup);
+  buildPicnic();
   buildCursors();
-  buildLens();
-  starterCastle();
+  buildTools();
+  buildStatusLabel();
 
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Sand Castle',
     startOpenDesktop: innerWidth > 760,
-    hint: 'Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L magnifier',
+    hint: 'Protect the picnic from the tide! Drag sand to sculpt · drag empty space or right-drag to orbit · wheel zooms · 1–9 tools · [ ] brush · Ctrl+Z undo · L loupe',
     rows: [
       choiceGrid(TOOLS, () => tool, selectTool, 3),
       stepperRow('Brush', () => Math.round(brush * 100) + ' cm', () => stepBrush(-1), () => stepBrush(1)),
       { cells: [{ text: '↶  Undo', action: undo }, { text: 'Reset sand', action: resetSand }] },
       stepperRow('Zoom', zoomText, () => zoomBy(-1), () => zoomBy(1)),
       { label: 'Magnifier', cells: [
-        { text: () => (lens.on ? 'On' : 'Off'), action: toggleLens, active: () => lens.on, w: 1.5 },
+        { text: () => (lens.on ? 'On' : 'Off'), action: toggleDesktopLens, active: () => lens.on, w: 1.5, visible: () => !renderer.xr.isPresenting },
         { text: '–', action: () => lensZoomStep(-1), tone: 'accent' },
         { text: () => '×' + lens.zoom, w: 1.1 },
         { text: '+', action: () => lensZoomStep(1), tone: 'accent' } ] },
+      { label: 'Tide', cells: [
+        { text: () => (tide.on ? 'On' : 'Off'), action: () => { tide.on = !tide.on; if (tide.on) restartTide(); }, active: () => tide.on, w: 0.9 },
+        { text: () => STRENGTH_NAMES[tide.strength], action: () => { tide.strength = (tide.strength + 1) % 3; }, w: 1.2 },
+        { text: 'Restart', action: restartPicnic, tone: 'accent', w: 1.1 } ] },
     ],
     sound: { get: () => soundOn, set: setSound },
     setBackdrop,
     recenter,
     onBeforeEnter: startAudio,
-    onSessionStart: () => {
-      dolly.position.copy(VR_HOME); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); vrZoomIdx = 0;
-      attachLens();
-    },
-    onSessionEnd: () => {
-      dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); vrZoomIdx = 0;
-      attachLens();
-    },
+    onSessionStart: () => { dolly.position.copy(VR_HOME); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); endDesktopLens(); },
+    onSessionEnd: () => { dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); },
   });
+  kit = createToolkit({ renderer, scene, dolly, camera, menu });
+  registerTools();
 
   // either hand can pick tools (menu consumes the click) or sculpt (everything else)
   menu.onSelectStart((c, hand, idx) => beginStroke(SRC[1 + idx]));
@@ -142,8 +153,8 @@ function init() {
   menu.onButton((hand, b) => {
     if (hand === 'right' && b === 4) cycleTool(1);        // A
     if (hand === 'right' && b === 5) cycleTool(-1);       // B
-    if (hand === 'left' && b === 'squeeze') toggleLens(); // left grip: pick up / put down the magnifier
   });
+  menu.onSqueeze((c, hand, i, down) => { gripDown[i] = down; });
 
   addEventListener('resize', onResize);
   addEventListener('keydown', onKeyDown);
@@ -153,6 +164,7 @@ function init() {
   enter.addEventListener('click', () => { startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 500); });
   renderer.xr.addEventListener('sessionstart', startAudio);
 
+  if (location.hash === '#debug') window.__sc = { tide, orbit, wallLine: (x0, z0, x1, z1) => { const n = 80; for (let q = 0; q <= n; q++) stampWall(x0 + (x1 - x0) * q / n, z0 + (z1 - z0) * q / n, q * Math.hypot(x1 - x0, z1 - z0) / n); } };
   renderer.setAnimationLoop(animate);
 }
 
@@ -165,40 +177,64 @@ function buildSky() {
     fragmentShader: `varying vec3 vP; uniform vec3 top,mid,bot; void main(){ float h=normalize(vP).y;
       vec3 c=h>0.0?mix(mid,top,pow(clamp(h,0.0,1.0),0.7)):mix(mid,bot,clamp(-h*5.0,0.0,1.0)); gl_FragColor=vec4(c,1.0); ${SHADER_TAIL} }`,
   });
-  env.add(new THREE.Mesh(new THREE.SphereGeometry(300, 24, 16), mat));
+  env.add(new THREE.Mesh(new THREE.SphereGeometry(500, 24, 16), mat));
   const cv = document.createElement('canvas'); cv.width = cv.height = 128;
   const g = cv.getContext('2d'); const rg = g.createRadialGradient(64, 64, 4, 64, 64, 64);
   rg.addColorStop(0, 'rgba(255,252,240,1)'); rg.addColorStop(0.3, 'rgba(255,248,224,0.75)'); rg.addColorStop(1, 'rgba(255,248,224,0)');
   g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, fog: false }));
-  spr.position.copy(sunDir).multiplyScalar(240); spr.scale.setScalar(55); env.add(spr);
+  spr.position.copy(sunDir).multiplyScalar(400); spr.scale.setScalar(90); env.add(spr);
 }
 
-// ---------- beach ground ----------
-function paintGeo(geo, hex) {
-  const c = new THREE.Color(hex), n = geo.attributes.position.count, arr = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
-  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3)); return geo;
+// fine procedural grain (fades with distance) so close-ups and the magnifier have detail
+function sandify(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n vSandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vSandW;\nfloat sandHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+      sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+        float sFade = 1.0 - smoothstep(0.5, 3.2, length(vSandW - cameraPosition));
+        vec2 sg = vSandW.xz * 230.0;
+        float sN = sandHash(floor(sg)) * 0.65 + sandHash(floor(sg * 0.37) + 7.0) * 0.35;
+        diffuseColor.rgb *= 1.0 + (sN - 0.5) * 0.34 * sFade;`);
+  };
+  return mat;
 }
+const DRY_C = new THREE.Color(0xf4e0b2), WET_C = new THREE.Color(0xb59862);
+
+// ---------- open beach ----------
 function buildBeach() {
-  const geo = new THREE.PlaneGeometry(120, 120, 120, 120); geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3);
-  const dry = new THREE.Color(0xe4d2a2), wet = new THREE.Color(0xb49a68), tmp = new THREE.Color();
+  const geo = new THREE.PlaneGeometry(240, 240, 240, 240); geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), tmp = new THREE.Color();
+  const edge = TRAY_C.z - HALF;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i), h = groundH(x, z);
     pos.setY(i, h);
-    tmp.copy(dry).lerp(wet, smoothstep(-7, -10, z));
-    tmp.offsetHSL(0, 0, (Math.random() - 0.5) * 0.04);
+    tmp.copy(DRY_C).lerp(WET_C, smoothstep(edge - 0.3, edge - 2.5, z));
+    tmp.offsetHSL(0, 0, (Math.random() - 0.5) * 0.03);
     col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
-  const beach = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const beach = new THREE.Mesh(geo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true })));
   beach.receiveShadow = true; env.add(beach);
-}
 
-// ---------- sea (cheated) ----------
-function buildWater() {
-  const geo = new THREE.PlaneGeometry(600, 600, 1, 1); geo.rotateX(-Math.PI / 2);
+  // a driftwood crate at hand height; the spade, bucket and magnifier live on it
+  const crate = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.62, 0.5), new THREE.MeshLambertMaterial({ color: 0x9c6b3a }));
+  crate.position.set(CRATE.x, CRATE.top / 2, CRATE.z); crate.castShadow = crate.receiveShadow = true; env.add(crate);
+  const towel = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 0.44), new THREE.MeshLambertMaterial({ color: 0x3f86d6 }));
+  towel.rotation.x = -Math.PI / 2; towel.position.set(CRATE.x, CRATE.top + 0.002, CRATE.z); env.add(towel);
+  const shellMat = [0xf3d9d0, 0xeabfcb, 0xf0e4d2];
+  for (let i = 0; i < 12; i++) {
+    const x = (Math.random() - 0.5) * 9, z = 1.2 + Math.random() * 3;
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 5, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: shellMat[i % 3] }));
+    s.position.set(x, -0.0, z); s.rotation.set(-Math.PI / 2 + Math.random() * 0.4, Math.random(), 0); env.add(s);
+  }
+}
+const CRATE = { x: 0.95, z: 0.15, top: 0.62 };
+
+// ---------- the sea (far water) ----------
+function buildSea() {
+  const geo = new THREE.PlaneGeometry(1200, 1200, 1, 1); geo.rotateX(-Math.PI / 2);
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     uniforms: {
@@ -220,35 +256,10 @@ function buildWater() {
         ${SHADER_TAIL}
       }`,
   });
-  water = new THREE.Mesh(geo, mat); water.position.y = -0.52; env.add(water);
+  seaMesh = new THREE.Mesh(geo, mat); seaMesh.position.set(0, -0.52, 0); env.add(seaMesh);
 }
 
-// ---------- props near the player: bucket, spade, shells ----------
-function buildProps() {
-  const bucket = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.085, 0.16, 16, 1, true), new THREE.MeshLambertMaterial({ color: 0xe7563f, side: THREE.DoubleSide }));
-  body.position.y = 0.08; bucket.add(body);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 20), new THREE.MeshLambertMaterial({ color: 0xc8402c }));
-  rim.rotation.x = Math.PI / 2; rim.position.y = 0.16; bucket.add(rim);
-  bucket.position.set(0.95, -0.02, 0.5); bucket.rotation.y = -0.4; env.add(bucket);
-  bucket.traverse((o) => { o.castShadow = true; });
-  const spade = new THREE.Group();
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.34, 8), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 }));
-  handle.position.y = 0.17; spade.add(handle);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.008), new THREE.MeshLambertMaterial({ color: 0xf4c23a }));
-  blade.position.y = 0.02; blade.rotation.x = -0.2; spade.add(blade);
-  spade.position.set(-0.95, -0.02, 0.6); spade.rotation.set(0.5, 0.3, 0.2); env.add(spade);
-  spade.traverse((o) => { o.castShadow = true; });
-  const shellMat = [0xf3d9d0, 0xeabfcb, 0xf0e4d2];
-  for (let i = 0; i < 9; i++) {
-    const x = (Math.random() - 0.5) * 6, z = 0.5 + Math.random() * 2.2;
-    const s = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 5, 0, Math.PI * 2, 0, Math.PI / 2),
-      new THREE.MeshLambertMaterial({ color: shellMat[i % 3] }));
-    s.position.set(x, groundH(x, z) + 0.005, z); s.rotation.set(-Math.PI / 2 + Math.random() * 0.4, Math.random(), 0); env.add(s);
-  }
-}
-
-// ---------- the sand tray (hand-built grid so we can update only the changed rows) ----------
+// ---------- the sand patch (hand-built grid so we can update only the changed rows) ----------
 let firstUpload = true;
 let dirty = null;                      // {i0,i1,j0,j1}
 function markDirty(i0, i1, j0, j1) {
@@ -278,37 +289,21 @@ function buildSandTable() {
   sandGeo.setIndex(new THREE.BufferAttribute(idx, 1));
   sandGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3, 0), TRAY * 0.8);
   sandGeo.boundingBox = new THREE.Box3(new THREE.Vector3(-HALF, 0, -HALF), new THREE.Vector3(HALF, MAXH, HALF));
-  // fine procedural grain in the fragment shader (fades with distance) so close-ups and the magnifier have detail
-  const sandMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  sandMat.onBeforeCompile = (sh) => {
-    sh.vertexShader = 'varying vec3 vSandW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      '#include <begin_vertex>\n vSandW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = 'varying vec3 vSandW;\nfloat sandHash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
-      sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
-        float sFade = 1.0 - smoothstep(0.5, 3.2, length(vSandW - cameraPosition));
-        vec2 sg = vSandW.xz * 230.0;
-        float sN = sandHash(floor(sg)) * 0.65 + sandHash(floor(sg * 0.37) + 7.0) * 0.35;
-        diffuseColor.rgb *= 1.0 + (sN - 0.5) * 0.34 * sFade;`);
-  };
-  sandMesh = new THREE.Mesh(sandGeo, sandMat);
-  sandMesh.position.copy(TRAY_C);
+  sandMesh = new THREE.Mesh(sandGeo, sandify(new THREE.MeshLambertMaterial({ vertexColors: true })));
+  sandMesh.position.set(TRAY_C.x, TRAY_C.y - BASE, TRAY_C.z);        // untouched sand sits at y = 0, flush with the beach
   sandMesh.frustumCulled = false;
   sandMesh.castShadow = true; sandMesh.receiveShadow = true;
   scene.add(sandMesh);
-  markAll();
 
-  // wooden rim around the tray
-  const rimMat = new THREE.MeshLambertMaterial({ color: 0x9c6b3a });
-  const rG = new THREE.Group();
-  for (const [w, d, x, z] of [[TRAY + 0.2, 0.1, 0, HALF + 0.05], [TRAY + 0.2, 0.1, 0, -HALF - 0.05], [0.1, TRAY + 0.2, HALF + 0.05, 0], [0.1, TRAY + 0.2, -HALF - 0.05, 0]]) {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), rimMat); m.position.set(x, 0.02, z); rG.add(m);
+  // protected cells: the picnic pad and a thin border so the patch always meets the beach seamlessly
+  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) {
+    const lx = i * CELL - HALF, lz = j * CELL - HALF;
+    if (i < 4 || j < 4 || i > GN - 5 || j > GN - 5 || (Math.abs(lx) < 0.8 && Math.abs(lz) < 0.66)) PROT[gi(i, j)] = 1;
   }
-  rG.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
-  rG.position.copy(TRAY_C);
-  scene.add(rG);
+  markAll();
 }
 
-const WET = [0.60, 0.46, 0.28], DRY = [0.97, 0.83, 0.56];
+let WET = [WET_C.r, WET_C.g, WET_C.b], DRY = [DRY_C.r, DRY_C.g, DRY_C.b];
 function updateSandGeo() {
   if (!dirty) return;
   const r = { i0: Math.max(0, dirty.i0 - 1), i1: Math.min(GN - 1, dirty.i1 + 1), j0: Math.max(0, dirty.j0 - 1), j1: Math.min(GN - 1, dirty.j1 + 1) };
@@ -336,6 +331,7 @@ function updateSandGeo() {
   firstUpload = false;
   renderer.shadowMap.needsUpdate = true;
   settleDecos();
+  waterDirty = true;
 }
 
 function heightAt(lx, lz) {
@@ -346,9 +342,10 @@ function heightAt(lx, lz) {
        + sand[gi(i, j + 1)] * (1 - tx) * tz + sand[gi(i + 1, j + 1)] * tx * tz;
 }
 
-// analytic heightfield raycast (a triangle raycast against 100k tris per frame would be far too slow)
+// analytic heightfield raycast (a triangle raycast against 130k tris per frame would be far too slow)
 function raySand(origin, dir, out) {
-  let ox = origin.x - TRAY_C.x, oy = origin.y - TRAY_C.y, oz = origin.z - TRAY_C.z;
+  const ox = origin.x - TRAY_C.x, oz = origin.z - TRAY_C.z;
+  const oy = origin.y - TRAY_C.y + BASE;                       // in height units (flat sand = BASE)
   const dx = dir.x, dy = dir.y, dz = dir.z;
   let t0 = 0, t1 = 1e9;
   const slab = (o, d, lo, hi) => {
@@ -373,7 +370,7 @@ function raySand(origin, dir, out) {
     for (let k = 0; k < 10; k++) { const mid = (lo + hi) / 2; if (below(mid)) hi = mid; else lo = mid; }
     t = hi;
   } else t = t0;
-  out.on = true; out.lx = ox + dx * t; out.lz = oz + dz * t; out.y = oy + dy * t; out.dist = t;
+  out.on = true; out.lx = ox + dx * t; out.lz = oz + dz * t; out.y = TRAY_C.y + (oy + dy * t) - BASE; out.dist = t;
   return true;
 }
 
@@ -388,8 +385,8 @@ function brushPile(lx, lz, dt, dir) {
   const rate = 0.55 * dt * dir;
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) / r.rc; if (d > 1) continue;
-    const f = smoothstep(1, 0, d), id = gi(i, j);
-    sand[id] = clamp(sand[id] + rate * f, 0, MAXH);
+    const id = gi(i, j); if (PROT[id]) continue;
+    sand[id] = clamp(sand[id] + rate * smoothstep(1, 0, d), 0, MAXH);
   }
   slumpRect(r, 2); markDirty(r.i0 - 4, r.i1 + 4, r.j0 - 4, r.j1 + 4);
 }
@@ -398,9 +395,9 @@ function brushSmooth(lx, lz, dt) {
   const k = Math.min(1, dt * 9);
   for (let j = Math.max(1, r.j0); j <= Math.min(GN - 2, r.j1); j++) for (let i = Math.max(1, r.i0); i <= Math.min(GN - 2, r.i1); i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) / r.rc; if (d > 1) continue;
-    const f = smoothstep(1, 0, d), id = gi(i, j);
+    const id = gi(i, j); if (PROT[id]) continue;
     const avg = (sand[id - 1] + sand[id + 1] + sand[id - GN] + sand[id + GN] + sand[id]) / 5;
-    sand[id] += (avg - sand[id]) * f * k;
+    sand[id] += (avg - sand[id]) * smoothstep(1, 0, d) * k;
   }
   markDirty(r.i0, r.i1, r.j0, r.j1);
 }
@@ -411,10 +408,12 @@ function slumpRect(r, iter) {
   for (let k = 0; k < iter; k++) {
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = gi(i, j), hc = sand[c];
+      if (PROT[c]) continue;
       for (let q = 0; q < 4; q++) {
         const ni = i + (q === 0 ? -1 : q === 1 ? 1 : 0), nj = j + (q === 2 ? -1 : q === 3 ? 1 : 0);
         if (ni < 0 || nj < 0 || ni >= GN || nj >= GN) continue;
-        const n = gi(ni, nj), diff = hc - sand[n];
+        const n = gi(ni, nj); if (PROT[n]) continue;
+        const diff = hc - sand[n];
         if (diff > maxStep) { const m = (diff - maxStep) * 0.25; sand[c] -= m; sand[n] += m; }
       }
     }
@@ -428,8 +427,8 @@ function stampWall(lx, lz, travel) {
   const r = cellRect(lx, lz, w * 1.6);
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > w * 1.6) continue;
+    const id = gi(i, j); if (PROT[id]) continue;
     const prof = d < w * 0.7 ? 1 : 1 - smoothstep(w * 0.7, w * 1.6, d);
-    const id = gi(i, j);
     sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + H * crenel * prof));
   }
   markDirty(r.i0, r.i1, r.j0, r.j1);
@@ -440,8 +439,8 @@ function stampMoat(lx, lz) {
   const r = cellRect(lx, lz, m * 1.35);
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > m * 1.35) continue;
+    const id = gi(i, j); if (PROT[id]) continue;
     const t = d < m * 0.55 ? 1 : 1 - smoothstep(m * 0.55, m * 1.35, d);
-    const id = gi(i, j);
     sand[id] = Math.min(sand[id], sand[id] * (1 - t));
   }
   slumpRect(r, 1); markDirty(r.i0 - 3, r.i1 + 3, r.j0 - 3, r.j1 + 3);
@@ -453,6 +452,7 @@ function stampTower(lx, lz, R, H) {
   const k = Math.max(6, Math.round(R / 0.035));
   for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
     const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > R * 1.15) continue;
+    const id = gi(i, j); if (PROT[id]) continue;
     let h;
     if (d < R * 0.78) h = H;
     else if (d < R) h = H * (1 - ((d - R * 0.78) / (R * 0.22)) * 0.5);
@@ -461,48 +461,9 @@ function stampTower(lx, lz, R, H) {
       const ang = Math.atan2(j - r.cj, i - r.ci);
       if (Math.cos(ang * k) > 0.25) h += 0.05 * (R / 0.2);
     }
-    const id = gi(i, j);
     sand[id] = Math.max(sand[id], Math.min(MAXH, BASE + h));
   }
   markDirty(r.i0, r.i1, r.j0, r.j1);
-}
-
-function starterCastle() {
-  const s = 0.62, zf = -0.5, zb = 0.7;                 // a ~1.3 m square keep with corner towers + inner keep
-  const wallH = 0.2;
-  const segment = (x0, z0, x1, z1) => {
-    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(len / (CELL * 1.5));
-    for (let q = 0; q <= n; q++) {
-      const t = q / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
-      const w = 0.05, r = cellRect(x, z, w * 1.6);
-      for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
-        const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > w * 1.6) continue;
-        const prof = d < w * 0.7 ? 1 : 1 - smoothstep(w * 0.7, w * 1.6, d);
-        const cren = Math.floor(len * t / 0.11) % 2 ? 0.82 : 1;
-        sand[gi(i, j)] = Math.max(sand[gi(i, j)], BASE + wallH * cren * prof);
-      }
-    }
-  };
-  segment(-s, zf, s, zf); segment(-s, zb, s, zb); segment(-s, zf, -s, zb); segment(s, zf, s, zb);
-  for (const [x, z] of [[-s, zf], [s, zf], [-s, zb], [s, zb]]) stampTower(x, z, 0.19, 0.4);
-  stampTower(0, (zf + zb) / 2, 0.27, 0.62);
-  // a moat all the way around, with a causeway in front
-  const mo = 0.98, zf2 = zf - (mo - s), zb2 = zb + (mo - s);
-  const ditch = (x0, z0, x1, z1) => {
-    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(len / (CELL * 1.5));
-    for (let q = 0; q <= n; q++) {
-      const t = q / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t, m = 0.1, r = cellRect(x, z, m * 1.35);
-      for (let j = r.j0; j <= r.j1; j++) for (let i = r.i0; i <= r.i1; i++) {
-        const d = Math.hypot(i - r.ci, j - r.cj) * CELL; if (d > m * 1.35) continue;
-        const tt = d < m * 0.55 ? 1 : 1 - smoothstep(m * 0.55, m * 1.35, d);
-        sand[gi(i, j)] = Math.min(sand[gi(i, j)], sand[gi(i, j)] * (1 - tt));
-      }
-    }
-  };
-  ditch(-mo, zf2, -0.25, zf2); ditch(0.25, zf2, mo, zf2);
-  ditch(-mo, zb2, mo, zb2); ditch(-mo, zf2, -mo, zb2); ditch(mo, zf2, mo, zb2);
-  slumpRect({ i0: 0, i1: GN - 1, j0: 0, j1: GN - 1 }, 1);
-  markAll();
 }
 
 // ---------- decorations (flag / shell / starfish) ----------
@@ -552,7 +513,7 @@ function addDeco(d) {
   renderer.shadowMap.needsUpdate = true;
 }
 function placeDeco(d) {
-  d.mesh.position.set(TRAY_C.x + d.x, TRAY_C.y + heightAt(d.x, d.z) - (d.type === 'flag' ? 0.03 : 0.004), TRAY_C.z + d.z);
+  d.mesh.position.set(TRAY_C.x + d.x, TRAY_C.y + heightAt(d.x, d.z) - BASE - (d.type === 'flag' ? 0.03 : 0.004), TRAY_C.z + d.z);
 }
 function settleDecos() { for (const d of decos) placeDeco(d); }
 function clearDecos() { for (const d of decos) decoGroup.remove(d.mesh); decos = []; }
@@ -566,13 +527,235 @@ function placeDecoAt(type, lx, lz) {
 const undoStack = [];
 function pushUndo() {
   undoStack.push({ sand: sand.slice(), decos: decos.map((d) => ({ type: d.type, x: d.x, z: d.z, rot: d.rot, s: d.s, color: d.color })) });
-  if (undoStack.length > 24) undoStack.shift();
+  if (undoStack.length > 20) undoStack.shift();
 }
 function undo() {
   const u = undoStack.pop(); if (!u) return;
   sand.set(u.sand); clearDecos(); u.decos.forEach((d) => addDeco({ ...d })); markAll();
 }
 function resetSand() { pushUndo(); sand.fill(BASE); clearDecos(); markAll(); }
+
+// ============================ the picnic ============================
+const picnicItems = [];
+function gingham() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  g.fillStyle = '#fbf6ee'; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = 'rgba(214,52,60,0.75)';
+  for (let k = 0; k < 8; k += 2) { g.fillRect(k * 32, 0, 32, 256); g.fillRect(0, k * 32, 256, 32); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 2.3);
+  t.anisotropy = 8; return t;
+}
+function buildPicnic() {
+  picnic = new THREE.Group(); picnic.position.set(TRAY_C.x, TRAY_C.y, TRAY_C.z); scene.add(picnic);
+  const L = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
+  const add = (mesh, thr, x, z, y = 0) => {
+    mesh.position.set(x, y, z); mesh.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    picnic.add(mesh); picnicItems.push({ mesh, thr, gone: false, t: 0, z0: z, y0: y }); return mesh;
+  };
+  const blanket = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.1), new THREE.MeshLambertMaterial({ map: gingham() }));
+  blanket.rotation.x = -Math.PI / 2; blanket.position.y = 0.006; blanket.receiveShadow = true; picnic.add(blanket);
+  picnic.userData.blanket = blanket;
+
+  // basket
+  const basket = new THREE.Group();
+  basket.add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.22), L(0xb98a50)));
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.03, 0.23), L(0xa27640)); lid.position.y = 0.095; basket.add(lid);
+  const hdl = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.012, 8, 20, Math.PI), L(0x8a5f30)); hdl.position.y = 0.11; basket.add(hdl);
+  basket.rotation.y = 0.3; add(basket, 0.25, -0.38, -0.12, 0.09);
+  // watermelon slice
+  const mel = new THREE.Group();
+  mel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.035, 24, 1, false, 0, Math.PI), L(0xe8404f)),
+          new THREE.Mesh(new THREE.CylinderGeometry(0.118, 0.118, 0.034, 24, 1, true, 0, Math.PI), L(0x3f8d4a, { side: THREE.DoubleSide })));
+  mel.rotation.y = 0.8; add(mel, 0.36, 0.3, -0.25, 0.03);
+  // plates + sandwich + apple + cupcake + bottle
+  const plate = (x, z) => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.085, 0.015, 24), L(0xf4f6f8)); return add(p, 0.9, x, z, 0.012); };
+  plate(0.05, 0.2);
+  const sw = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.035, 3), L(0xe2b868)); sw.rotation.y = 0.4; add(sw, 0.72, 0.05, 0.2, 0.04);
+  const apple = new THREE.Mesh(new THREE.SphereGeometry(0.04, 14, 10), L(0xd8333a)); add(apple, 0.85, 0.3, 0.18, 0.05);
+  const cup = new THREE.Group();
+  const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.05, 12), L(0xe8a0b8)); cup.add(cb);
+  const ct = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 8), L(0xfff2e0)); ct.position.y = 0.04; ct.scale.y = 0.75; cup.add(ct);
+  add(cup, 0.6, -0.15, 0.3, 0.03);
+  const bot = new THREE.Group();
+  bot.add(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.2, 12), L(0x3a9a58, { transparent: true, opacity: 0.9 })));
+  const nk = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.025, 0.09, 10), L(0x3a9a58)); nk.position.y = 0.14; bot.add(nk);
+  add(bot, 0.48, -0.6, 0.25, 0.11);
+  // beach umbrella (last to go)
+  const um = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.3, 8), L(0xf2eee4)); pole.position.y = 0.65; um.add(pole);
+  const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.26, 12, 1, true), L(0xe8483c, { side: THREE.DoubleSide })); canopy.position.y = 1.25; um.add(canopy);
+  const stripes = new THREE.Mesh(new THREE.ConeGeometry(0.621, 0.261, 12, 1, true, 0, Math.PI / 6), L(0xffffff, { side: THREE.DoubleSide })); stripes.position.y = 1.25; um.add(stripes);
+  um.rotation.z = 0.08; add(um, 0.12, 0.62, -0.38, 0);
+}
+
+// ---------- tide ----------
+const STRENGTH_NAMES = ['Calm', 'Normal', 'Wild'], STRENGTH_K = [0.8, 1.0, 1.25];
+const tide = { on: true, strength: 1, wave: 0, waves: 8, phase: 'grace', t: 0, grace: 25, surgeDur: 10, rest: 7,
+               reachMax: 0, lvl: 0.07, reach: 0, health: 1, state: 'play', acc: 0, nextCheck: 0 };
+const fd = new Float32Array(GN * GN);        // flood depth per cell
+const fdist = new Int16Array(GN * GN);
+const fq = new Int32Array(GN * GN);
+let waterDirty = true, waterAcc = 0;
+
+function restartTide() { tide.wave = 0; tide.phase = 'grace'; tide.t = 0; tide.reach = 0; tide.state = 'play'; fd.fill(0); waterDirty = true; }
+function restartPicnic() {
+  tide.health = 1;
+  for (const it of picnicItems) { it.gone = false; it.t = 0; it.mesh.visible = true; it.mesh.scale.setScalar(1); it.mesh.position.z = it.z0; it.mesh.position.y = it.y0; }
+  restartTide();
+}
+
+function computeFlood(reachM, lvl, dtEro) {
+  fd.fill(0);
+  if (reachM < 0.02) return;
+  const S = BASE + lvl, maxSteps = reachM / CELL;
+  fdist.fill(-1);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < GN; i++) for (let j = 0; j < 3; j++) { const c = gi(i, j); if (sand[c] <= S) { fdist[c] = 0; fq[qt++] = c; } }
+  let e0 = GN, e1 = 0, f0 = GN, f1 = 0, eroded = false;
+  while (qh < qt) {
+    const c = fq[qh++], d = fdist[c];
+    const depthRaw = S - sand[c], front = (maxSteps - d) * CELL * 0.35;
+    const dep = Math.max(0, Math.min(depthRaw, front));
+    fd[c] = dep;
+    if (dep > 0.01 && sand[c] > BASE + 0.003 && !PROT[c]) {             // the sea nibbles at low mounds
+      sand[c] -= (sand[c] - BASE) * 0.6 * dtEro; eroded = true;
+      const ci = c % GN, cj = (c / GN) | 0; e0 = Math.min(e0, ci); e1 = Math.max(e1, ci); f0 = Math.min(f0, cj); f1 = Math.max(f1, cj);
+    }
+    if (d >= maxSteps) continue;
+    const ci = c % GN, cj = (c / GN) | 0;
+    if (ci > 0) { const n = c - 1; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
+    if (ci < GN - 1) { const n = c + 1; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
+    if (cj > 0) { const n = c - GN; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
+    if (cj < GN - 1) { const n = c + GN; if (fdist[n] < 0 && sand[n] <= S) { fdist[n] = d + 1; fq[qt++] = n; } }
+  }
+  if (eroded) markDirty(e0, e1, f0, f1);
+}
+
+function updateTide(dt) {
+  tide.acc += dt;
+  if (tide.on && tide.state === 'play') {
+    tide.t += dt;
+    if (tide.phase === 'grace' && tide.t >= tide.grace) { tide.phase = 'surge'; tide.t = 0; startWave(); }
+    else if (tide.phase === 'surge') {
+      const u = tide.t / tide.surgeDur;
+      tide.reach = u >= 1 ? 0 : tide.reachMax * Math.pow(Math.sin(Math.PI * u), 0.85);
+      if (u >= 1) { tide.phase = 'rest'; tide.t = 0; tide.reach = 0; }
+    } else if (tide.phase === 'rest' && tide.t >= tide.rest) {
+      tide.wave++;
+      if (tide.wave >= tide.waves) { tide.state = 'won'; tide.reach = 0; tide.phase = 'done'; setStatus(); }
+      else { tide.phase = 'surge'; tide.t = 0; startWave(); }
+    }
+  } else if (!tide.on || tide.state !== 'play') tide.reach = Math.max(0, tide.reach - dt * 0.6);
+
+  if (tide.acc >= 0.2) {                                     // flood-fill 5×/s
+    const step = tide.acc; tide.acc = 0;
+    if (tide.reach > 0.02 || floodActive) {
+      computeFlood(tide.reach, tide.lvl, step);
+      floodActive = tide.reach > 0.02;
+      waterDirty = true;
+      // picnic damage: how much of the blanket is under water?
+      if (tide.state === 'play') {
+        let wet = 0, n = 0;
+        for (let x = -0.6; x <= 0.61; x += 0.15) for (let z = -0.45; z <= 0.46; z += 0.15) {
+          const i = clamp(Math.round((x + HALF) / CELL), 0, GN - 1), j = clamp(Math.round((z + HALF) / CELL), 0, GN - 1);
+          n++; if (fd[gi(i, j)] > 0.012) wet++;
+        }
+        const frac = wet / n;
+        if (frac > 0) tide.health = Math.max(0, tide.health - frac * step * 0.07);
+        if (tide.health <= 0) { tide.state = 'lost'; tide.reach = 0; }
+      }
+    } else if (floodActive) { fd.fill(0); floodActive = false; waterDirty = true; }
+    setStatus();
+  }
+  // washed-away items
+  for (const it of picnicItems) {
+    const shouldGo = tide.health <= it.thr;
+    if (shouldGo && !it.gone) { it.gone = true; it.t = 0; }
+    if (it.gone && it.t < 1.6) { it.t += dt; it.mesh.position.z += dt * 0.45; it.mesh.position.y = it.y0 + Math.sin(it.t * 6) * 0.01; const s = Math.max(0.001, 1 - it.t / 1.6); it.mesh.scale.setScalar(s); if (it.t >= 1.6) it.mesh.visible = false; }
+  }
+}
+let floodActive = false;
+function startWave() {
+  const k = tide.wave, s = STRENGTH_K[tide.strength];
+  tide.reachMax = (1.1 + 0.42 * k + Math.random() * 0.35) * s;
+  tide.lvl = (0.06 + 0.012 * k) * (0.9 + 0.2 * s);
+  if (actx && soundOn) whoosh();
+}
+
+function updateWater(t) {
+  waterMesh.material.uniforms.time.value = t;
+  waterAcc += 1;
+  if (!waterDirty || waterAcc < 4) return;           // ≤ 15 Hz
+  waterDirty = false; waterAcc = 0;
+  const P = waterMesh.geometry.attributes.position, D = waterMesh.geometry.attributes.aDepth;
+  const POOL = BASE - 0.012;
+  for (let c = 0; c < GN * GN; c++) {
+    const h = sand[c], pool = POOL - h, d = Math.max(fd[c], pool > 0 ? pool : 0);
+    P.array[c * 3 + 1] = h + d + 0.004; D.array[c] = d;
+  }
+  P.needsUpdate = true; D.needsUpdate = true;
+}
+function buildWater() {
+  const n = GN * GN;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3);
+  for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) { const k = gi(i, j) * 3; pos[k] = i * CELL - HALF; pos[k + 1] = BASE; pos[k + 2] = j * CELL - HALF; }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(n), 1));
+  geo.setIndex(sandGeo.index);
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.3, 0), TRAY * 0.8);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { time: { value: 0 } },
+    vertexShader: `attribute float aDepth; varying float vD; varying vec3 vW; varying float vX;
+      void main(){ vD = aDepth; vX = position.x; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `varying float vD; varying vec3 vW; varying float vX; uniform float time;
+      void main(){
+        float a = smoothstep(0.0, 0.012, vD) * smoothstep(0.0, 0.7, ${HALF.toFixed(3)} - abs(vX));
+        if (a < 0.01) discard;
+        vec3 shallow = vec3(0.30, 0.62, 0.62), deep = vec3(0.05, 0.25, 0.42);
+        vec3 col = mix(shallow, deep, smoothstep(0.0, 0.12, vD));
+        float rip = sin(vW.x * 9.0 + time * 2.0) * sin(vW.z * 8.0 - time * 1.7);
+        col += 0.05 * rip;
+        float foam = 1.0 - smoothstep(0.0, 0.035, vD);
+        col = mix(col, vec3(0.95), foam * 0.55);
+        gl_FragColor = vec4(col, a * 0.88);
+        ${SHADER_TAIL}
+      }`,
+  });
+  waterMesh = new THREE.Mesh(geo, mat);
+  waterMesh.position.copy(sandMesh.position); waterMesh.frustumCulled = false; waterMesh.renderOrder = 3;
+  scene.add(waterMesh);
+}
+
+// ---------- status label (desktop line + a floating billboard over the picnic) ----------
+let statusMesh, statusCtx, statusTex, statusText = '';
+function buildStatusLabel() {
+  const c = document.createElement('canvas'); c.width = 768; c.height = 192; statusCtx = c.getContext('2d');
+  statusTex = new THREE.CanvasTexture(c); statusTex.colorSpace = THREE.SRGBColorSpace;
+  statusMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.375), new THREE.MeshBasicMaterial({ map: statusTex, transparent: true, depthTest: false, toneMapped: false, fog: false }));
+  statusMesh.renderOrder = 950; statusMesh.position.set(TRAY_C.x, 1.9, TRAY_C.z); scene.add(statusMesh);
+}
+function setStatus() {
+  const hearts = Math.ceil(tide.health * 5 - 1e-6), h = '♥'.repeat(Math.max(0, hearts)) + '♡'.repeat(5 - Math.max(0, hearts));
+  let line2;
+  if (!tide.on) line2 = 'Tide is off';
+  else if (tide.state === 'won') line2 = 'The picnic is safe — enjoy! 🎉';
+  else if (tide.state === 'lost') line2 = 'Washed away… press Restart in the menu';
+  else if (tide.phase === 'grace') line2 = 'First wave in ' + Math.max(0, Math.ceil(tide.grace - tide.t)) + ' s — build!';
+  else line2 = 'Wave ' + Math.min(tide.waves, tide.wave + 1) + ' / ' + tide.waves + (tide.reach > 0.05 ? '  — incoming!' : '');
+  const text = 'Picnic ' + h + '|' + line2;
+  if (text === statusText) return;
+  statusText = text;
+  const g = statusCtx;
+  g.clearRect(0, 0, 768, 192);
+  g.fillStyle = 'rgba(12,15,28,0.78)'; g.beginPath(); g.roundRect(4, 4, 760, 184, 40); g.fill();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#ffe9c2'; g.font = '700 70px system-ui, sans-serif'; g.fillText('Picnic ' + h, 384, 66);
+  g.fillStyle = tide.state === 'lost' ? '#ff9a9a' : '#cfe8ff'; g.font = '600 46px system-ui, sans-serif'; g.fillText(line2, 384, 140);
+  statusTex.needsUpdate = true;
+  const el = document.getElementById('status'); if (el) el.textContent = 'Picnic ' + h + '  ·  ' + line2;
+}
 
 // ---------- cursors (one per hand + mouse), sized to the brush ----------
 const SRC = [];
@@ -581,22 +764,30 @@ function buildCursors() {
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 48),
       new THREE.MeshBasicMaterial({ color: k === 0 ? 0x5a3d18 : k === 1 ? 0xb8681e : 0x1e6fb8, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, toneMapped: false }));
     ring.rotation.x = -Math.PI / 2; ring.visible = false; ring.renderOrder = 5; scene.add(ring);
-    SRC.push({ id: k, down: false, hit: { on: false, lx: 0, lz: 0, y: 0, dist: 0 }, last: null, travel: 0, ring });
+    SRC.push({ id: k, down: false, tool: 'pile', hit: { on: false, lx: 0, lz: 0, y: 0, dist: 0 }, last: null, travel: 0, ring });
   }
 }
-function cursorRadius() {
-  return tool === 'tower' ? clamp(brush * 1.6, 0.12, 0.6) : CLICK_TOOLS.has(tool) ? 0.06 : tool === 'wall' ? Math.max(brush * 0.35, 0.035) * 1.6 : brush;
+function cursorRadius(tl) {
+  return tl === 'tower' ? clamp(brush * 1.6, 0.12, 0.6) : CLICK_TOOLS.has(tl) ? 0.06 : tl === 'wall' ? Math.max(brush * 0.35, 0.035) * 1.6 : brush;
+}
+// which tool a source is using: the menu tool, or what the hand is holding
+function toolFor(s) {
+  if (s.id === 0 || !kit) return tool;
+  const t = kit.heldBy(s.id - 1);
+  if (!t) return tool;
+  return t.name === 'Spade' ? 'dig' : t.name === 'Bucket' ? 'tower' : null;
 }
 
 // ---------- strokes ----------
 function beginStroke(s) {
-  if (!s.hit.on) return;
+  s.tool = toolFor(s);
+  if (!s.tool || !s.hit.on) return;
   pushUndo();
   s.down = true; s.last = null; s.travel = 0;
-  if (CLICK_TOOLS.has(tool)) {
+  if (CLICK_TOOLS.has(s.tool)) {
     const { lx, lz } = s.hit;
-    if (tool === 'tower') stampTower(lx, lz);
-    else placeDecoAt(tool === 'flag' ? 'flag' : tool === 'shell' ? 'shell' : 'star', lx, lz);
+    if (s.tool === 'tower') stampTower(lx, lz);
+    else placeDecoAt(s.tool === 'flag' ? 'flag' : s.tool === 'shell' ? 'shell' : 'star', lx, lz);
     s.down = false;
   }
 }
@@ -613,7 +804,7 @@ function strokeLine(s, fn) {
 }
 function applyStroke(s, dt) {
   const { lx, lz } = s.hit;
-  switch (tool) {
+  switch (s.tool) {
     case 'pile': brushPile(lx, lz, dt, 1); break;
     case 'dig': brushPile(lx, lz, dt, -1); break;
     case 'smooth': brushSmooth(lx, lz, dt); break;
@@ -630,92 +821,96 @@ function cycleTool(d) {
 }
 function stepBrush(d) { brushIdx = clamp(brushIdx + d, 0, BRUSHES.length - 1); brush = BRUSHES[brushIdx]; if (menu) menu.refresh(); }
 
-// ---------- zoom ----------
+// ---------- zoom: from sand grains to a high overview ----------
 function zoomText() {
-  return '×' + (renderer && renderer.xr.isPresenting ? VR_ZOOMS[vrZoomIdx] : (START_DIST / orbit.dist).toFixed(1));
+  const z = renderer && renderer.xr.isPresenting ? 1 / dolly.scale.x : START_DIST / orbit.dist;
+  return '×' + (z >= 10 ? z.toFixed(0) : z.toFixed(2).replace(/\.?0+$/, ''));
+}
+function setDollyScale(s) {
+  s = clamp(s, SCALE_MIN, SCALE_MAX);
+  camera.getWorldPosition(_a);
+  dolly.scale.setScalar(s); dolly.updateMatrixWorld(true);
+  camera.getWorldPosition(_b);
+  dolly.position.add(_a.sub(_b));         // keep your head where it was; the world grows/shrinks around you
 }
 function zoomBy(d) {
-  if (renderer.xr.isPresenting) {
-    vrZoomIdx = clamp(vrZoomIdx + d, 0, VR_ZOOMS.length - 1);
-    camera.getWorldPosition(_a);
-    dolly.scale.setScalar(1 / VR_ZOOMS[vrZoomIdx]); dolly.updateMatrixWorld(true);
-    camera.getWorldPosition(_b);
-    dolly.position.add(_a.sub(_b));         // keep your head where it was; the world grows around you
-  } else orbit.dist = clamp(orbit.dist * (d > 0 ? 0.7 : 1 / 0.7), 0.45, 14);
+  if (renderer.xr.isPresenting) setDollyScale(dolly.scale.x / (d > 0 ? 1.6 : 1 / 1.6));
+  else orbit.dist = clamp(orbit.dist * (d > 0 ? 0.65 : 1 / 0.65), MIN_DIST, MAX_DIST);
+  if (menu) menu.refresh();
 }
 function recenter() {
-  if (renderer.xr.isPresenting) {
-    recenterRig(dolly, camera, VR_HOME, 0);
-    dolly.position.y = 0;
-  } else { orbit.yaw = 0; orbit.pitch = 0.66; orbit.dist = START_DIST; orbit.target.set(0, 0.05, -2.0); }
+  if (renderer.xr.isPresenting) { dolly.scale.setScalar(1); recenterRig(dolly, camera, VR_HOME, 0); dolly.position.y = 0; }
+  else { orbit.yaw = 0; orbit.pitch = 0.7; orbit.dist = START_DIST; orbit.target.set(0, 0.05, TRAY_C.z); }
 }
-function setBackdrop(visible) {            // passthrough on = hide sky/beach/sea/props; the tray stays
+function setBackdrop(visible) {            // passthrough on = hide sky/beach/sea/crate; the sand, picnic and tools stay
   env.visible = visible;
   scene.background = visible ? horizonColor : null;
 }
 
-// ---------- magnifying glass (render-to-texture lens) ----------
-const lens = { on: false, zoom: 3, group: null, rt: null, cam: null, disc: null, handle: null };
-const LENS_R = 0.12;
-const LENS_ZOOMS = [2, 3, 4, 6, 8];
-function buildLens() {
-  lens.rt = new THREE.WebGLRenderTarget(768, 768, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true });
-  lens.cam = new THREE.PerspectiveCamera(20, 1, 0.02, 400);
-  const g = new THREE.Group();
-  // drawn last and without depth test so the glass is never swallowed by the castle you are leaning into
-  const over = (m, order) => { m.depthTest = false; m.transparent = true; m.fog = false; return order; };
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(LENS_R, 56), new THREE.MeshBasicMaterial({ map: lens.rt.texture }));
-  disc.renderOrder = over(disc.material, 900);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(LENS_R, 0.008, 10, 56), new THREE.MeshBasicMaterial({ color: 0xe0ac4a, toneMapped: false }));
-  ring.position.z = 0.002; ring.renderOrder = over(ring.material, 901);
-  const cross = new THREE.Mesh(new THREE.RingGeometry(0.004, 0.0065, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.7, toneMapped: false }));
-  cross.position.z = 0.002; cross.renderOrder = over(cross.material, 902);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.16, 10), new THREE.MeshBasicMaterial({ color: 0x7a4f28, toneMapped: false }));
-  handle.position.set(0, -LENS_R - 0.07, 0); handle.renderOrder = over(handle.material, 901);
-  g.add(disc, ring, cross, handle);
-  g.visible = false;
-  lens.group = g; lens.disc = disc; lens.handle = handle;
-  scene.add(g);
+// ============================ hand tools ============================
+let crateTools = [];
+function buildTools() {
+  // spade (working end along −z, origin = grip)
+  const spade = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.34, 8).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 }));
+  shaft.position.z = -0.17; spade.add(shaft);
+  const grip = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.009, 8, 16), new THREE.MeshLambertMaterial({ color: 0x3f7fd0 })); grip.position.z = 0.01; spade.add(grip);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.13), new THREE.MeshLambertMaterial({ color: 0xf4c23a })); blade.position.z = -0.4; spade.add(blade);
+  spade.userData.tool = 'Spade';
+  // bucket
+  const bucket = new THREE.Group();
+  const bb = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.085, 0.16, 20, 1, true), new THREE.MeshLambertMaterial({ color: 0xe7563f, side: THREE.DoubleSide })); bb.position.y = 0;
+  const bot = new THREE.Mesh(new THREE.CircleGeometry(0.085, 20).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0xc8402c })); bot.position.y = -0.079;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.012, 8, 24), new THREE.MeshLambertMaterial({ color: 0xc8402c })); rim.rotation.x = Math.PI / 2; rim.position.y = 0.08;
+  const bh = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.007, 6, 20, Math.PI), new THREE.MeshLambertMaterial({ color: 0xf2eee4 })); bh.position.y = 0.08;
+  bucket.add(bb, bot, rim, bh);
+  // magnifying glass (gets the menu in registerTools so the wrist UI is hidden during its render pass)
+  lens = createLens({ renderer, scene, camera, menu: null, radius: 0.1, zoom: 3 });
+  crateTools = [spade, bucket, lens.group];
+  for (const t of [spade, bucket]) t.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  scene.add(spade, bucket, lens.group);
 }
-function attachLens() {
-  const parent = renderer.xr.isPresenting ? (menu.controllers.find((c) => c.userData.hand === 'left') || menu.controllers[0]) : scene;
-  if (lens.group.parent !== parent) parent.add(lens.group);
-  lens.handle.visible = !renderer.xr.isPresenting;
-  if (renderer.xr.isPresenting) lens.group.position.set(0, 0.02, -0.3); else lens.group.position.set(0, 0, 0);
+function registerTools() {
+  lens.menu = menu;
+  const [spade, bucket] = crateTools;
+  const top = CRATE.top;
+  spade.position.set(CRATE.x - 0.2, top + 0.014, CRATE.z + 0.08); spade.rotation.y = 0.35;
+  bucket.position.set(CRATE.x + 0.12, top + 0.08, CRATE.z - 0.02);
+  lens.group.position.set(CRATE.x + 0.04, top + 0.016, CRATE.z + 0.12); lens.group.rotation.set(-Math.PI / 2, 0, 0.6);
+  const groundAt = (x, z) => (Math.abs(x - CRATE.x) < 0.3 && Math.abs(z - CRATE.z) < 0.24) ? top : surfaceY(x, z);
+  const pose = (r) => ({ pos: new THREE.Vector3(0, 0, -0.04), rot: new THREE.Euler(r, 0, 0) });
+  kit.add({ name: 'Spade', object: spade, radius: 0.28, grip: pose(-0.35), home: 'ground', groundAt, restY: 0.014, restRot: new THREE.Euler(0, 0.35, 0) });
+  kit.add({ name: 'Bucket', object: bucket, radius: 0.28, grip: { pos: new THREE.Vector3(0, 0, -0.16), rot: new THREE.Euler(0, 0, 0) }, home: 'ground', groundAt, restY: 0.08, restRot: new THREE.Euler(0, 0, 0) });
+  kit.add({
+    name: 'Magnifier', object: lens.group, radius: 0.26, grip: { pos: new THREE.Vector3(0, 0.02, -0.3), rot: new THREE.Euler() },
+    home: 'ground', groundAt, restY: 0.016, restRot: new THREE.Euler(-Math.PI / 2, 0, 0.6),
+    onGrab: () => lens.setOn(true), onRelease: () => lens.setOn(false), onHeld: () => lens.faceEye(),
+  });
 }
-function toggleLens() { lens.on = !lens.on; lens.group.visible = lens.on; if (menu) menu.refresh(); }
-function lensZoomStep(d) {
-  lens.zoom = LENS_ZOOMS[clamp(LENS_ZOOMS.indexOf(lens.zoom) + d, 0, LENS_ZOOMS.length - 1)]; if (menu) menu.refresh();
-}
-function updateLens() {
-  if (!lens.on) return;
-  camera.getWorldPosition(_a);                                  // eye
-  if (!renderer.xr.isPresenting) {                              // desktop loupe follows the mouse, floating in front of the camera
-    ray.setFromCamera(mouseNDC, camera);
-    lens.group.position.copy(_a).addScaledVector(ray.ray.direction, 0.62);
-    lens.group.scale.setScalar(1);
+// desktop loupe: toggled with L / the menu; floats at the mouse
+let deskLensOn = false, deskLensHome = null;
+function toggleDesktopLens() {
+  if (renderer.xr.isPresenting) return;
+  if (deskLensOn) endDesktopLens();
+  else {
+    deskLensOn = true;
+    deskLensHome = { p: lens.group.position.clone(), q: lens.group.quaternion.clone(), s: lens.group.scale.clone() };
+    lens.setOn(true);
   }
-  lens.group.lookAt(_a);
-  lens.group.updateWorldMatrix(true, true);
-  lens.group.getWorldPosition(_b);                              // lens centre
-  const R = LENS_R * lens.group.getWorldScale(_c).x, d = _a.distanceTo(_b);
-  const half = Math.atan(R / Math.max(d, 0.05));
-  lens.cam.position.copy(_a); lens.cam.lookAt(_b);
-  lens.cam.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(half) / lens.zoom));
-  lens.cam.updateProjectionMatrix(); lens.cam.updateMatrixWorld();
-
-  const prevRT = renderer.getRenderTarget(), xrEn = renderer.xr.enabled;
-  lens.group.visible = false;
-  renderer.xr.enabled = false;               // render with lens.cam, not the headset camera
-  renderer.setRenderTarget(lens.rt);
-  menu.withoutUI(() => { renderer.clear(); renderer.render(scene, lens.cam); });
-  renderer.xr.enabled = xrEn;
-  renderer.setRenderTarget(prevRT);
-  lens.group.visible = true;
+  if (menu) menu.refresh();
+}
+function endDesktopLens() {
+  if (!deskLensOn) return;
+  deskLensOn = false; lens.setOn(false);
+  lens.group.position.copy(deskLensHome.p); lens.group.quaternion.copy(deskLensHome.q); lens.group.scale.copy(deskLensHome.s);
+}
+function lensZoomStep(d) {
+  const Z = [2, 3, 4, 6, 8, 12];
+  lens.zoom = Z[clamp(Z.indexOf(lens.zoom) + d, 0, Z.length - 1)]; if (menu) menu.refresh();
 }
 
 // ---------- audio: soft surf + gulls ----------
-let actx, started = false, soundOn = true;
+let actx, started = false, soundOn = true, surfGain = null;
 function setSound(v) {
   soundOn = v;
   if (v) startAudio();
@@ -731,12 +926,20 @@ function startAudio() {
     for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.5;
     const src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
     const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
-    const g = actx.createGain(); g.gain.value = 0.11;
+    const g = actx.createGain(); g.gain.value = 0.11; surfGain = g;
     src.connect(lp).connect(g).connect(actx.destination); src.start();
     const surf = actx.createOscillator(), sg = actx.createGain(); surf.frequency.value = 0.14; sg.gain.value = 0.07;
     surf.connect(sg).connect(g.gain); surf.start();
     gull();
   } catch (e) { /* no audio */ }
+}
+function whoosh() {                       // a bigger swell of surf as a wave rolls in
+  if (!surfGain) return;
+  const t = actx.currentTime;
+  surfGain.gain.cancelScheduledValues(t);
+  surfGain.gain.setValueAtTime(surfGain.gain.value, t);
+  surfGain.gain.linearRampToValueAtTime(0.3, t + 3.5);
+  surfGain.gain.linearRampToValueAtTime(0.11, t + 10);
 }
 function gull() {
   if (!actx) return;
@@ -778,11 +981,11 @@ function initPointer() {
     prev.x = e.clientX; prev.y = e.clientY;
     if (ptrs.size >= 2) {
       const [p, q] = [...ptrs.values()], d = Math.hypot(p.x - q.x, p.y - q.y), c = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-      if (pinchD > 0 && d > 0) orbit.dist = clamp(orbit.dist * pinchD / d, 0.45, 14);
-      if (pinchC) { orbit.yaw -= (c.x - pinchC.x) * 0.005; orbit.pitch = clamp(orbit.pitch + (c.y - pinchC.y) * 0.005, 0.06, 1.5); }
+      if (pinchD > 0 && d > 0) orbit.dist = clamp(orbit.dist * pinchD / d, MIN_DIST, MAX_DIST);
+      if (pinchC) { orbit.yaw -= (c.x - pinchC.x) * 0.005; orbit.pitch = clamp(orbit.pitch + (c.y - pinchC.y) * 0.005, 0.02, 1.55); }
       pinchD = d; pinchC = c;
     } else if (orbitDrag) {
-      orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.005, 0.06, 1.5);
+      orbit.yaw -= dx * 0.005; orbit.pitch = clamp(orbit.pitch + dy * 0.005, 0.02, 1.55);
     } else if (panDrag) panTarget(-dx * orbit.dist * 0.0016, dy * orbit.dist * 0.0016);
   });
   const up = (e) => {
@@ -794,10 +997,10 @@ function initPointer() {
   cv.addEventListener('wheel', (e) => {
     e.preventDefault();
     if (e.shiftKey && lens.on) { lensZoomStep(e.deltaY < 0 ? 1 : -1); return; }
-    const f = Math.exp(clamp(e.deltaY, -300, 300) * 0.0013), nd = clamp(orbit.dist * f, 0.45, 14);
+    const f = Math.exp(clamp(e.deltaY, -300, 300) * 0.0016), nd = clamp(orbit.dist * f, MIN_DIST, MAX_DIST);
     if (nd < orbit.dist && SRC[0].hit.on) {                   // zoom toward whatever is under the cursor
-      _a.set(TRAY_C.x + SRC[0].hit.lx, SRC[0].hit.y, TRAY_C.z + SRC[0].hit.lz);
-      orbit.target.lerp(_a, (1 - nd / orbit.dist) * 0.7);
+      _a.set(SRC[0].hit.lx + TRAY_C.x, SRC[0].hit.y, SRC[0].hit.lz + TRAY_C.z);
+      orbit.target.lerp(_a, (1 - nd / orbit.dist) * 0.8);
     }
     orbit.dist = nd;
   }, { passive: false });
@@ -806,8 +1009,8 @@ function panTarget(right, up) {
   const fwd = _a.set(Math.sin(orbit.yaw), 0, Math.cos(orbit.yaw)).negate();    // ground-plane forward
   const rgt = _b.set(Math.cos(orbit.yaw), 0, -Math.sin(orbit.yaw));
   orbit.target.addScaledVector(rgt, right).addScaledVector(fwd, -up);
-  orbit.target.x = clamp(orbit.target.x, -HALF + TRAY_C.x, HALF + TRAY_C.x);
-  orbit.target.z = clamp(orbit.target.z, -HALF + TRAY_C.z, HALF + TRAY_C.z);
+  orbit.target.x = clamp(orbit.target.x, -12, 12);
+  orbit.target.z = clamp(orbit.target.z, TRAY_C.z - 12, TRAY_C.z + 14);
 }
 function onKeyDown(e) {
   keys[e.code] = true;
@@ -816,7 +1019,7 @@ function onKeyDown(e) {
   else if (e.code === 'BracketLeft') stepBrush(-1);
   else if (e.code === 'BracketRight') stepBrush(1);
   else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey || !e.shiftKey)) { e.preventDefault(); undo(); }
-  else if (e.code === 'KeyL') toggleLens();
+  else if (e.code === 'KeyL') toggleDesktopLens();
   else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) resetSand();
   else if (e.code === 'Equal' || e.code === 'NumpadAdd') zoomBy(1);
   else if (e.code === 'Minus' || e.code === 'NumpadSubtract') zoomBy(-1);
@@ -831,8 +1034,9 @@ function updateMouseHit() {
   s.hit.on = false; raySand(ray.ray.origin, ray.ray.direction, s.hit);
 }
 
-// ---------- VR sticks: left = walk, right = turn (snap) + height ----------
-let snapLatch = false;
+// ---------- VR sticks: left = walk, right = turn (snap) + height; both grips on air = zoom the world ----------
+let snapLatch = false, pinch = null;
+const gripDown = [false, false];
 function vrLocomotion(dt) {
   const session = renderer.xr.getSession(); if (!session) return;
   const sc = dolly.scale.x;
@@ -843,7 +1047,7 @@ function vrLocomotion(dt) {
       if (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15) {
         camera.getWorldDirection(_a); _a.y = 0; _a.normalize();
         _b.crossVectors(_a, camera.up).normalize();
-        dolly.position.addScaledVector(_a, -ay * 1.4 * sc * dt).addScaledVector(_b, ax * 1.4 * sc * dt);
+        dolly.position.addScaledVector(_a, -ay * 1.6 * sc * dt).addScaledVector(_b, ax * 1.6 * sc * dt);
       }
     } else if (src.handedness === 'right') {
       if (Math.abs(ax) > 0.7 && !snapLatch) {
@@ -852,9 +1056,15 @@ function vrLocomotion(dt) {
         dolly.rotation.y -= Math.sign(ax) * Math.PI / 6; dolly.updateMatrixWorld(true);
         camera.getWorldPosition(_b); dolly.position.add(_a.sub(_b));
       } else if (Math.abs(ax) < 0.3) snapLatch = false;
-      if (Math.abs(ay) > 0.2) dolly.position.y = clamp(dolly.position.y - ay * 0.9 * sc * dt, -0.5, 3);
+      if (Math.abs(ay) > 0.2) dolly.position.y = clamp(dolly.position.y - ay * 1.2 * sc * dt, -0.5 * sc, 40);
     }
   }
+  // two-handed world zoom
+  if (gripDown[0] && gripDown[1] && !kit.heldBy(0) && !kit.heldBy(1)) {
+    const d = menu.controllers[0].position.distanceTo(menu.controllers[1].position);
+    if (!pinch) pinch = { d0: Math.max(d, 0.05), s0: dolly.scale.x };
+    else setDollyScale(pinch.s0 * pinch.d0 / Math.max(d, 0.05));
+  } else pinch = null;
 }
 
 // ---------- frame ----------
@@ -864,20 +1074,22 @@ function animate() {
 
   if (!xr) {
     if (keys.ArrowLeft) orbit.yaw += dt * 1.2; if (keys.ArrowRight) orbit.yaw -= dt * 1.2;
-    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch + dt, 0.06, 1.5); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch - dt, 0.06, 1.5);
+    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch + dt, 0.02, 1.55); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch - dt, 0.02, 1.55);
     const pr = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), pf = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     if (pr || pf) panTarget(pr * dt * orbit.dist * 0.6, -pf * dt * orbit.dist * 0.6);
     const cp = Math.cos(orbit.pitch);
-    camera.position.set(orbit.target.x + Math.sin(orbit.yaw) * cp * orbit.dist, orbit.target.y + Math.sin(orbit.pitch) * orbit.dist,
+    camera.position.set(orbit.target.x + Math.sin(orbit.yaw) * cp * orbit.dist, Math.max(0.02, orbit.target.y + Math.sin(orbit.pitch) * orbit.dist),
       orbit.target.z + Math.cos(orbit.yaw) * cp * orbit.dist);
     camera.lookAt(orbit.target);
+    camera.near = clamp(orbit.dist * 0.03, 0.01, 0.5); camera.updateProjectionMatrix();
   } else {
     vrLocomotion(dt);
     dolly.updateMatrixWorld(true);
-    renderer.xr.updateCamera(camera);          // fresh head pose for rays + lens this frame
+    renderer.xr.updateCamera(camera);          // fresh head pose for rays + tools this frame
   }
 
   menu.update();
+  kit.update(dt);
 
   // sculpt sources: mouse + both controllers
   updateMouseHit();
@@ -895,21 +1107,28 @@ function animate() {
     }
   } else { SRC[1].hit.on = false; SRC[2].hit.on = false; }
 
-  const rad = cursorRadius();
   for (const s of SRC) {
-    if (s.down && s.hit.on && !CLICK_TOOLS.has(tool)) applyStroke(s, dt);
-    s.ring.visible = s.hit.on;
-    if (s.hit.on) {
+    if (!s.down) s.tool = toolFor(s);
+    if (s.down && s.hit.on && s.tool && !CLICK_TOOLS.has(s.tool)) applyStroke(s, dt);
+    s.ring.visible = s.hit.on && !!s.tool;
+    if (s.ring.visible) {
       s.ring.position.set(TRAY_C.x + s.hit.lx, s.hit.y + 0.012, TRAY_C.z + s.hit.lz);
-      s.ring.scale.setScalar(rad);
+      s.ring.scale.setScalar(cursorRadius(s.tool));
       s.ring.material.opacity = s.down ? 1 : 0.55 + 0.25 * Math.sin(t * 5);
     }
   }
+  updateTide(dt);
   updateSandGeo();
+  updateWater(t);
 
-  water.material.uniforms.time.value = t;
-  camera.getWorldPosition(water.material.uniforms.cam.value);
-  updateLens();
+  // floating status label faces you and scales so it stays readable from any zoom
+  camera.getWorldPosition(_a);
+  statusMesh.lookAt(_a);
+  statusMesh.scale.setScalar(clamp(_a.distanceTo(statusMesh.position) / 5, 0.5, 12));
+
+  seaMesh.material.uniforms.time.value = t;
+  camera.getWorldPosition(seaMesh.material.uniforms.cam.value);
+  lens.update(mouseNDC);
   fx.render();
 }
 

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { createToolkit, createLens } from '../shared/xrtools.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx;
@@ -35,7 +36,7 @@ const WL = -1.5;            // water level
 const EYE = 1.6;           // desktop eye height
 const WALK = 5.5, RUN = 2.3;
 
-let scene, camera, renderer, dolly, world, menu, caps, horizonColor;
+let scene, camera, renderer, dolly, world, menu, caps, horizonColor, kit, spy;
 let speedMul = 1, snapTurn = false, snapLatch = false, soundOn = true;
 const SPEED_STEPS = [0.5, 1, 1.5, 2.5];
 let water, birds = [], clouds = [], sheepMesh;
@@ -128,7 +129,7 @@ async function init() {
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Nature — Glade & Cliffs',
-    hint: 'WASD walk · mouse look · Shift run · click the view to look around · Esc/M menu',
+    hint: 'WASD walk · mouse look · Shift run · hold Z for binoculars · click the view to look around · Esc/M menu. In VR: grip the spyglass at your side and raise it to your eye.',
     rows: [
       sectionRow('Walking'),
       stepperRow('Speed', () => '×' + SPEED_STEPS[speedIdx()], () => stepSpeed(-1), () => stepSpeed(1)),
@@ -140,6 +141,20 @@ async function init() {
     setBackdrop,
     recenter,
     onBeforeEnter: startAudio,
+  });
+
+  // spyglass: a hand-held lens (render-to-texture, ×6) floating at your left hip; grip to grab, look through it
+  kit = createToolkit({ renderer, scene, dolly, camera, menu });
+  spy = createLens({ renderer, scene, camera, menu, radius: 0.085, zoom: 6, ring: 0xc9a24a });
+  dolly.add(spy.group);
+  const spyHome = new THREE.Vector3(-0.34, -0.5, -0.4);
+  spy.group.position.copy(spyHome);
+  kit.add({
+    name: 'Spyglass', object: spy.group, radius: 0.22,
+    grip: { pos: new THREE.Vector3(0, 0.0, -0.3), rot: new THREE.Euler() },
+    home: 'dolly', homePos: spyHome, homeRot: new THREE.Euler(),
+    onGrab: () => spy.setOn(true), onRelease: () => spy.setOn(false), onHeld: () => spy.faceEye(),
+    onTick: () => { if (!spy.on) spy.faceEye(); },
   });
 
   addEventListener('resize', onResize);
@@ -541,6 +556,13 @@ function animate() {
   }
   windU.value = t;
   menu.update();
+  kit.update(dt);
+  spy.group.visible = renderer.xr.isPresenting;
+  if (!renderer.xr.isPresenting) {                 // desktop: hold Z for binoculars
+    const f = keys.KeyZ ? 20 : 70;
+    if (Math.abs(camera.fov - f) > 0.1) { camera.fov += (f - camera.fov) * Math.min(1, dt * 10); camera.updateProjectionMatrix(); }
+  }
+  spy.update();
   fx.render();
 }
 

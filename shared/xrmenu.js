@@ -36,6 +36,8 @@
 //     ('left'|'right'|'none'), .userData.overMenu (ray is on the menu), .userData.src (XRInputSource).
 //   • menu.rays[i].setLength(worldMetres)  shorten a ray to your own hit point — only when !overMenu.
 //   • menu.onSelectStart/onSelectEnd((controller, hand, index) => …)   trigger events NOT consumed by the menu.
+//   • menu.onSqueeze((controller, hand, index, isDown) => …)           grip down/up (use for pick-up; see xrtools.js).
+//   • Controller models are drawn automatically (menu.grips[i]); pass controllerModels:false to disable.
 //   • menu.onButton((hand, buttonIndex|'squeeze', controller) => …)    X/Y/A/B (4,5) and grip-down.
 //   • menu.refresh() after you change state from outside the menu; menu.open()/close()/toggle()/isOpen().
 //   • menu.withoutUI(fn) hides the wrist menu while fn runs (e.g. render-to-texture passes).
@@ -60,6 +62,7 @@
 //   text/label/active/visible may be values or functions.
 
 import * as THREE from 'three';
+import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const val = (v) => (typeof v === 'function' ? v() : v);
 
@@ -213,7 +216,7 @@ export function createXRMenu(opts) {
   let open = false;
   let passthrough = false;
   let quitArmed = false, quitTimer = 0;
-  const selStart = [], selEnd = [], btnDown = [], menuListeners = [];
+  const selStart = [], selEnd = [], btnDown = [], sqzList = [], menuListeners = [];
 
   const inAR = () => {
     const s = renderer.xr.getSession();
@@ -283,8 +286,30 @@ export function createXRMenu(opts) {
     c.addEventListener('disconnected', () => { c.userData.hand = 'none'; c.userData.src = null; });
     c.addEventListener('selectstart', () => onSelect(c, true));
     c.addEventListener('selectend', () => onSelect(c, false));
-    c.addEventListener('squeezestart', () => { for (const f of btnDown) f(c.userData.hand, 'squeeze', c); });
+    c.addEventListener('squeezestart', () => {
+      for (const f of btnDown) f(c.userData.hand, 'squeeze', c);
+      for (const f of sqzList) f(c, c.userData.hand, i, true);
+    });
+    c.addEventListener('squeezeend', () => { for (const f of sqzList) f(c, c.userData.hand, i, false); });
     return c;
+  });
+
+  // visible controller models (real Quest/Touch/etc. meshes via the WebXR input-profiles asset CDN),
+  // with a simple fallback body that hides once the real model has loaded
+  const modelFactory = new XRControllerModelFactory();
+  const grips = [0, 1].map((i) => {
+    const grip = renderer.xr.getControllerGrip(i);
+    const fallback = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.025, 0.11, 12).rotateX(Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x2a3146, toneMapped: false }));
+    fallback.position.z = 0.03;
+    grip.add(fallback);
+    if (opts.controllerModels !== false) {
+      const model = modelFactory.createControllerModel(grip);
+      grip.add(model);
+      grip.userData.model = model; grip.userData.fallback = fallback;
+    }
+    dolly.add(grip);
+    return grip;
   });
 
   function makeRay(color) {
@@ -385,6 +410,10 @@ export function createXRMenu(opts) {
 
   function update() {
     if (!renderer.xr.isPresenting) return;
+    for (const g of grips) {                    // swap the fallback body for the real model once it arrives
+      const m = g.userData.model;
+      if (m && g.userData.fallback && m.children.length) { g.userData.fallback.visible = false; g.userData.fallback = null; }
+    }
     const session = renderer.xr.getSession();
     if (!session) return;
 
@@ -587,6 +616,8 @@ export function createXRMenu(opts) {
       panel.visible = false; hint.visible = false;
       try { fn(); } finally { panel.visible = pv; hint.visible = hv; }
     },
+    onSqueeze: (f) => sqzList.push(f),       // (controller, hand, index, isDown)
+    grips,
     onSelectStart: (f) => selStart.push(f),
     onSelectEnd: (f) => selEnd.push(f),
     onButton: (f) => btnDown.push(f),       // (hand, index|'squeeze', controller)
