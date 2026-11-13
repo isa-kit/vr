@@ -3,15 +3,15 @@
 // headlands, dune grass and scrub.  The sun slowly sinks from golden hour into dusk.  Quality tier is automatic
 // (desktop / phone / headset) and switchable in the menu.  Wave sounds are cued to the visible wave clock.
 
-import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114b';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114b';
+import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114i';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114i';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114b';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114b';
-import { createGrass, createLogs } from '../procgen/terrain.js?v=20261114b';
-import { createRocks } from '../procgen/rocks.js?v=20261114b';
-import { createSky } from '../procgen/sky.js?v=20261114b';
-import { createWater, createShoreline } from '../procgen/water.js?v=20261114b';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114i';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
+import { createGrass, createLogs } from '../procgen/terrain.js?v=20261114i';
+import { createRocks } from '../procgen/rocks.js?v=20261114i';
+import { createSky } from '../procgen/sky.js?v=20261114i';
+import { createWater, createShoreline } from '../procgen/water.js?v=20261114i';
 
 const R = rng(31415);
 const rr = (a, b) => a + R() * (b - a);
@@ -96,7 +96,7 @@ for (let i = 0; i < DETAIL.shrubs * 4 && shrubs.length < DETAIL.shrubs; i++) {
   shrubs.push({ x, y: gy - 0.05, z, s: rr(0.8, 2.0), yaw: R() * 6.28, species: 'shrub', variant: Math.floor(R() * Q.variants), tint: [rr(0.95, 1.15), rr(0.9, 1.05), rr(0.7, 0.95)] });
 }
 const field = createTreeField(lib, shrubs, scene); field.setShadows(!!Q.shadowMap); field.layout({ x: 0, z: 40, lod0: 70, lod1: 140, far: 240, impostors: false, minDist: 2 });
-const grass = createGrass({ hf: hfn, count: DETAIL.grass, radius: 30, height: [0.35, 0.9], seed: 4, colors: { lo: 0x6b7f3c, mid: 0xa9b061, hi: 0xe3dba2 }, windU: lib.wind }); scene.add(grass.mesh);
+const grass = createGrass({ hf: hfn, count: DETAIL.grass, radius: 26, height: [0.3, 0.75], seed: 4, tuft: 5, width: 0.022, spread: 0.14, clump: 0.65, falloff: 1.7, dry: 0.3, colors: { lo: 0x6b7f3c, mid: 0xa9b061, hi: 0xe3dba2 }, windU: lib.wind }); scene.add(grass.mesh);
 scene.add(createLogs({ hf: hfn, barkMat: standardMaterial(lib.barkMaps['bark:oak'], { roughness: 1, color: 0xcbbfae }), items: [{ x: -2.9, z: SEAT_Z + 1.8, len: 3.4, r: 0.17, yaw: 0.5 }, { x: 14, z: SEAT_Z + 12, len: 2.6, r: 0.13, yaw: 2.1 }] }));
 await tick('boat and gulls');
 

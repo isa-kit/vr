@@ -6,14 +6,14 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, softTexture, fbm, smoothstep, rng, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261114a';
+} from '../seated/common.js?v=20261114i';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114a';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114a';
-import { createHeightfield, createTerrain, createGrass, createFerns, createLogs } from '../procgen/terrain.js?v=20261114a';
-import { createRocks } from '../procgen/rocks.js?v=20261114a';
-import { createSky } from '../procgen/sky.js?v=20261114a';
-import { createWater } from '../procgen/water.js?v=20261114a';
+import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114i';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
+import { createHeightfield, createTerrain, createGrass, createFlowers, createLitter, createFerns, createLogs } from '../procgen/terrain.js?v=20261114i';
+import { createRocks } from '../procgen/rocks.js?v=20261114i';
+import { createSky } from '../procgen/sky.js?v=20261114i';
+import { createWater } from '../procgen/water.js?v=20261114i';
 
 const R = rng(20260);
 const rr = (a, b) => a + R() * (b - a);
@@ -24,16 +24,16 @@ const isCoarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches
 let qPref = 'auto'; try { qPref = localStorage.getItem('oortia-quality') || 'auto'; } catch (e) { /* ignore */ }
 const qName = QUALITY[qPref] ? qPref : (isHeadsetUA ? 'light' : isCoarse ? 'medium' : 'high');
 const Q = QUALITY[qName];
-const DETAIL = { high: { grass: 7000, ferns: 650, terrain: 176, water: 128, trees: 1 }, medium: { grass: 3500, ferns: 350, terrain: 144, water: 80, trees: 0.8 }, light: { grass: 1800, ferns: 220, terrain: 112, water: 48, trees: 0.55 } }[qName];
+const DETAIL = { high: { grass: 10000, flowers: 520, litter: 1600, stones: 260, ferns: 650, terrain: 176, water: 128, trees: 1 }, medium: { grass: 5200, flowers: 300, litter: 900, stones: 150, ferns: 350, terrain: 144, water: 80, trees: 0.8 }, light: { grass: 2200, flowers: 160, litter: 450, stones: 70, ferns: 220, terrain: 112, water: 48, trees: 0.55 } }[qName];
 
 // ---------------- world layout ----------------
-const HILL = { x: 250, z: -300, h: 96, r: 185 };
+const HILL = { x: 250, z: -300, h: 140, r: 205 };
 const LAKE = { x: -90, z: -520, rx: 95, rz: 55, level: 0 };
 const MEADOW = { x: -235, z: -40, r: 46 };
 const FACING = (fromX, fromZ, toX, toZ) => Math.atan2(-(toX - fromX), -(toZ - fromZ));
-const HSEAT = (() => { const dx = LAKE.x - HILL.x, dz = LAKE.z - HILL.z, l = Math.hypot(dx, dz); return { x: HILL.x + dx / l * 52, z: HILL.z + dz / l * 52 }; })();
+const HSEAT = (() => { const dx = LAKE.x - HILL.x, dz = LAKE.z - HILL.z, l = Math.hypot(dx, dz); return { x: HILL.x + dx / l * 96, z: HILL.z + dz / l * 96 }; })();
 const VPS = [
-  { id: 'hill', label: 'Hilltop', x: HSEAT.x, z: HSEAT.z, yaw: FACING(HSEAT.x, HSEAT.z, LAKE.x, LAKE.z), pitch: -0.27, tilt: 0.06, fog: 0.0021, far: 850, shafts: false, grass: 1, flat: [4, 12], birds: 'high', moteY: -6, lodScale: 1 },
+  { id: 'hill', label: 'Hilltop', x: HSEAT.x, z: HSEAT.z, yaw: FACING(HSEAT.x, HSEAT.z, LAKE.x, LAKE.z), pitch: -0.22, tilt: -0.1, fog: 0.0013, far: 1000, shafts: false, grass: 1, flat: [4, 12], birds: 'high', moteY: -6, lodScale: 1 },
   { id: 'floor', label: 'Forest floor', x: 0, z: 0, yaw: 0, pitch: 0.1, fog: 0.0072, far: 320, shafts: true, grass: 0, flat: [3, 22], birds: 'low', moteY: 7, lodScale: 1.5 },
   { id: 'meadow', label: 'Meadow', x: MEADOW.x, z: MEADOW.z + 30, yaw: 0, pitch: 0.06, fog: 0.0062, far: 540, shafts: true, grass: 2, flat: [3, 24], birds: 'low', moteY: 5, lodScale: 1.2 },
   { id: 'lake', label: 'Lakeside', x: LAKE.x, z: LAKE.z + LAKE.rz * 1.35, yaw: 0, pitch: 0.03, fog: 0.0052, far: 620, shafts: false, grass: 1, flat: [3, 20], birds: 'low', moteY: 5, lodScale: 1.2 },
@@ -64,7 +64,7 @@ const tick = async (l) => { steps++; fill.style.width = Math.min(96, steps / TOT
 // ---------------- sky, light, haze ----------------
 await tick('sky');
 scene.fog = new THREE.FogExp2(0xbccfc4, 0.0036);
-const sky = createSky({ renderer, scene, sun: { elevation: 30, azimuth: 25 }, turbidity: 2.4, rayleigh: 1.1, mie: 0.003, mieG: 0.8, clouds: { cover: 0.38, scale: 1.2 }, seed: 4 });
+const sky = createSky({ renderer, scene, sun: { elevation: 23, azimuth: 28 }, turbidity: 2.9, rayleigh: 1.2, mie: 0.004, mieG: 0.82, clouds: { cover: 0.66, scale: 0.75 }, seed: 4 });
 scene.environment = sky.env; scene.environmentIntensity = 1.35; scene.fog.color.copy(sky.haze);
 const sunDir = sky.sunDir;
 const sun = new THREE.DirectionalLight(sky.sunColor, sky.sunIntensity); scene.add(sun, sun.target);
@@ -108,7 +108,7 @@ function plant(SP, fill) {
     const x = gx + rr(-0.44, 0.44) * SP, z = gz + rr(-0.44, 0.44) * SP;
     if (Math.hypot(x - CX, z - CZ) > RAD) continue;
     const dh = Math.hypot(x - HILL.x, z - HILL.z);
-    if (dh < 30 || Math.hypot(x - HSEAT.x, z - HSEAT.z) < 56 || R() > smoothstep(30, 95, dh) * 0.95 + 0.05 * (dh > 95)) continue;
+    if (dh < 30 || Math.hypot(x - HSEAT.x, z - HSEAT.z) < 34 || (Math.hypot(x - HSEAT.x, z - HSEAT.z) < 125 && groundH(x, z) > groundH(HSEAT.x, HSEAT.z) - 26 && ((x - HSEAT.x) * (LAKE.x - HSEAT.x) + (z - HSEAT.z) * (LAKE.z - HSEAT.z)) > -0.35 * Math.hypot(x - HSEAT.x, z - HSEAT.z) * Math.hypot(LAKE.x - HSEAT.x, LAKE.z - HSEAT.z)) || R() > smoothstep(34, 78, dh) * 0.95 + 0.05 * (dh > 95)) continue;
     if (lakeU(x, z) < (fill ? 1.25 : 1.5)) continue;
     if (R() > smoothstep(MEADOW.r * 0.85, MEADOW.r * 1.3, Math.hypot(x - MEADOW.x, z - MEADOW.z))) continue;
     if (Math.hypot(x / 9.5, (z + 9) / 17) < 1 || Math.hypot(x, z) < 6) continue;
@@ -132,9 +132,21 @@ scene.add(water.mesh);
 await tick('water');
 
 // ---------------- near-field detail ----------------
-const grass = createGrass({ hf, count: DETAIL.grass, radius: 28, height: [0.22, 0.55], seed: 2, windU: lib.wind }); scene.add(grass.mesh);
+const grass = createGrass({ hf, count: DETAIL.grass, radius: 25, height: [0.13, 0.4], seed: 2, windU: lib.wind, tuft: 6, width: 0.018, spread: 0.11, clump: 0.5, falloff: 1.75, dry: 0.16, colors: { lo: 0x22401a, mid: 0x5d8a34, hi: 0x93ab4e } }); scene.add(grass.mesh);
+const flowers = createFlowers({ hf, count: DETAIL.flowers * 1.8, radius: 20, seed: 4, windU: lib.wind, height: [0.22, 0.46], size: 0.1 }); scene.add(flowers.mesh);
+const litter = createLitter({ hf, count: DETAIL.litter, radius: 13, seed: 6 }); scene.add(litter.mesh);
 const ferns = createFerns({ hf, atlas: makeLeafAtlas('fern', { size: Q.atlas, seed: 2 }), count: DETAIL.ferns, radius: 45, seed: 3, size: [0.5, 0.9], windU: lib.wind }); scene.add(ferns.mesh);
 const rockMat = standardMaterial(maps.rock, { vertexColors: true, roughness: 1 });
+const PEB = [0, 1, 2].map(i => ({ seed: 41 + i, detail: 2, flatten: 0.55 + 0.15 * i, facets: 5, rough: 0.1, texScale: 7, moss: 0.25 }));
+const pebMat = standardMaterial(maps.rock, { vertexColors: true, roughness: 1, color: 0xd9cdb8 });
+let pebbles = null;
+function layPebbles(vp) {
+  if (pebbles) { scene.remove(pebbles); pebbles.userData.meshes.forEach(m => m.geometry.dispose()); pebbles = null; }
+  if (vp.id === 'floor') return;
+  const r2 = rng(77 + Math.floor(vp.x)), its = [];
+  for (let i = 0; i < DETAIL.stones * 3 && its.length < DETAIL.stones; i++) { const a = r2() * 6.283, r = 0.7 + Math.pow(r2(), 1.6) * 15, x = vp.x + Math.cos(a) * r, z = vp.z + Math.sin(a) * r; if (lakeU(x, z) < 1.15) continue; its.push({ x, y: groundH(x, z) - 0.012, z, s: 0.02 + Math.pow(r2(), 2.4) * 0.1, yaw: r2() * 6.28, variant: its.length % 3 }); }
+  pebbles = createRocks({ items: its, variants: PEB, material: pebMat }); scene.add(pebbles);
+}
 const rockVariants = [{ seed: 1, detail: 3, flatten: 0.7, facets: 7 }, { seed: 2, detail: 3, flatten: 0.5, facets: 6, aspect: 1.5 }, { seed: 3, detail: 3, flatten: 0.85, facets: 4 }, { seed: 4, detail: 3, flatten: 0.6, facets: 8 }];
 const props = {};
 for (const v of VPS) {
@@ -258,6 +270,8 @@ function applyViewpoint(id) {
   terrain.rebuild(vp.x, vp.z);
   layoutField(vp);
   grass.layout(vp.x, vp.z, { exclude: (x, z) => lakeU(x, z) < 1.12 }); grass.mesh.visible = vp.grass > 0;
+  flowers.layout(vp.x, vp.z, { exclude: (x, z) => lakeU(x, z) < 1.2 }); flowers.mesh.visible = vp.grass > 0;
+  litter.layout(vp.x, vp.z, { exclude: (x, z) => lakeU(x, z) < 1.2 }); layPebbles(vp);
   ferns.layout(vp.x, vp.z, { exclude: (x, z) => lakeU(x, z) < 1.3 }); ferns.mesh.visible = vp.id === 'floor';
   for (const k of Object.keys(props)) props[k].visible = k === vp.id;
   sun.target.position.set(vp.x, gy, vp.z); sun.position.copy(sun.target.position).addScaledVector(sunDir, 160);

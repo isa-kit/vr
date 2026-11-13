@@ -105,12 +105,12 @@ function rock(S, N) {
   const col = new Float32Array(S * S * 3), h = new Float32Array(S * S), rough = new Float32Array(S * S);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const u = x / S, v = y / S, i = y * S + x;
-    const w = N.worley2(u * 6, v * 6, 6), crack = sstep(0.0, 0.09, w.f2 - w.f1), strata = 0.5 + 0.5 * N.p2(u * 3, v * 22 + N.p2(u * 6, v * 4, 6, 4) * 1.4, 3, 22);
+    const w = N.worley2(u * 6, v * 6, 6), crack = sstep(0.0, 0.05, w.f2 - w.f1), strata = 0.5 + 0.5 * N.p2(u * 3, v * 22 + N.p2(u * 6, v * 4, 6, 4) * 1.4, 3, 22);
     const fine = N.pfbm2(u * 32, v * 32, 32, 32, { oct: 4 }), big = 0.5 + 0.5 * N.pfbm2(u * 4, v * 4, 4, 4, { oct: 3 });
     let c = mixc([0.34, 0.33, 0.31], [0.58, 0.55, 0.5], clamp(0.35 * strata + 0.4 * big + 0.3 * (fine + 0.5)));
-    c = mixc(c, [0.12, 0.11, 0.1], (1 - crack) * 0.75);
+    c = mixc(c, [0.2, 0.19, 0.17], (1 - crack) * 0.5);
     const lich = sstep(0.55, 0.8, N.pfbm2(u * 7 + 4, v * 7, 7, 7, { oct: 3 }) * 0.5 + 0.5); c = mixc(c, [0.55, 0.6, 0.38], lich * 0.35);
-    col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]; h[i] = clamp(0.25 + 0.5 * crack + 0.2 * (fine + 0.5) + 0.1 * strata); rough[i] = 0.8 + 0.15 * (1 - crack);
+    col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]; h[i] = clamp(0.3 + 0.32 * crack + 0.3 * (fine + 0.5) + 0.1 * strata); rough[i] = 0.8 + 0.15 * (1 - crack);
   }
   return pack(S, col, h, rough, 4.5);
 }

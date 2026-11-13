@@ -4,15 +4,15 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114b';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114b';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114i';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114i';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114b';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114b';
-import { createSplatMaterial, createGrass } from '../procgen/terrain.js?v=20261114b';
-import { createRocks } from '../procgen/rocks.js?v=20261114b';
-import { createSky } from '../procgen/sky.js?v=20261114b';
-import { createWater } from '../procgen/water.js?v=20261114b';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114i';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
+import { createSplatMaterial, createGrass } from '../procgen/terrain.js?v=20261114i';
+import { createRocks } from '../procgen/rocks.js?v=20261114i';
+import { createSky } from '../procgen/sky.js?v=20261114i';
+import { createWater } from '../procgen/water.js?v=20261114i';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);
@@ -148,7 +148,7 @@ for (const v of SEATS) for (let i = 0; i < DETAIL.shrubs; i++) {
   shrubs.push({ x, y: topH(x, z, s) - 0.05, z, s: rr(0.9, 2.2), yaw: R() * 6.28, species: 'shrub', variant: Math.floor(R() * Q.variants), tint: [rr(0.9, 1.1), rr(0.9, 1.05), rr(0.75, 0.95)] });
 }
 const field = createTreeField(lib, shrubs, scene); field.setShadows(!!Q.shadowMap);
-const grass = createGrass({ hf: { height: (x, z) => topH(x, z, z - coastZ(x)) }, count: DETAIL.grass, radius: 34, height: [0.3, 0.8], seed: 5, colors: { lo: 0x56822e, mid: 0x93b155, hi: 0xd9d27a }, windU: lib.wind }); scene.add(grass.mesh);
+const grass = createGrass({ hf: { height: (x, z) => topH(x, z, z - coastZ(x)) }, count: DETAIL.grass, radius: 26, height: [0.18, 0.5], seed: 5, tuft: 6, width: 0.02, spread: 0.12, clump: 0.5, falloff: 1.9, dry: 0.18, colors: { lo: 0x365a20, mid: 0x6a9040, hi: 0xaebd62 }, windU: lib.wind }); scene.add(grass.mesh);
 const boulders = new THREE.Group(); scene.add(boulders);
 function layoutBoulders(v) {
   boulders.clear(); const items = [];

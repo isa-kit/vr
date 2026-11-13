@@ -53,13 +53,13 @@ export function createSky({ renderer, scene, sun = { elevation: 30, azimuth: -20
     uniforms: cu, side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
     vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `varying vec3 vP; uniform sampler2D uNoise; uniform float uTime, uCover, uScale; uniform vec3 uSun, uLit, uShade, uHaze; uniform vec2 uWind;
-      float dens(vec2 uv){ return texture2D(uNoise, uv * 0.2).r * 0.55 + texture2D(uNoise, uv * 0.55 + 3.7).g * 0.3 + texture2D(uNoise, uv * 1.7 - 1.3).b * 0.15; }
+      float dens(vec2 uv){ return texture2D(uNoise, uv * 0.2).r * 0.5 + texture2D(uNoise, uv * 0.55 + 3.7).g * 0.3 + texture2D(uNoise, uv * 1.7 - 1.3).b * 0.15 + (texture2D(uNoise, uv * 4.9 + 7.1).r - 0.5) * 0.14; }
       void main(){
         vec3 d = normalize(vP); if (d.y < 0.01) discard;
         vec2 uv = d.xz / (d.y * 0.9 + 0.12) * 0.55 * uScale + uWind * uTime;
-        float n = dens(uv), cov = smoothstep(1.0 - uCover, 1.0 - uCover + 0.22, n);
+        float n = dens(uv), cov = smoothstep(1.0 - uCover, 1.0 - uCover + 0.15, n);
         float nS = dens(uv + normalize(uSun.xz + 1e-4) * 0.05), lit = clamp(0.55 + (n - nS) * 5.0, 0.0, 1.0);
-        vec3 col = mix(uShade, uLit, lit); float rim = pow(max(dot(d, normalize(uSun)), 0.0), 8.0); col += uLit * rim * 0.5 * (1.0 - n * 0.5);
+        vec3 col = mix(uShade, uLit, lit); float core = smoothstep(1.0 - uCover + 0.04, 1.0 - uCover + 0.42, n); col = mix(col, uShade * 0.9, core * 0.5 * (1.0 - lit * 0.55)); col += uLit * (1.0 - core) * 0.1; float rim = pow(max(dot(d, normalize(uSun)), 0.0), 8.0); col += uLit * rim * 0.5 * (1.0 - n * 0.5);
         float hz = 1.0 - smoothstep(0.0, 0.3, d.y); col = mix(col, uHaze, hz * 0.75);
         float a = cov * 0.92 * smoothstep(0.01, 0.14, d.y);
         gl_FragColor = vec4(col, a);
