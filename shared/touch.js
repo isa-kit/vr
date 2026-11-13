@@ -27,6 +27,8 @@ import * as THREE from 'three';
 
 export function createTouch({ canvas, look = true, onLook = null, stick = false, buttons = [], forceUI = false } = {}) {
   const isTouch = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  let invert = false;
+  try { invert = localStorage.getItem('oortia-touch-invert') === '1'; } catch (e) { /* ignore */ }
   const T = { isTouch, move: { x: 0, y: 0 }, buttons: {}, gyro: { on: false, quat: new THREE.Quaternion(), supported: false } };
   if (isTouch) document.body.classList.add('is-touch');
   if (canvas) canvas.style.touchAction = 'none';
@@ -89,7 +91,8 @@ export function createTouch({ canvas, look = true, onLook = null, stick = false,
     });
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerId !== id) return;
-      onLook(e.clientX - lx, e.clientY - ly); lx = e.clientX; ly = e.clientY;
+      const k = invert ? -1 : 1;                 // default: finger drag = mouse-look (drag right → view turns right)
+      onLook((e.clientX - lx) * k, (e.clientY - ly) * k); lx = e.clientX; ly = e.clientY;
     });
     const up = (e) => { if (e.pointerId === id) id = null; };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
@@ -120,6 +123,13 @@ export function createTouch({ canvas, look = true, onLook = null, stick = false,
     } catch (e) { return; }
     yaw0 = null; last = null; addEventListener('deviceorientation', onOri); G.on = true;
   };
-  T.rows = () => (G.supported ? [{ label: 'Look', cells: [{ text: () => (G.on ? 'Phone motion: On' : 'Phone motion: Off'), action: () => G.toggle().then(() => T.onChange && T.onChange()), active: () => G.on, w: 2 }] }] : []);
+  T.rows = () => {
+    const rows = [];
+    if (look && onLook) rows.push({ label: 'Drag', visible: () => isTouch, cells: [
+      { text: 'Looks', active: () => !invert, action: () => { invert = false; try { localStorage.setItem('oortia-touch-invert', '0'); } catch (e) { /* ignore */ } } },
+      { text: 'Pulls world', active: () => invert, action: () => { invert = true; try { localStorage.setItem('oortia-touch-invert', '1'); } catch (e) { /* ignore */ } } } ] });
+    if (G.supported) rows.push({ label: 'Look', cells: [{ text: () => (G.on ? 'Phone motion: On' : 'Phone motion: Off'), action: () => G.toggle().then(() => T.onChange && T.onChange()), active: () => G.on, w: 2 }] });
+    return rows;
+  };
   return T;
 }

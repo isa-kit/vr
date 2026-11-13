@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js';
 import { createToolkit, createLens } from '../shared/xrtools.js';
-import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 import { createBirds } from '../shared/birds.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
@@ -1228,10 +1228,8 @@ function vrLocomotion(dt) {
     const ax = gp.axes[2], ay = gp.axes[3];
     if (src.handedness === 'left') {
       if (!comfort.settings.teleport && (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15)) {
-        camera.getWorldDirection(_a); _a.y = 0; _a.normalize();
-        _b.crossVectors(_a, camera.up).normalize();
-        const sp = comfort.speed(WALK_SPEED) * sc;
-        dolly.position.addScaledVector(_a, -ay * sp * dt).addScaledVector(_b, ax * sp * dt);
+        stickVector(camera, ax, ay, _a);                                // stick forward (y<0) = forward; right = forward × up
+        dolly.position.addScaledVector(_a, comfort.speed(WALK_SPEED) * sc * dt);
         moving = comfort.speed(WALK_SPEED) * Math.hypot(ax, ay);
       }
     } else if (src.handedness === 'right') {
@@ -1294,7 +1292,7 @@ function animate() {
 
   if (!xr) {
     if (keys.ArrowLeft) orbit.yaw += dt * 1.2; if (keys.ArrowRight) orbit.yaw -= dt * 1.2;
-    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch + dt, PMIN, PMAX); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch - dt, PMIN, PMAX);
+    if (keys.ArrowUp) orbit.pitch = clamp(orbit.pitch - dt, PMIN, PMAX); if (keys.ArrowDown) orbit.pitch = clamp(orbit.pitch + dt, PMIN, PMAX);   // up arrow = look up (camera lowers), same as dragging up
     const pr = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), pf = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     if (pr || pf) panTarget(pr * dt * orbit.dist * 0.6, -pf * dt * orbit.dist * 0.6);
     const cp = Math.cos(orbit.pitch);

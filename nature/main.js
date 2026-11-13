@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js';
-import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 import { createBirds } from '../shared/birds.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
@@ -152,6 +152,7 @@ async function init() {
     setBackdrop,
     recenter,
     onBeforeEnter: startAudio,
+    onSessionEnd: () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; },   // don't carry VR rig yaw into flat mode
   });
 
   comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
@@ -564,9 +565,8 @@ function handleMovement(dt) {
     const m = Math.hypot(mx, mz), k = m > 1 ? 1 / m : 1;
     // constant speed (no ramp): slow in a headset or on a phone; normal walk on desktop
     let speed = (pres || touch.isTouch) ? comfort.speed(VR_WALK) : (deskRun ? WALK * RUN : WALK) * (comfort.reducedMotion ? 0.6 : 1);
-    camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
-    right.crossVectors(fwd, camera.up).normalize();
-    const vx = (fwd.x * -mz + right.x * mx) * k, vz = (fwd.z * -mz + right.z * mx) * k;
+    stickVector(camera, mx, mz, _wp);                                     // forward × up = right; stick y<0 = forward
+    const vx = _wp.x * k, vz = _wp.z * k;
     // ease off over the last 8 m before the boundary when heading toward the cliff
     if (vz < 0) speed *= Math.min(1, Math.max(0.12, (dolly.position.z - EDGE_Z) / 8));
     dolly.position.x += vx * speed * dt; dolly.position.z += vz * speed * dt;

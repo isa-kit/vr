@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow } from '../shared/xrmenu.js';
 import { createToolkit } from '../shared/xrtools.js';
-import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
@@ -138,6 +138,7 @@ function init() {
   generatePattern();
 
   renderer.xr.addEventListener('sessionstart', startAudio);
+  renderer.xr.addEventListener('sessionend', () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; });   // never carry VR rig yaw into flat mode (it would stack on the camera yaw)
 
   addEventListener('resize', onResize);
   addEventListener('keydown', (e) => { keys[e.code] = true; onKey(e); });
@@ -435,7 +436,7 @@ function applyLook() {
 }
 
 // Returns {moving, turning} for the comfort vignette. Constant speed, instant start/stop, level steering.
-const _fwd = new THREE.Vector3(), _right = new THREE.Vector3();
+const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _sv = new THREE.Vector3();
 function handleMovement(dt) {
   const xr = renderer.xr.isPresenting;
   const move = new THREE.Vector3();
@@ -458,7 +459,7 @@ function handleMovement(dt) {
           if (d) { rotateRigAboutHead(dolly, camera, d); turning = Math.abs(d) > 0.2 ? 0 : Math.abs(d) / Math.max(dt, 1e-3); }
           if (Math.abs(ay) > 0.3) vertical = -Math.sign(ay) * 0.6;           // gentle rise/sink
         } else if (!stillMode && (Math.abs(ax) > 0.15 || Math.abs(ay) > 0.15)) {
-          move.addScaledVector(_fwd, -ay).addScaledVector(_right, ax);
+          move.add(stickVector(camera, ax, ay, _sv));
         }
       }
     }
@@ -470,7 +471,7 @@ function handleMovement(dt) {
       if (keys['KeyS']) move.sub(_fwd);
       if (keys['KeyD']) move.add(_right);
       if (keys['KeyA']) move.sub(_right);
-      if (touch.move.x || touch.move.y) move.addScaledVector(_fwd, -touch.move.y).addScaledVector(_right, touch.move.x);
+      if (touch.move.x || touch.move.y) move.add(stickVector(camera, touch.move.x, touch.move.y, _sv));   // up on the stick = forward
     }
     if (keys['KeyE'] || keys['Space'] || touch.buttons.up) vertical += 1;
     if (keys['KeyQ'] || touch.buttons.down) vertical -= 1;

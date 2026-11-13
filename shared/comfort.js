@@ -38,6 +38,21 @@ const VIGNETTE_NAMES = ['Off', 'Low', 'Med', 'High'];
 const APERTURE = [9, 0.9, 0.7, 0.52];            // half-angle (rad) of the clear window while moving; 9 = effectively no vignette
 const SPEED_NAMES = ['Slow', 'Normal', 'Fast'], SPEED_MUL = [1, 1.6, 2.5];
 
+// Stick → world movement. Gamepad convention: pushing FORWARD gives y < 0, pushing RIGHT gives x > 0.
+// Forward = the camera's WORLD direction flattened to the ground (so it already includes any rig yaw — never apply yaw twice);
+// right = forward × up. Example: rig yaw 0, stick (0,-1) → (0,0,-1); stick (1,0) → (+1,0,0).
+// Rig yaw +90° (view turned left, facing −x): stick (0,-1) → (−1,0,0); stick (1,0) → (0,0,−1).
+const _UP = new THREE.Vector3(0, 1, 0), _sf = new THREE.Vector3(), _sr = new THREE.Vector3();
+export function stickVector(camera, x, y, out = new THREE.Vector3()) {
+  camera.getWorldDirection(_sf); _sf.y = 0;
+  if (_sf.lengthSq() < 1e-6) _sf.set(0, 0, -1);
+  _sf.normalize();
+  _sr.crossVectors(_sf, _UP);
+  return out.copy(_sf).multiplyScalar(-y).addScaledVector(_sr, x);
+}
+
+// Rotate the rig about the HEAD. Positive angle = counter-clockwise from above = the view turns LEFT;
+// so a right-stick push to the right must pass a NEGATIVE angle (turnDelta does).
 export function rotateRigAboutHead(dolly, camera, angle) {
   if (!angle) return;
   const a = new THREE.Vector3(), b = new THREE.Vector3();
@@ -119,8 +134,10 @@ export function createComfort({ renderer, scene, camera, dolly, menu = null, gro
 
   // ---------- turning / speed ----------
   let latch = false;
+  // stick right (x>0) → view turns right → rig yaw DEcreases (negative angle); snap = −30° per flick, smooth ≈ −45°/s at full deflection
   C.turnDelta = (x, dt) => {
-    if (Math.abs(x) < 0.15) { if (Math.abs(x) < 0.3) latch = false; return 0; }
+    if (Math.abs(x) < 0.3) latch = false;
+    if (Math.abs(x) < 0.15) return 0;
     if (settings.snap) {
       if (Math.abs(x) > 0.7 && !latch) { latch = true; C.update(0, { pulse: 0.35 }); return -Math.sign(x) * Math.PI / 6; }
       return 0;
