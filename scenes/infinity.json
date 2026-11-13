@@ -5,12 +5,24 @@
   "status": "live",
   "blurb": "Fly through an endless field of glowing lights.",
   "environment": {
-    "sky": { "type": "gradient", "top": "#05060d", "bottom": "#0a0a14" },
-    "fog": { "color": "#05060d", "near": 0, "far": 200 },
+    "sky": {
+      "type": "gradient",
+      "top": "#05060d",
+      "bottom": "#0a0a14"
+    },
+    "fog": {
+      "color": "#05060d",
+      "near": 0,
+      "far": 200
+    },
     "ambientLight": 0.3,
     "audio": null
   },
-  "locomotion": { "type": "fly", "speed": 18, "boost": 4 },
+  "locomotion": {
+    "type": "fly",
+    "speed": 18,
+    "boost": 4
+  },
   "field": {
     "pattern": "random",
     "count": 4000,
@@ -18,7 +30,23 @@
     "depth": 120,
     "pointSize": 0.6,
     "wrap": "infinite",
-    "palette": ["#ffd27f", "#ff9f6b", "#8a7dff", "#6fe0ff"]
+    "palette": [
+      "#ffd27f",
+      "#ff9f6b",
+      "#8a7dff",
+      "#6fe0ff"
+    ]
   },
-  "controls": { "panel": ["pattern", "spacing", "depth", "randomize"] }
+  "controls": {
+    "panel": [
+      "pattern",
+      "spacing",
+      "depth",
+      "randomize"
+    ]
+  },
+  "godot": {
+    "path": "godot/infinity",
+    "status": "soon"
+  }
 }

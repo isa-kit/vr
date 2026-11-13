@@ -6,23 +6,66 @@
   "path": "nature",
   "blurb": "Forests, a clearing in a glade, a cliffside over rolling hills with sheep, distant mountains, birds, and sky.",
   "environment": {
-    "sky": { "type": "gradient", "top": "#8fc7f0", "bottom": "#e9f4ff" },
-    "fog": { "color": "#cfe6f7", "near": 20, "far": 320 },
+    "sky": {
+      "type": "gradient",
+      "top": "#8fc7f0",
+      "bottom": "#e9f4ff"
+    },
+    "fog": {
+      "color": "#cfe6f7",
+      "near": 20,
+      "far": 320
+    },
     "ambientLight": 0.8,
-    "audio": { "src": "audio/forest-wind.ogg", "volume": 0.5, "loop": true }
+    "audio": {
+      "src": "audio/forest-wind.ogg",
+      "volume": 0.5,
+      "loop": true
+    }
   },
-  "locomotion": { "type": "walk", "speed": 4 },
+  "locomotion": {
+    "type": "walk",
+    "speed": 4
+  },
   "vista": {
     "skybox": "glade-day",
-    "ground": { "type": "hills", "color": "#4a6b3a", "roughness": 0.9 },
+    "ground": {
+      "type": "hills",
+      "color": "#4a6b3a",
+      "roughness": 0.9
+    },
     "props": [
-      { "type": "tree", "count": 168, "spread": 90 },
-      { "type": "sheep", "count": 20, "spread": 55 },
-      { "type": "mountain", "count": 6, "spread": 300 }
+      {
+        "type": "tree",
+        "count": 168,
+        "spread": 90
+      },
+      {
+        "type": "sheep",
+        "count": 20,
+        "spread": 55
+      },
+      {
+        "type": "mountain",
+        "count": 6,
+        "spread": 300
+      }
     ],
-    "water": { "type": "fake-reflective", "level": -3, "color": "#2f6f8f" },
-    "birds": { "count": 22 },
+    "water": {
+      "type": "fake-reflective",
+      "level": -3,
+      "color": "#2f6f8f"
+    },
+    "birds": {
+      "count": 22
+    },
     "ambient": "forest-wind"
   },
-  "controls": { "panel": [] }
+  "controls": {
+    "panel": []
+  },
+  "godot": {
+    "path": "godot/nature",
+    "status": "soon"
+  }
 }

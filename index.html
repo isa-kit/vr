@@ -21,30 +21,42 @@
   h1 { font-size: 30px; font-weight: 650; letter-spacing: .3px; margin: 0 0 8px; }
   h1 .mark { color: #ffd27f; }
   header p { margin: 0; color: rgba(238,241,255,.62); }
-  .grid {
-    display: grid; gap: 18px; width: 100%; max-width: 880px;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  }
+  .list { width: 100%; max-width: 880px; display: flex; flex-direction: column; gap: 22px; }
+  .cols, .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cols { padding: 0 4px; font-size: 11.5px; font-weight: 650; letter-spacing: .8px; text-transform: uppercase; color: rgba(238,241,255,.45); }
+  .row-title { grid-column: 1 / -1; margin: 0 0 -6px; font-size: 13px; font-weight: 600; color: rgba(238,241,255,.55); display: none; }
   .card {
-    position: relative; display: block; text-decoration: none; color: inherit;
-    border: 1px solid rgba(255,255,255,.1); border-radius: 18px;
-    background: rgba(18,22,38,.7); padding: 22px 20px 20px; overflow: hidden;
+    position: relative; display: flex; gap: 14px; align-items: center; text-decoration: none; color: inherit;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 16px;
+    background: rgba(18,22,38,.7); padding: 14px; overflow: hidden; min-width: 0;
     transition: transform .15s ease, border-color .15s ease, background .15s ease;
   }
-  .card .thumb { height: 108px; border-radius: 12px; margin-bottom: 16px; }
-  .card h2 { font-size: 18px; margin: 0 0 6px; font-weight: 620; }
-  .card p { margin: 0; font-size: 13.5px; color: rgba(238,241,255,.6); min-height: 58px; }
+  .card .thumb { flex: 0 0 84px; height: 84px; border-radius: 10px; }
+  .card .body { min-width: 0; flex: 1; }
+  .card h2 { font-size: 16.5px; margin: 0 0 4px; font-weight: 620; }
+  .card p { margin: 0; font-size: 13px; line-height: 1.45; color: rgba(238,241,255,.6); }
   .badge {
-    position: absolute; top: 16px; right: 16px; font-size: 11px; font-weight: 650;
-    letter-spacing: .4px; text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+    display: inline-block; font-size: 10.5px; font-weight: 650; margin-bottom: 6px;
+    letter-spacing: .4px; text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
   }
   .live   { cursor: pointer; }
-  .live:hover   { transform: translateY(-3px); border-color: rgba(255,210,127,.5); background: rgba(24,30,52,.85); }
+  .live:hover   { transform: translateY(-2px); border-color: rgba(255,210,127,.5); background: rgba(24,30,52,.85); }
   .live   .badge { background: rgba(120,230,160,.16); color: #8ff0b4; }
-  .soon   { opacity: .62; cursor: default; }
-  .soon   .badge { background: rgba(255,255,255,.1); color: rgba(238,241,255,.7); }
-  .enter { margin-top: 14px; font-size: 13px; font-weight: 620; color: #ffd27f; }
+  .soon   { opacity: .62; cursor: default; border-style: dashed; }
+  .soon   .badge { background: rgba(255,200,120,.14); color: #ffd27f; }
+  .enter { margin-top: 8px; font-size: 13px; font-weight: 620; color: #ffd27f; }
   .soon .enter { color: rgba(238,241,255,.4); }
+  .godot.live:hover { border-color: rgba(120,200,255,.55); }
+  .godot .enter { color: #7cc8ff; }
+  .godot.soon .enter { color: rgba(238,241,255,.4); }
+  @media (max-width: 640px) {
+    body { padding-top: 40px; }
+    .cols { display: none; }
+    .row { grid-template-columns: 1fr; gap: 10px; }
+    .row-title { display: block; }
+    .row .card + .card { margin-left: 18px; }
+    .card .thumb { flex-basis: 64px; height: 64px; }
+  }
   footer { margin-top: 44px; font-size: 12.5px; color: rgba(238,241,255,.4); text-align: center; }
   footer a { color: rgba(238,241,255,.6); }
 </style>
@@ -55,7 +67,10 @@
     <p>Calm, immersive places. Open one in your browser, or tap <b>Enter VR</b> on a headset. No install.</p>
   </header>
 
-  <main class="grid" id="grid" aria-busy="true"></main>
+  <div class="list" aria-busy="true">
+    <div class="cols" aria-hidden="true"><span>JavaScript · Three.js</span><span>Godot 4</span></div>
+    <main id="grid" class="list"></main>
+  </div>
 
   <footer>Best in a Quest / Android browser for VR &amp; AR · works flat on desktop.<br>
     <a href="catalog/" style="color:rgba(238,241,255,.7)">▦ Browse the VR app catalog →</a>
@@ -73,22 +88,32 @@
       const scenes = await Promise.all(
         worlds.map(id => fetch(`scenes/${id}.json`).then(r => r.json()))
       );
-      grid.innerHTML = scenes.map(s => {
-        const live = s.status === 'live';
+      const card = (s, engine) => {
+        const g = engine === 'godot';
+        const cfg = g ? (s.godot || {}) : { status: s.status, path: s.path || s.id };
+        const live = cfg.status === 'live';
         const tag = live ? 'a' : 'div';
-        const href = live ? ` href="${s.path || s.id}/"` : '';
-        return `<${tag} class="card ${live ? 'live' : 'soon'}"${href}>
+        const href = live ? ` href="${cfg.path}/"` : '';
+        const label = g ? (live ? 'Ready' : 'In progress') : (live ? 'Ready' : 'Soon');
+        const cta = live ? 'Enter →' : (g ? 'Godot build in progress' : 'In the works');
+        return `<${tag} class="card ${g ? 'godot' : 'js'} ${live ? 'live' : 'soon'}"${href}>
           <div class="thumb" style="background:${THUMBS[s.id] || '#0b0f1d'}"></div>
-          <span class="badge">${live ? 'Ready' : 'Soon'}</span>
-          <h2>${s.name}</h2>
-          <p>${s.blurb}</p>
-          <div class="enter">${live ? 'Enter →' : 'In the works'}</div>
+          <div class="body">
+            <span class="badge">${label}</span>
+            <h2>${s.name}${g ? ' <small style="font-weight:500;opacity:.55">· Godot</small>' : ''}</h2>
+            <p>${s.blurb}</p>
+            <div class="enter">${cta}</div>
+          </div>
         </${tag}>`;
-      }).join('');
+      };
+      grid.innerHTML = scenes.map(s => `<section class="row">
+        <h3 class="row-title">${s.name}</h3>
+        ${card(s, 'js')}${card(s, 'godot')}
+      </section>`).join('');
     } catch (e) {
       grid.innerHTML = '<p style="color:#ff9f6b">Could not load worlds. Check scenes/index.json.</p>';
     }
-    grid.removeAttribute('aria-busy');
+    document.querySelector('.list').removeAttribute('aria-busy');
   </script>
 </body>
 </html>
