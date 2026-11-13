@@ -62,9 +62,9 @@ export function createWater({ level = 0, bounds, segments = 128, depthFn = null,
       float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1,0)), f.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
       float fbm(vec2 p){ return vn(p) * 0.5 + vn(p * 2.1 + 3.1) * 0.3 + vn(p * 4.3 + 7.7) * 0.2; }\n` + sh.fragmentShader
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-        { vec2 q = vWp.xz; float e = 0.12;
-          float r0 = fbm(q * 1.7 + vec2(uTime * 0.35, uTime * 0.2)), rx = fbm((q + vec2(e, 0.0)) * 1.7 + vec2(uTime * 0.35, uTime * 0.2)), rz = fbm((q + vec2(0.0, e)) * 1.7 + vec2(uTime * 0.35, uTime * 0.2));
-          vec3 pn = normalize(vec3((r0 - rx) * uRip * 0.9, e, (r0 - rz) * uRip * 0.9)); normal = normalize(normal + (viewMatrix * vec4(pn.x, 0.0, pn.z, 0.0)).xyz * 0.5); }`)
+        { vec2 q = vWp.xz; float e = 0.2, fd = 1.0 / (1.0 + length(vViewPosition) * 0.05);
+          float r0 = fbm(q * 0.55 + vec2(uTime * 0.2, uTime * 0.12)), rx = fbm((q + vec2(e, 0.0)) * 0.55 + vec2(uTime * 0.2, uTime * 0.12)), rz = fbm((q + vec2(0.0, e)) * 0.55 + vec2(uTime * 0.2, uTime * 0.12));
+          vec3 pn = normalize(vec3((r0 - rx) * uRip * 0.5 * fd, e, (r0 - rz) * uRip * 0.5 * fd)); normal = normalize(normal + (viewMatrix * vec4(pn.x, 0.0, pn.z, 0.0)).xyz * 0.5); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float depthN = 1.0, shore = 0.0;
         if (uHasDepth > 0.5) { vec2 duv = (vWp.xz - uB.xy) / uB.zw + 0.5; depthN = texture2D(uDepth, clamp(duv, 0.0, 1.0)).r; shore = 1.0 - smoothstep(0.0, 0.1, depthN); }

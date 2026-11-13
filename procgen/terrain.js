@@ -78,6 +78,7 @@ export function createTerrain({ hf, maps, radius = 1250, sectors = 176, seed = 1
       const sl = hf.slope(x, z), n1 = N.fbm2(x * 0.02, z * 0.02, { oct: 3 }), n2 = N.fbm2(x * 0.07 + 30, z * 0.07, { oct: 2 }), n3 = N.fbm2(x * 0.004 + 9, z * 0.004, { oct: 2 });
       let wl = 0.65 + 0.5 * n1, wg = 0.25 + 0.6 * n2 + 0.25 * n3, wsoil = 0.2 + 0.5 * Math.max(0, -n1), wr = sstep(0.28, 0.5, sl + 0.1 * n2);
       const ex = extraWeights ? extraWeights(x, z, h, sl) : null; if (ex) { wl *= ex.litter ?? 1; wg *= ex.grass ?? 1; wsoil *= ex.soil ?? 1; wr *= ex.rock ?? 1; }
+      wl = Math.max(0.02, wl); wg = Math.max(0.02, wg); wsoil = Math.max(0.02, wsoil); wr = Math.max(0, wr);   // signed noise can dip below zero: weights must stay positive
       const s = wl + wg + wsoil + wr * 3 + 1e-4; wl /= s; wg /= s; wsoil /= s; wr = wr * 3 / s;
       mixA[j * 4] = wl; mixA[j * 4 + 1] = wg; mixA[j * 4 + 2] = wsoil; mixA[j * 4 + 3] = wr;
       const v = 0.82 + 0.28 * (0.5 + 0.5 * n1 * 1.4); tb.setRGB(v * (tints.r ?? 1), v * (tints.g ?? 1), v * (tints.b ?? 0.95));

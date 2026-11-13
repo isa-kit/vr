@@ -74,7 +74,7 @@ export const TREE_PRESETS = {
   },
   fir: {
     kind: 'conifer', height: [22, 30], refHeight: 26, trunk: { radius: 0.34, taper: 0.93, bend: 0.08, lean: 0.02 },
-    crown: { shape: 'cone', bottom: 0.1, radius: 0.22, centerY: 0.5 },
+    crown: { shape: 'cone', bottom: 0.2, radius: 0.22, centerY: 0.5 },
     levels: [
       { whorls: [36, 7], angle: [66, 96], len: [0.12, 0.21], rad: 0.22, up: -0.1, droop: 0.55, curl: 0.25, segs: 5 },
       { n: [6, 8], angle: [55, 85], len: [0.35, 0.5], rad: 0.55, up: -0.2, droop: 0.6, curl: 0.3, segs: 3, start: 0.25 },
@@ -213,7 +213,7 @@ export function buildTreeGeometry(sk, P, { lod = 0, cards = 1, seed = 1 } = {}) 
         for (let rr = 0; rr < 2; rr++) {
           const roll = rr * 1.25 + R() * 0.4, u = U0.clone().multiplyScalar(Math.cos(roll)).addScaledVector(V0, Math.sin(roll)), j = 0.9 + 0.2 * R();
           const nrm = outward.clone().multiplyScalar(0.75).addScaledVector(new V3().crossVectors(u, T).normalize(), 0.2).add(new V3(0, 0.15, 0)).normalize();
-          addCard(leaves, at.p, T, u, Math.max(1.5, b.len * 0.78), Math.max(1.6, b.len * 1.12), nrm, cell(R), [shd * j, shd * j, shd * j * 0.95], swayAt(at.p));
+          addCard(leaves, at.p, T, u, Math.max(0.7, b.len * 0.8), Math.max(0.9, b.len * 1.12), nrm, cell(R), [shd * j, shd * j, shd * j * 0.95], swayAt(at.p));
         }
         continue;
       }
@@ -228,6 +228,13 @@ export function buildTreeGeometry(sk, P, { lod = 0, cards = 1, seed = 1 } = {}) 
           addCard(leaves, at.p, T, u, range(R, F.sprayW) * sc, range(R, F.sprayL) * sc, nrm, cell(R), [shd * j, shd * j * (0.98 + 0.06 * R()), shd * j * 0.95], swayAt(at.p));
         }
       }
+    }
+  }
+  if (P.foliage) {   // pointed leader: a few upright spray cards at the top so conifers end in a spire, not a flat cap
+    const topP = sk.branches[0].pts[sk.branches[0].pts.length - 1], up = new V3(0, 1, 0), [U0, V0] = basis(up);
+    for (let k = 0; k < 3; k++) {
+      const roll = k * 1.05 + R() * 0.3, u = U0.clone().multiplyScalar(Math.cos(roll)).addScaledVector(V0, Math.sin(roll)), base = topP.clone().addScaledVector(up, -H * 0.1);
+      addCard(leaves, base, up, u, H * 0.05, H * 0.13, new V3(0.4 * Math.cos(roll), 0.8, 0.4 * Math.sin(roll)).normalize(), cell(R), [0.95, 0.98, 0.93], 1);
     }
   }
   let maxR = 0, maxY = 0;
@@ -334,30 +341,29 @@ export async function createTreeLibrary({ renderer, scene, quality = QUALITY.hig
 
 export function createTreeField(lib, items, scene) {
   const field = { meshes: [], lib };
-  const bySp = {}; items.forEach((it, i) => { (bySp[it.species] ||= {}); (bySp[it.species][it.variant] ||= []).push(it); });
-  const entries = [];
-  for (const [name, variants] of Object.entries(bySp)) {
-    const entry = lib.species[name], impItems = Object.values(variants).flat();
-    const imp = entry.imp; let impMesh = null, impAttr = null;
+  const bySp = {}; for (const it of items) { (bySp[it.species] ||= { items: [], variants: {}, fill: [] }); const sp = bySp[it.species]; sp.items.push(it); if (it.fill) sp.fill.push(it); else (sp.variants[it.variant] ||= []).push(it); }
+  const entries = [], spInfo = [];
+  for (const [name, info] of Object.entries(bySp)) {
+    const entry = lib.species[name], imp = entry.imp; let impMesh = null, impAttr = null;
     if (imp) {
       const g = new THREE.InstancedBufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2)); g.setIndex([0, 1, 2, 0, 2, 3]);
-      const cap = impItems.length;
+      const cap = info.items.length;
       impAttr = { pos: new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3), scl: new THREE.InstancedBufferAttribute(new Float32Array(cap * 2), 2), vr: new THREE.InstancedBufferAttribute(new Float32Array(cap), 1), tint: new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3) };
       g.setAttribute('iPos', impAttr.pos); g.setAttribute('iScale', impAttr.scl); g.setAttribute('iVar', impAttr.vr); g.setAttribute('iTint', impAttr.tint); g.instanceCount = 0;
-      const mat = new THREE.ShaderMaterial({ vertexShader: IMP_VERT, fragmentShader: IMP_FRAG, uniforms: { uAtlas: { value: imp.texture }, uViews: { value: imp.views }, uVars: { value: imp.vars }, uCellW: { value: imp.cellW }, uCellH: { value: imp.cellH }, uYC: { value: 0 }, uBright: { value: 1 }, uFogColor: lib.fogUniforms.uFogColor, uFogD: lib.fogUniforms.uFogD }, side: THREE.DoubleSide });
-      // quad spans y 0..1 → shift so the baked image sits on the ground: centre of the cell is at height yc
-      mat.uniforms.uYC.value = imp.yc - 0.5 * imp.cellH;
+      const mat = new THREE.ShaderMaterial({ vertexShader: IMP_VERT, fragmentShader: IMP_FRAG, uniforms: { uAtlas: { value: imp.texture }, uViews: { value: imp.views }, uVars: { value: imp.vars }, uCellW: { value: imp.cellW }, uCellH: { value: imp.cellH }, uYC: { value: imp.yc - 0.5 * imp.cellH }, uBright: { value: 1 }, uFogColor: lib.fogUniforms.uFogColor, uFogD: lib.fogUniforms.uFogD }, side: THREE.DoubleSide });
       impMesh = new THREE.Mesh(g, mat); impMesh.frustumCulled = false; scene.add(impMesh); field.meshes.push(impMesh);
     }
-    for (const [vi, list] of Object.entries(variants)) {
+    spInfo.push({ impMesh, impAttr, fill: info.fill });
+    for (const [vi, list] of Object.entries(info.variants)) {
       const v = entry.variants[+vi], mk = (geo, mat) => { const m = new THREE.InstancedMesh(geo, mat, list.length); m.frustumCulled = false; m.count = 0; m.setColorAt(0, new THREE.Color(1, 1, 1)); m.receiveShadow = true; scene.add(m); field.meshes.push(m); return m; };
       entries.push({ list, impMesh, impAttr, entry, v, m0b: mk(v.lod0.bark, entry.mats.bark), m0l: mk(v.lod0.leaves, entry.mats.leaf), m1b: mk(v.lod1.bark, entry.mats.bark), m1l: mk(v.lod1.leaves, entry.mats.leaf) });
     }
   }
   const o = new THREE.Object3D(), c = new THREE.Color();
   field.setShadows = (on) => { for (const e of entries) { e.m0b.castShadow = e.m0l.castShadow = on; e.m1b.castShadow = e.m1l.castShadow = false; } };
-  field.layout = ({ x, z, lod0, lod1, far, impostors = true, minDist = 6 }) => {
-    const impCounts = new Map();
+  // items flagged `fill: true` are impostor-only "canopy fill" trees, drawn only beyond fillMin metres from the viewer
+  field.layout = ({ x, z, lod0, lod1, far, impostors = true, minDist = 6, fillMin = 150 }) => {
+    const impCounts = new Map(), put = (impMesh, a, it) => { const k = impCounts.get(impMesh) || 0; impCounts.set(impMesh, k + 1); a.pos.setXYZ(k, it.x, it.y, it.z); a.scl.setXY(k, it.s, it.s); a.vr.setX(k, it.variant); a.tint.setXYZ(k, it.tint[0], it.tint[1], it.tint[2]); };
     for (const e of entries) {
       let n0 = 0, n1 = 0;
       for (const it of e.list) {
@@ -365,15 +371,16 @@ export function createTreeField(lib, items, scene) {
         if (d < lod0 || d < lod1 || !impostors) {
           const hi = d < lod0, bm = hi ? e.m0b : e.m1b, lm = hi ? e.m0l : e.m1l, i = hi ? n0++ : n1++;
           o.position.set(it.x, it.y, it.z); o.rotation.set(0, it.yaw, 0); o.scale.setScalar(it.s); o.updateMatrix(); bm.setMatrixAt(i, o.matrix); lm.setMatrixAt(i, o.matrix);
-          c.setRGB(it.tint[0], it.tint[1], it.tint[2]); bm.setColorAt(i, c.setRGB(1, 1, 1)); lm.setColorAt(i, c.setRGB(it.tint[0], it.tint[1], it.tint[2]));
-        } else {
-          const a = e.impAttr, k = impCounts.get(e.impMesh) || 0; impCounts.set(e.impMesh, k + 1);
-          a.pos.setXYZ(k, it.x, it.y, it.z); a.scl.setXY(k, it.s, it.s); a.vr.setX(k, it.variant); a.tint.setXYZ(k, it.tint[0], it.tint[1], it.tint[2]);
-        }
+          bm.setColorAt(i, c.setRGB(1, 1, 1)); lm.setColorAt(i, c.setRGB(it.tint[0], it.tint[1], it.tint[2]));
+        } else put(e.impMesh, e.impAttr, it);
       }
       for (const [m, n] of [[e.m0b, n0], [e.m0l, n0], [e.m1b, n1], [e.m1l, n1]]) { m.count = n; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     }
-    for (const e of entries) if (e.impMesh) { const k = impCounts.get(e.impMesh) || 0; e.impMesh.geometry.instanceCount = k; for (const a of Object.values(e.impAttr)) a.needsUpdate = true; }
+    for (const sp of spInfo) {
+      if (!sp.impMesh) continue;
+      for (const it of sp.fill) { const d = Math.hypot(it.x - x, it.z - z); if (d < fillMin || d > far) continue; put(sp.impMesh, sp.impAttr, it); }
+      sp.impMesh.geometry.instanceCount = impCounts.get(sp.impMesh) || 0; for (const a of Object.values(sp.impAttr)) a.needsUpdate = true;
+    }
   };
   return field;
 }

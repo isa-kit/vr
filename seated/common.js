@@ -254,7 +254,7 @@ export async function createWorld(o = {}) {
   const {
     eye = 1.15, fov = 68, far = 2400, startYaw = 0, startPitch = 0,
     pitchMin = -1.35, pitchMax = 1.35, bg = 0x999999, tone = {}, title = 'World',
-    maxPixelRatio = 2, rows = [],
+    maxPixelRatio = 2, rows = [], loading = false,
   } = o;
 
   // ----- device class: phones get touch UI, no VR/AR button (a phone has no controllers, so entering would strand the user)
@@ -287,7 +287,7 @@ export async function createWorld(o = {}) {
 
   const W = {
     THREE, scene, camera, renderer, rig, fx, eye, title, caps, bgColor,
-    audio: null, startAudio: null, frameFns: [], opaque: [], soundOn: true, world: null,
+    audio: null, startAudio: null, frameFns: [], opaque: [], soundOn: true, world: null, loading,
     // all ambient motion runs on simT, which can be slowed (reduced motion) or frozen (pause / calm)
     reducedMotion: false, timeScale: 1, paused: false, simT: 0,
     onFrame(fn) { W.frameFns.push(fn); },
@@ -333,7 +333,7 @@ export async function createWorld(o = {}) {
 
   // ----- enter overlay
   const enter = document.getElementById('enter');
-  if (enter) enter.addEventListener('click', () => { W.startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 600); if (W.menu) W.menu.close(); });
+  if (enter) enter.addEventListener('click', () => { if (W.loading) return; W.startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 600); if (W.menu) W.menu.close(); });
 
   // ----- recenter / passthrough hooks for the shared menu
   W.recenter = () => {
