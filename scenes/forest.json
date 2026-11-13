@@ -1,0 +1,18 @@
+{
+  "id": "forest",
+  "name": "Forest",
+  "kind": "vista",
+  "status": "soon",
+  "path": "forest",
+  "blurb": "Sit in a quiet old-growth forest and watch the light move through the trees.",
+  "locomotion": {
+    "type": "seated"
+  },
+  "godot": {
+    "path": "godot/forest",
+    "status": "soon"
+  },
+  "controls": {
+    "panel": []
+  }
+}

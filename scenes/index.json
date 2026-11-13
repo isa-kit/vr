@@ -1,3 +1,10 @@
 {
-  "worlds": ["infinity", "nature-glade", "sandcastle"]
+  "worlds": [
+    "infinity",
+    "nature-glade",
+    "sandcastle",
+    "forest",
+    "cliffs",
+    "beach"
+  ]
 }

@@ -81,6 +81,9 @@
       infinity:      'radial-gradient(120px 90px at 30% 30%, #ffd27f55, transparent), radial-gradient(140px 110px at 75% 65%, #8a7dff55, transparent), #0b0f1d',
       'nature-glade':'linear-gradient(#8fc7f0, #cfe6c0 62%, #4a6b3a)',
       sandcastle:    'linear-gradient(#9fd2f0, #fdf4dc 58%, #e4c98a)',
+      forest:        'linear-gradient(#cfe0c0, #6f9a56 45%, #1f3a22)',
+      cliffs:        'linear-gradient(#f6c98a, #f0e4cc 38%, #3f86a8 40%, #1d4f6e)',
+      beach:         'linear-gradient(#a9dcf2, #e8f6fb 42%, #5fb5d0 44%, #ecd9a3 70%)',
     };
     const grid = document.getElementById('grid');
     try {
@@ -88,6 +91,11 @@
       const scenes = await Promise.all(
         worlds.map(id => fetch(`scenes/${id}.json`).then(r => r.json()))
       );
+      const exists = p => fetch(p + '/index.html', { method: 'HEAD', cache: 'no-store' }).then(r => r.ok).catch(() => false);
+      await Promise.all(scenes.map(async s => {
+        if (s.status !== 'live' && await exists(s.path || s.id)) s.status = 'live';
+        if (s.godot && s.godot.status !== 'live' && await exists(s.godot.path)) s.godot.status = 'live';
+      }));
       const card = (s, engine) => {
         const g = engine === 'godot';
         const cfg = g ? (s.godot || {}) : { status: s.status, path: s.path || s.id };

@@ -1,0 +1,18 @@
+{
+  "id": "cliffs",
+  "name": "Cliff Ocean",
+  "kind": "vista",
+  "status": "soon",
+  "path": "cliffs",
+  "blurb": "Sit on a sea cliff and watch the ocean roll in below, at golden hour.",
+  "locomotion": {
+    "type": "seated"
+  },
+  "godot": {
+    "path": "godot/cliffs",
+    "status": "soon"
+  },
+  "controls": {
+    "panel": []
+  }
+}

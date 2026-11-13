@@ -1,0 +1,18 @@
+{
+  "id": "beach",
+  "name": "Beach",
+  "kind": "vista",
+  "status": "soon",
+  "path": "beach",
+  "blurb": "Sit on a quiet beach and watch the waves wash in and out.",
+  "locomotion": {
+    "type": "seated"
+  },
+  "godot": {
+    "path": "godot/beach",
+    "status": "soon"
+  },
+  "controls": {
+    "panel": []
+  }
+}
