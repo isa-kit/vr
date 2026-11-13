@@ -9,6 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js';
 import { createComfort, rotateRigAboutHead } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
+import { createBirds } from '../shared/birds.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 
 let fx;
@@ -42,7 +43,7 @@ let scene, camera, renderer, dolly, world, menu, caps, horizonColor, kit, spy;
 let soundOn = true, comfort, touch, wt = 0, fenceBuilt = false;
 const VR_WALK = 1.6;          // m/s in a headset / on a phone: slow, constant, no ramps
 const EDGE_Z = -34;           // hard stop well back from the cliff; speed eases off over the last 8 m
-let water, birds = [], clouds = [], sheepMesh;
+let water, flockBirds, clouds = [], sheepMesh;
 const clock = new THREE.Clock();
 const keys = {};
 let yaw = 0, pitch = 0, pointerLocked = false;
@@ -135,7 +136,7 @@ async function init() {
 
   buildFence();
   comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
-    onQuality: (q) => { for (const m of instanced) m.count = Math.floor(m.userData.full * [1, 0.8, 0.55, 0.35][q]); for (const b of birds) b.visible = q < 1; } });
+    onQuality: (q) => { for (const m of instanced) m.count = Math.floor(m.userData.full * [1, 0.8, 0.55, 0.35][q]); flockBirds.group.visible = q < 1; } });
   const instanced = []; world.traverse((o) => { if (o.isInstancedMesh && o.count > 30) { o.userData.full = o.count; instanced.push(o); } });
 
   menu = createXRMenu({
@@ -430,28 +431,17 @@ function buildClouds() {
   }
 }
 
-// ---------- birds ----------
-function makeBird() {
-  const g = new THREE.Group();
-  const wingGeo = new THREE.BufferGeometry();
-  wingGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1.4, 0, 0.45, 1.4, 0, -0.45]), 3));
-  wingGeo.computeVertexNormals();
-  const mat = new THREE.MeshBasicMaterial({ color: 0x33373f, side: THREE.DoubleSide, fog: true });
-  const l = new THREE.Mesh(wingGeo, mat); const r = new THREE.Mesh(wingGeo, mat); r.scale.x = -1;
-  g.add(l); g.add(r); g.userData = { l, r };
-  return g;
-}
+// ---------- birds: a few loose flocks on wide lazy loops, far out over the sea ----------
 function buildBirds() {
-  for (let i = 0; i < cfg.birds; i++) {
-    const b = makeBird();
-    b.userData.cx = (Math.random() - 0.5) * 120; b.userData.cz = -60 - Math.random() * 140;
-    b.userData.ra = 20 + Math.random() * 60; b.userData.rb = 14 + Math.random() * 40;
-    b.userData.y = 24 + Math.random() * 34; b.userData.sp = 0.1 + Math.random() * 0.18;
-    b.userData.ph = Math.random() * Math.PI * 2; b.userData.flap = 6 + Math.random() * 4;
-    b.scale.setScalar(0.8 + Math.random() * 0.9); birds.push(b); scene.add(b);
-  }
+  const sizes = [5, 4, 4, 3, 2];
+  const flocks = []; let left = cfg.birds;
+  sizes.forEach((n, k) => {
+    if (left <= 0) return; n = Math.min(n, left); left -= n;
+    flocks.push({ n, cx: (k - 2) * 38 + (Math.random() - 0.5) * 30, cz: -110 - k * 28, ra: 70 + Math.random() * 40, rb: 40 + Math.random() * 30,
+                  y: 30 + k * 7 + Math.random() * 8, yv: 3 + Math.random() * 4, period: 105 + Math.random() * 60, size: 2.6 + Math.random() * 0.8 });
+  });
+  flockBirds = createBirds({ parent: scene, flocks, color: 0x353a44, seed: 11 });
 }
-
 // ---------- menu hooks ----------
 // passthrough on = hide the whole world so the room shows through
 function setBackdrop(visible) {
@@ -603,14 +593,7 @@ function animate() {
   water.material.uniforms.time.value = t;
   water.material.uniforms.cam.value.copy(camWorld);
   if (!comfort.paused) for (const c of clouds) { c.position.x += c.userData.sp * dt; if (c.position.x > 320) c.position.x = -320; }
-  for (const b of birds) {
-    const u = b.userData, a = t * u.sp + u.ph;
-    const x = u.cx + Math.cos(a) * u.ra, z = u.cz + Math.sin(a) * u.rb;
-    b.position.set(x, u.y + Math.sin(a * 2) * 1.5, z);
-    b.rotation.y = -a + Math.PI / 2;
-    const f = Math.sin(t * u.flap + u.ph) * 0.6;
-    u.l.rotation.z = f; u.r.rotation.z = f;
-  }
+  flockBirds.update(t);
   windU.value = t;
   menu.update();
   kit.update(dt);
