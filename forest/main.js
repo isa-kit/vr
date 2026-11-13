@@ -6,14 +6,15 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, softTexture, fbm, smoothstep, rng, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261114i';
+} from '../seated/common.js?v=20261114q';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114i';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
-import { createHeightfield, createTerrain, createGrass, createFlowers, createLitter, createFerns, createLogs } from '../procgen/terrain.js?v=20261114i';
-import { createRocks } from '../procgen/rocks.js?v=20261114i';
-import { createSky } from '../procgen/sky.js?v=20261114i';
-import { createWater } from '../procgen/water.js?v=20261114i';
+import { yieldNow } from '../seated/proc.js?v=20261114q';
+import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114q';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114q';
+import { createHeightfield, createTerrain, createGrass, createFlowers, createLitter, createFerns, createLogs } from '../procgen/terrain.js?v=20261114q';
+import { createRocks } from '../procgen/rocks.js?v=20261114q';
+import { createSky } from '../procgen/sky.js?v=20261114q';
+import { createWater } from '../procgen/water.js?v=20261114q';
 
 const R = rng(20260);
 const rr = (a, b) => a + R() * (b - a);
@@ -31,9 +32,9 @@ const HILL = { x: 250, z: -300, h: 140, r: 205 };
 const LAKE = { x: -90, z: -520, rx: 95, rz: 55, level: 0 };
 const MEADOW = { x: -235, z: -40, r: 46 };
 const FACING = (fromX, fromZ, toX, toZ) => Math.atan2(-(toX - fromX), -(toZ - fromZ));
-const HSEAT = (() => { const dx = LAKE.x - HILL.x, dz = LAKE.z - HILL.z, l = Math.hypot(dx, dz); return { x: HILL.x + dx / l * 96, z: HILL.z + dz / l * 96 }; })();
+const HSEAT = (() => { const dx = LAKE.x - HILL.x, dz = LAKE.z - HILL.z, l = Math.hypot(dx, dz); return { x: HILL.x + dx / l * 114, z: HILL.z + dz / l * 114 }; })();
 const VPS = [
-  { id: 'hill', label: 'Hilltop', x: HSEAT.x, z: HSEAT.z, yaw: FACING(HSEAT.x, HSEAT.z, LAKE.x, LAKE.z), pitch: -0.22, tilt: -0.1, fog: 0.0013, far: 1000, shafts: false, grass: 1, flat: [4, 12], birds: 'high', moteY: -6, lodScale: 1 },
+  { id: 'hill', label: 'Hilltop', x: HSEAT.x, z: HSEAT.z, yaw: FACING(HSEAT.x, HSEAT.z, LAKE.x, LAKE.z), pitch: -0.2, tilt: -0.1, fog: 0.0008, far: 1000, shafts: false, grass: 1, flat: [3, 6], birds: 'high', moteY: -6, lodScale: 1 },
   { id: 'floor', label: 'Forest floor', x: 0, z: 0, yaw: 0, pitch: 0.1, fog: 0.0072, far: 320, shafts: true, grass: 0, flat: [3, 22], birds: 'low', moteY: 7, lodScale: 1.5 },
   { id: 'meadow', label: 'Meadow', x: MEADOW.x, z: MEADOW.z + 30, yaw: 0, pitch: 0.06, fog: 0.0062, far: 540, shafts: true, grass: 2, flat: [3, 24], birds: 'low', moteY: 5, lodScale: 1.2 },
   { id: 'lake', label: 'Lakeside', x: LAKE.x, z: LAKE.z + LAKE.rz * 1.35, yaw: 0, pitch: 0.03, fog: 0.0052, far: 620, shafts: false, grass: 1, flat: [3, 20], birds: 'low', moteY: 5, lodScale: 1.2 },
@@ -59,12 +60,13 @@ const bar = document.createElement('div'), fill = document.createElement('div'),
 bar.style.cssText = 'margin:16px auto 0;width:min(260px,70vw);height:6px;border-radius:3px;background:rgba(255,255,255,.25);overflow:hidden'; fill.style.cssText = 'height:100%;width:0%;background:#fff;transition:width .25s';
 label.style.cssText = 'margin-top:9px;font-size:13px;opacity:.85'; bar.appendChild(fill); if (card) card.append(bar, label);
 let steps = 0; const TOTAL = 24;
-const tick = async (l) => { steps++; fill.style.width = Math.min(96, steps / TOTAL * 100) + '%'; label.textContent = 'Growing the forest… ' + (l || ''); await new Promise(r => setTimeout(r, 0)); };
+const T0 = performance.now(), TT = []; window.__TT = TT;
+const tick = async (l) => { TT.push([l || '', Math.round(performance.now() - T0)]); steps++; fill.style.width = Math.min(96, steps / TOTAL * 100) + '%'; label.textContent = 'Growing the forest… ' + (l || ''); await yieldNow(); };
 
 // ---------------- sky, light, haze ----------------
 await tick('sky');
 scene.fog = new THREE.FogExp2(0xbccfc4, 0.0036);
-const sky = createSky({ renderer, scene, sun: { elevation: 23, azimuth: 28 }, turbidity: 2.9, rayleigh: 1.2, mie: 0.004, mieG: 0.82, clouds: { cover: 0.66, scale: 0.75 }, seed: 4 });
+const sky = createSky({ renderer, scene, sun: { elevation: 23, azimuth: -35 }, turbidity: 2.9, rayleigh: 1.2, mie: 0.004, mieG: 0.82, clouds: { cover: 0.66, scale: 0.75 }, seed: 4 });
 scene.environment = sky.env; scene.environmentIntensity = 1.35; scene.fog.color.copy(sky.haze);
 const sunDir = sky.sunDir;
 const sun = new THREE.DirectionalLight(sky.sunColor, sky.sunIntensity); scene.add(sun, sun.target);
@@ -78,7 +80,7 @@ const noise = makeNoiseTexture(256);
 // ---------------- terrain height ----------------
 const lakeU = (x, z) => Math.hypot((x - LAKE.x) / LAKE.rx, (z - LAKE.z) / LAKE.rz);
 const hf = createHeightfield({
-  seed: 5, base: { amp: 9, freq: 0.0035, oct: 3 }, detail: { amp: 2.2, freq: 0.03 },
+  seed: 5, base: { amp: 15, freq: 0.0027, oct: 4 }, ridge: { amp: 30, freq: 0.0017, carve: 0.3 }, detail: { amp: 2.2, freq: 0.03 },
   features: [{ type: 'hill', x: HILL.x, z: HILL.z, h: HILL.h, r: HILL.r }],
   flats: [...VPS.map(v => ({ x: v.x, z: v.z, r0: v.flat[0], r1: v.flat[1] })), { x: MEADOW.x, z: MEADOW.z + 30, r0: 28, r1: 72 }],
   post: (x, z, h) => { const u = lakeU(x, z); h += (LAKE.level + 0.9 - h) * (1 - smoothstep(1.2, 2.6, u)); return h + (LAKE.level - 2.6 - h) * (1 - smoothstep(0.6, 1.15, u)); },
@@ -103,20 +105,20 @@ scene.add(terrain.mesh);
 const lib = await createTreeLibrary({ renderer, scene, quality: Q, species: ['oak', 'birch', 'pine', 'fir'], sun: { dir: sunDir, color: sky.sunColor, intensity: sky.sunIntensity }, env: sky.env, tick, seed: 1 });
 const items = [];
 function plant(SP, fill) {
-  const CX = 0, CZ = -250, RAD = 820, S = { fir: [0.8, 1.7], pine: [0.9, 1.5], oak: [0.9, 1.35], birch: [0.85, 1.3] };
+  const CX = 0, CZ = -250, RAD = 820, S = { fir: [0.7, 1.95], pine: [0.8, 1.7], oak: [0.85, 1.5], birch: [0.8, 1.4] };
   for (let gx = CX - RAD; gx <= CX + RAD; gx += SP) for (let gz = CZ - RAD; gz <= CZ + RAD; gz += SP) {
     const x = gx + rr(-0.44, 0.44) * SP, z = gz + rr(-0.44, 0.44) * SP;
     if (Math.hypot(x - CX, z - CZ) > RAD) continue;
     const dh = Math.hypot(x - HILL.x, z - HILL.z);
-    if (dh < 30 || Math.hypot(x - HSEAT.x, z - HSEAT.z) < 34 || (Math.hypot(x - HSEAT.x, z - HSEAT.z) < 125 && groundH(x, z) > groundH(HSEAT.x, HSEAT.z) - 26 && ((x - HSEAT.x) * (LAKE.x - HSEAT.x) + (z - HSEAT.z) * (LAKE.z - HSEAT.z)) > -0.35 * Math.hypot(x - HSEAT.x, z - HSEAT.z) * Math.hypot(LAKE.x - HSEAT.x, LAKE.z - HSEAT.z)) || R() > smoothstep(34, 78, dh) * 0.95 + 0.05 * (dh > 95)) continue;
+    if (dh < 30 || Math.hypot(x - HSEAT.x, z - HSEAT.z) < 34 || (Math.hypot(x - HSEAT.x, z - HSEAT.z) < 125 && groundH(x, z) > groundH(HSEAT.x, HSEAT.z) - 26 && ((x - HSEAT.x) * (LAKE.x - HSEAT.x) + (z - HSEAT.z) * (LAKE.z - HSEAT.z)) > -0.35 * Math.hypot(x - HSEAT.x, z - HSEAT.z) * Math.hypot(LAKE.x - HSEAT.x, LAKE.z - HSEAT.z) && (fill || R() > 0.07)) || R() > smoothstep(34, 78, dh) * 0.95 + 0.05 * (dh > 95)) continue;
     if (lakeU(x, z) < (fill ? 1.25 : 1.5)) continue;
     if (R() > smoothstep(MEADOW.r * 0.85, MEADOW.r * 1.3, Math.hypot(x - MEADOW.x, z - MEADOW.z))) continue;
     if (Math.hypot(x / 9.5, (z + 9) / 17) < 1 || Math.hypot(x, z) < 6) continue;
     if (R() > (fill ? 0.8 : 0.62) + (fill ? 0.2 : 0.38) * smoothstep(0.25, 0.5, fbm(x * 0.012 + 3, z * 0.012 + 8))) continue;
     const fz = 1 - smoothstep(120, 280, Math.hypot(x, z)), patch = fbm(x * 0.007 + 40, z * 0.007 + 11);
     const pc = Math.max(0.12, Math.min(0.95, 0.3 + 0.5 * fz + 0.9 * (0.5 - patch)));
-    const sp = R() < pc ? (R() < 0.72 + 0.2 * fz ? 'fir' : 'pine') : (R() < 0.42 ? 'birch' : 'oak');
-    const b = rr(0.86, 1.14), warm = patch > 0.6 ? 1.12 : patch < 0.38 ? 0.92 : 1, gold = sp === 'oak' && R() < 0.12;
+    const big = fbm(x * 0.0034 + 60, z * 0.0034 + 20), bl = smoothstep(0.5, 0.6, big), pc2 = pc * (1 - 0.8 * bl) , sp = R() < pc2 ? (R() < 0.72 + 0.2 * fz ? 'fir' : 'pine') : (R() < 0.42 + 0.2 * bl ? 'birch' : 'oak');
+    const b = rr(0.78, 1.2), warm = patch > 0.6 ? 1.14 : patch < 0.38 ? 0.9 : 1, gold = (sp === 'oak' || sp === 'birch') && R() < (0.12 + 0.3 * bl);
     items.push({ x, y: groundH(x, z) - 0.15, z, s: rr(S[sp][0], S[sp][1]) * (fill ? 0.92 : 1), yaw: R() * 6.28, species: sp, variant: Math.floor(R() * Q.variants), fill, tint: [b * warm * (gold ? 1.35 : 1), b * (gold ? 1.1 : 1), b / warm * (gold ? 0.6 : 1)] });
   }
 }

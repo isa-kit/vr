@@ -3,15 +3,15 @@
 // headlands, dune grass and scrub.  The sun slowly sinks from golden hour into dusk.  Quality tier is automatic
 // (desktop / phone / headset) and switchable in the menu.  Wave sounds are cued to the visible wave clock.
 
-import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114i';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114i';
+import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114q';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114q';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114i';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
-import { createGrass, createLogs } from '../procgen/terrain.js?v=20261114i';
-import { createRocks } from '../procgen/rocks.js?v=20261114i';
-import { createSky } from '../procgen/sky.js?v=20261114i';
-import { createWater, createShoreline } from '../procgen/water.js?v=20261114i';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114q';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114q';
+import { createGrass, createFlowers, createLogs } from '../procgen/terrain.js?v=20261114q';
+import { createRocks } from '../procgen/rocks.js?v=20261114q';
+import { createSky } from '../procgen/sky.js?v=20261114q';
+import { createWater, createShoreline } from '../procgen/water.js?v=20261114q';
 
 const R = rng(31415);
 const rr = (a, b) => a + R() * (b - a);
@@ -23,7 +23,7 @@ const AZ = -14;             // sun azimuth: a little right of straight ahead
 
 const { Q, name: qName, pref: qPref0, isCoarse, setQuality } = pickQuality(QUALITY);
 let qPref = qPref0;
-const DETAIL = { high: { sand: [220, 140], water: 128, grass: 5000, shrubs: 170, pebbles: 90 }, medium: { sand: [150, 100], water: 80, grass: 2600, shrubs: 100, pebbles: 50 }, light: { sand: [110, 80], water: 48, grass: 1200, shrubs: 60, pebbles: 28 } }[qName];
+const DETAIL = { high: { sand: [220, 140], water: 128, grass: 5000, shrubs: 170, pebbles: 120, flowers: 260, shells: 220 }, medium: { sand: [150, 100], water: 80, grass: 2600, shrubs: 100, pebbles: 70, flowers: 150, shells: 130 }, light: { sand: [110, 80], water: 48, grass: 1200, shrubs: 60, pebbles: 28 } }[qName];
 
 let timeMode = 'auto', pCur = 0, curSeat = 'shore', switchTo = () => {};
 const W = await createWorld({
@@ -75,10 +75,7 @@ const BIG = [   // [x, z, scale, variant]   headlands left and right, sea stacks
 ];
 const rockDepth = (x, z) => { let d = 99; for (const [rx, rz, s] of BIG) d = Math.min(d, (Math.hypot(x - rx, z - rz) - s * 1.1) * 0.35); return Math.max(0, d); };
 scene.add(createRocks({ items: BIG.map(([x, z, s, v]) => ({ x, y: groundH(x, z) - 0.6, z, s, yaw: R() * 6.28, variant: v })), variants, material: rockMat, castShadow: false }));
-{
-  const items = []; for (let i = 0; i < DETAIL.pebbles; i++) { const x = rr(-9, 9), z = rr(ZS + 3, SEAT_Z + 6); items.push({ x, y: groundH(x, z) - 0.01, z, s: rr(0.05, 0.16), yaw: R() * 6.28, variant: 3 }); }
-  scene.add(createRocks({ items, variants, material: rockMat }));
-}
+// pebbles + shells are scattered per seat (see scatter() below)
 
 // ---------------- sea ----------------
 await tick('sea');
@@ -96,6 +93,22 @@ for (let i = 0; i < DETAIL.shrubs * 4 && shrubs.length < DETAIL.shrubs; i++) {
   shrubs.push({ x, y: gy - 0.05, z, s: rr(0.8, 2.0), yaw: R() * 6.28, species: 'shrub', variant: Math.floor(R() * Q.variants), tint: [rr(0.95, 1.15), rr(0.9, 1.05), rr(0.7, 0.95)] });
 }
 const field = createTreeField(lib, shrubs, scene); field.setShadows(!!Q.shadowMap); field.layout({ x: 0, z: 40, lod0: 70, lod1: 140, far: 240, impostors: false, minDist: 2 });
+const flowers = createFlowers({ hf: hfn, count: DETAIL.flowers, radius: 16, seed: 9, windU: lib.wind, colors: [0xe6a0d2, 0xf3f0e6, 0xf2d23c, 0xc7a6ea], height: [0.14, 0.32], size: 0.085 }); scene.add(flowers.mesh);
+const PEB = [0, 1, 2].map(i => ({ seed: 51 + i, detail: 2, flatten: 0.5 + 0.12 * i, facets: 5, rough: 0.08, texScale: 7, moss: 0 }));
+const pebMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, color: 0xcfc3ad });
+const shellG = new THREE.SphereGeometry(0.5, 8, 6); shellG.scale(1, 0.32, 0.78);
+const shells = new THREE.InstancedMesh(shellG, new THREE.MeshStandardMaterial({ roughness: 0.55 }), DETAIL.shells); shells.frustumCulled = false; shells.receiveShadow = true; scene.add(shells);
+let pebs = null;
+function scatter(v) {
+  if (pebs) { scene.remove(pebs); pebs.userData.meshes.forEach(m => m.geometry.dispose()); pebs = null; }
+  const r2 = rng(300 + Math.floor(v.x) + Math.floor(v.z)), its = [];
+  for (let i = 0; i < DETAIL.pebbles * 4 && its.length < DETAIL.pebbles; i++) { const a = r2() * 6.283, r = 0.8 + Math.pow(r2(), 1.5) * 20, x = v.x + Math.cos(a) * r, z = v.z + Math.sin(a) * r; if (z < ZS + 2.5) continue; its.push({ x, y: groundH(x, z) - 0.012, z, s: 0.03 + Math.pow(r2(), 2.2) * 0.13, yaw: r2() * 6.28, variant: its.length % 3 }); }
+  pebs = createRocks({ items: its, variants: PEB, material: pebMat }); scene.add(pebs);
+  const o = new THREE.Object3D(), c = new THREE.Color(), pal = [0xf4ecdc, 0xe9cdb8, 0xd9d2c4, 0xf0d6d0, 0xc9b99f]; let k = 0, tries = 0;
+  while (k < DETAIL.shells && tries++ < DETAIL.shells * 6) { const a = r2() * 6.283, r = 1 + Math.pow(r2(), 1.4) * 22, x = v.x + Math.cos(a) * r, z = v.z + Math.sin(a) * r; if (z < ZS + 2.5) continue;
+    o.position.set(x, groundH(x, z) + 0.004, z); o.rotation.set((r2() - 0.5) * 0.3, r2() * 6.28, (r2() - 0.5) * 0.3); const sc = 0.04 + r2() * 0.07; o.scale.set(sc, sc, sc); o.updateMatrix(); shells.setMatrixAt(k, o.matrix); c.set(pal[Math.floor(r2() * pal.length)]).multiplyScalar(0.85 + r2() * 0.2); shells.setColorAt(k, c); k++; }
+  shells.count = k; shells.instanceMatrix.needsUpdate = true; if (shells.instanceColor) shells.instanceColor.needsUpdate = true;
+}
 const grass = createGrass({ hf: hfn, count: DETAIL.grass, radius: 26, height: [0.3, 0.75], seed: 4, tuft: 5, width: 0.022, spread: 0.14, clump: 0.65, falloff: 1.7, dry: 0.3, colors: { lo: 0x6b7f3c, mid: 0xa9b061, hi: 0xe3dba2 }, windU: lib.wind }); scene.add(grass.mesh);
 scene.add(createLogs({ hf: hfn, barkMat: standardMaterial(lib.barkMaps['bark:oak'], { roughness: 1, color: 0xcbbfae }), items: [{ x: -2.9, z: SEAT_Z + 1.8, len: 3.4, r: 0.17, yaw: 0.5 }, { x: 14, z: SEAT_Z + 12, len: 2.6, r: 0.13, yaw: 2.1 }] }));
 await tick('boat and gulls');
@@ -192,6 +205,7 @@ function applySeat(id) {
   W.setSeat({ x: v.x, y: v.y, z: v.z, yaw: v.yaw, pitch: v.pitch });
   aimSun(sun, sky, v.x, v.y, v.z);
   grass.layout(v.x, v.z, { exclude: (x, z) => z < ZS + 24 });
+  flowers.layout(v.x, v.z, { exclude: (x, z) => z < ZS + 26 }); scatter(v);
   try { localStorage.setItem('oortia-beach-vp', v.id); } catch (e) { /* ignore */ }
 }
 switchTo = (id) => { if (id === curSeat) return; if (W.comfort) W.comfort.fade(() => applySeat(id)); else applySeat(id); };

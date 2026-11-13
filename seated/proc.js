@@ -9,6 +9,11 @@ export function pickQuality(QUALITY) {
 }
 
 // progress bar inside the Enter overlay; call tick(label) between heavy steps, done(W) at the end
+// Yield to the browser without setTimeout: background/hidden tabs clamp setTimeout(0) to ~1 s per call, which turned ~25 loading steps into a 15–25 s wait.
+const _ch = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null; let _q = [];
+if (_ch) _ch.port1.onmessage = () => { const f = _q; _q = []; f.forEach(r => r()); };
+export const yieldNow = () => new Promise(r => { if (_ch) { _q.push(r); _ch.port2.postMessage(0); } else setTimeout(r, 0); });
+
 export function createLoader(total = 20, what = 'Building the scene') {
   const card = document.querySelector('#enter .card'), goBtn = card && card.querySelector('.go'); if (goBtn) goBtn.style.display = 'none';
   const bar = document.createElement('div'), fill = document.createElement('div'), label = document.createElement('div');
@@ -16,7 +21,7 @@ export function createLoader(total = 20, what = 'Building the scene') {
   label.style.cssText = 'margin-top:9px;font-size:13px;opacity:.85'; bar.appendChild(fill); if (card) card.append(bar, label);
   let steps = 0;
   return {
-    async tick(l) { steps++; fill.style.width = Math.min(96, steps / total * 100) + '%'; label.textContent = what + '… ' + (l || ''); await new Promise(r => setTimeout(r, 0)); },
+    async tick(l) { steps++; fill.style.width = Math.min(96, steps / total * 100) + '%'; label.textContent = what + '… ' + (l || ''); await yieldNow(); },
     done(W) { fill.style.width = '100%'; bar.remove(); label.remove(); if (goBtn) goBtn.style.display = ''; W.loading = false; },
   };
 }

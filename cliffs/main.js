@@ -4,15 +4,15 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114i';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114i';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114q';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114q';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114i';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114i';
-import { createSplatMaterial, createGrass } from '../procgen/terrain.js?v=20261114i';
-import { createRocks } from '../procgen/rocks.js?v=20261114i';
-import { createSky } from '../procgen/sky.js?v=20261114i';
-import { createWater } from '../procgen/water.js?v=20261114i';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114q';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114q';
+import { createSplatMaterial, createGrass, createFlowers } from '../procgen/terrain.js?v=20261114q';
+import { createRocks } from '../procgen/rocks.js?v=20261114q';
+import { createSky } from '../procgen/sky.js?v=20261114q';
+import { createWater } from '../procgen/water.js?v=20261114q';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);
@@ -22,7 +22,7 @@ const AZ = -26;                               // sun azimuth: ahead and to the r
 
 const { Q, name: qName, pref: qPref0, isCoarse, setQuality } = pickQuality(QUALITY);
 let qPref = qPref0;
-const DETAIL = { high: { grass: 6000, shrubs: 80, rocks: 16, water: 128, cols: 1 }, medium: { grass: 3000, shrubs: 50, rocks: 10, water: 80, cols: 1 }, light: { grass: 1400, shrubs: 30, rocks: 6, water: 56, cols: 1 } }[qName];
+const DETAIL = { high: { grass: 6000, flowers: 320, pebbles: 120, shrubs: 80, rocks: 16, water: 128, cols: 1 }, medium: { grass: 3000, flowers: 180, pebbles: 70, shrubs: 50, rocks: 10, water: 80, cols: 1 }, light: { grass: 1400, flowers: 90, pebbles: 40, shrubs: 30, rocks: 6, water: 56, cols: 1 } }[qName];
 
 let timeMode = 'auto', pCur = 0, curSeat = 'ledge', switchTo = () => {};
 const W = await createWorld({
@@ -38,7 +38,7 @@ const loader = createLoader(16, 'Carving the coast'); const tick = loader.tick;
 
 // ---------------- sky, light ----------------
 await tick('sky');
-scene.fog = new THREE.FogExp2(0xdfe0d6, 0.00085);
+scene.fog = new THREE.FogExp2(0xdfe0d6, 0.00052);
 const sky = createSky({ renderer, scene, sun: { elevation: 32, azimuth: AZ }, turbidity: 2.8, rayleigh: 1.5, mie: 0.005, mieG: 0.85, clouds: { cover: 0.5, scale: 1.0, wind: [0.0035, 0.001] }, seed: 7 });
 scene.environment = sky.env; scene.fog.color.copy(sky.haze);
 const sun = makeSunRig({ scene, renderer, Q, extent: 55 });
@@ -93,7 +93,7 @@ for (const k of ['litter', 'grass', 'soil', 'rock']) { await tick(k + ' map'); m
   const { material } = createSplatMaterial({ maps, tile: [0.3, 0.26, 0.28, 0.16], normalFrom: maps.grass }); material.side = THREE.DoubleSide;
   const mesh = new THREE.Mesh(geo, material); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
 }
-const rockMat = standardMaterial(maps.rock, { vertexColors: true, roughness: 1 });
+const rockMat = standardMaterial(maps.rock, { vertexColors: true, roughness: 1, color: 0x9d968a });
 
 // ---------------- stone wall along the lip + stone seat ----------------
 await tick('wall');
@@ -108,7 +108,7 @@ const slab = window.__slab; delete window.__slab;
 
 // ---------------- islands, sea-stacks, far headlands (faceted PBR rock, mossy tops) ----------------
 await tick('islands');
-const variants = [{ seed: 21, detail: 4, flatten: 0.5, facets: 8, moss: 1.0, texScale: 8 }, { seed: 22, detail: 4, flatten: 1.0, facets: 9, moss: 0.35, texScale: 3 }, { seed: 23, detail: 4, flatten: 0.7, facets: 7, moss: 0.9, texScale: 9 }, { seed: 24, detail: 3, flatten: 0.8, facets: 6, texScale: 0.5, moss: 0.4 }];
+const variants = [{ seed: 21, detail: 4, flatten: 0.5, facets: 15, rough: 0.55, moss: 1.0, texScale: 8 }, { seed: 22, detail: 4, flatten: 1.0, facets: 9, moss: 0.35, texScale: 3 }, { seed: 23, detail: 4, flatten: 0.7, facets: 14, rough: 0.55, moss: 0.9, texScale: 9 }, { seed: 24, detail: 3, flatten: 0.8, facets: 6, texScale: 0.5, moss: 0.4 }];
 const BIG = [   // [x, z, scale, variant]
   [-70, -185, 8, 1], [95, -215, 9, 1], [-170, -255, 11, 1], [205, -290, 46, 0], [-250, -370, 62, 2], [-175, -470, 44, 0], [130, -560, 90, 2],
   [560, -950, 240, 0], [-700, -1150, 290, 2], [-80, -1500, 380, 0],
@@ -149,11 +149,16 @@ for (const v of SEATS) for (let i = 0; i < DETAIL.shrubs; i++) {
 }
 const field = createTreeField(lib, shrubs, scene); field.setShadows(!!Q.shadowMap);
 const grass = createGrass({ hf: { height: (x, z) => topH(x, z, z - coastZ(x)) }, count: DETAIL.grass, radius: 26, height: [0.18, 0.5], seed: 5, tuft: 6, width: 0.02, spread: 0.12, clump: 0.5, falloff: 1.9, dry: 0.18, colors: { lo: 0x365a20, mid: 0x6a9040, hi: 0xaebd62 }, windU: lib.wind }); scene.add(grass.mesh);
+const flowers = createFlowers({ hf: { height: (x, z) => topH(x, z, z - coastZ(x)) }, count: DETAIL.flowers, radius: 18, seed: 8, windU: lib.wind, colors: [0xe58fb0, 0xf4f2ea, 0xf2d24a, 0xb9a0e6], height: [0.14, 0.3], size: 0.09 }); scene.add(flowers.mesh);
+const PEB = [0, 1, 2].map(i => ({ seed: 61 + i, detail: 2, flatten: 0.5 + 0.12 * i, facets: 5, rough: 0.08, texScale: 7, moss: 0.2 }));
+const pebMat = standardMaterial(maps.rock, { vertexColors: true, roughness: 1, color: 0xd9cdb8 });
 const boulders = new THREE.Group(); scene.add(boulders);
 function layoutBoulders(v) {
   boulders.clear(); const items = [];
   for (let i = 0; i < DETAIL.rocks; i++) { const a = R() * 6.283, r = rr(12, 60), x = v.x + Math.cos(a) * r, z = v.z + Math.sin(a) * r, s = z - coastZ(x); if (s < 12) continue; items.push({ x, y: topH(x, z, s) - 0.05, z, s: rr(0.5, 1.8), yaw: R() * 6.28, variant: 3 }); }
   boulders.add(createRocks({ items, variants, material: rockMat, castShadow: !!Q.shadowMap }));
+  const pi = []; for (let i = 0; i < DETAIL.pebbles * 4 && pi.length < DETAIL.pebbles; i++) { const a = R() * 6.283, r = 0.8 + Math.pow(R(), 1.6) * 16, x = v.x + Math.cos(a) * r, z = v.z + Math.sin(a) * r, s = z - coastZ(x); if (s < 9 || Math.hypot(x - v.x, z - v.z) < 2.6) continue; pi.push({ x, y: topH(x, z, s) - 0.012, z, s: 0.03 + Math.pow(R(), 2.2) * 0.14, yaw: R() * 6.28, variant: pi.length % 3 }); }
+  boulders.add(createRocks({ items: pi, variants: PEB, material: pebMat }));
 }
 await tick('gulls');
 
@@ -229,7 +234,7 @@ function applySeat(id) {
   const v = SEATS.find(q => q.id === id) || SEATS[0]; curSeat = v.id;
   W.setSeat({ x: v.x, y: v.y, z: v.z, yaw: v.yaw, pitch: -0.08 });
   slab.position.set(v.x, v.y - 0.12, v.z); aimSun(sun, sky, v.x, v.y, v.z);
-  grass.layout(v.x, v.z, { exclude: (x, z) => z - coastZ(x) < 9 || Math.hypot(x - v.x, z - v.z) < 2.6 }); layoutBoulders(v);
+  grass.layout(v.x, v.z, { exclude: (x, z) => z - coastZ(x) < 9 || Math.hypot(x - v.x, z - v.z) < 2.6 }); flowers.layout(v.x, v.z, { exclude: (x, z) => z - coastZ(x) < 9 || Math.hypot(x - v.x, z - v.z) < 2.6 }); layoutBoulders(v);
   field.layout({ x: v.x, z: v.z, lod0: 50, lod1: 120, far: 140, impostors: false, minDist: 8 });
   try { localStorage.setItem('oortia-cliffs-vp', v.id); } catch (e) { /* ignore */ }
 }
