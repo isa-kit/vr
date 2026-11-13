@@ -41,6 +41,12 @@
 //   • menu.onButton((hand, buttonIndex|'squeeze', controller) => …)    X/Y/A/B (4,5) and grip-down.
 //   • menu.refresh() after you change state from outside the menu; menu.open()/close()/toggle()/isOpen().
 //   • menu.withoutUI(fn) hides the wrist menu while fn runs (e.g. render-to-texture passes).
+//   • opts.fade: (fn, outSeconds?, inSeconds?) => void — pass comfort.fade (shared/comfort.js) so Quit and Recenter fade through black.
+//   • The VR menu is FLOATING by default (≈1.3 m ahead, below the eye line, placed when opened, 2.3× larger text);
+//     users can switch to a wrist menu in its Menu row (persisted in localStorage 'oortia-menu-mode').
+//   • On phones (pointer: coarse) the ☰ Menu button is 46 px tall with safe-area insets, the overlay uses 44 px targets,
+//     and the Enter VR button is hidden when the device has no VR (handheld-AR-only would strand the user).
+//   • Companion modules: shared/comfort.js (vignette, snap turn, fades, governor), shared/touch.js (thumb-stick, touch look).
 //   Rows: { section }, { label?, cells:[{ text, action?, active?, tone?:'accent'|'danger', w?, visible? }], visible? };
 //   text/label/active/visible may be functions. Anything with `action` is clickable.
 // ===============================================================================
@@ -111,7 +117,7 @@ export function recenterRig(dolly, camera, homePos, homeYaw = 0) {
 
 // ---------- panel layout (canvas) ----------
 const PW = 800, PAD = 28, ROW_H = 80, GAP = 12, SEC_H = 50, TITLE_H = 84, LABEL_FRAC = 0.3;
-const PANEL_W = 0.36;   // metres
+const PANEL_W = 0.36;   // metres (wrist); the floating menu is drawn 2.3× larger at ~1.3 m
 
 function flatten(rows) { return rows.flat(Infinity).filter(Boolean); }
 
@@ -213,8 +219,14 @@ export function createXRMenu(opts) {
   const title = opts.title || 'Menu';
   const quitUrl = opts.quitUrl || '../';
   const appRows = opts.rows || [];
+  const isCoarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
   let open = false;
   let passthrough = false;
+  let menuMode = 'float';
+  try { menuMode = localStorage.getItem('oortia-menu-mode') === 'wrist' ? 'wrist' : 'float'; } catch (e) { /* ignore */ }
+  const panelW = () => (menuMode === 'float' ? PANEL_W * 2.3 : PANEL_W);
+  const setMenuMode = (m) => { menuMode = m; try { localStorage.setItem('oortia-menu-mode', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; refresh(); };
+  let placed = false;
   let quitArmed = false, quitTimer = 0;
   const selStart = [], selEnd = [], btnDown = [], sqzList = [], menuListeners = [];
 
@@ -230,6 +242,10 @@ export function createXRMenu(opts) {
   }
 
   function doQuit() {
+    if (opts.fade && renderer.xr.isPresenting) { opts.fade(realQuit, 0.35, 0.1); return; }   // fade through black first
+    realQuit();
+  }
+  function realQuit() {
     const s = renderer.xr.getSession();
     let gone = false;
     const go = () => { if (gone) return; gone = true; location.href = quitUrl; };
@@ -262,9 +278,12 @@ export function createXRMenu(opts) {
           action: () => opts.sound.set(!opts.sound.get()), visible: () => !!opts.sound },
       ],
     },
+    { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
+        { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
+        { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') } ] },
     {
       cells: [
-        { text: 'Recenter', action: () => { opts.recenter && opts.recenter(); } },
+        { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
         quitCell,
       ],
     },
@@ -357,12 +376,12 @@ export function createXRMenu(opts) {
     tex.needsUpdate = true;
     if (panelH !== layout.H) {
       panelH = layout.H;
-      panel.scale.set(PANEL_W, PANEL_W * (layout.H / PW), 1);
+      panel.scale.set(panelW(), panelW() * (layout.H / PW), 1);
     }
   }
 
   const rc = new THREE.Raycaster();
-  const _m = new THREE.Matrix4(), _eye = new THREE.Vector3();
+  const _m = new THREE.Matrix4(), _eye = new THREE.Vector3(), _fwd = new THREE.Vector3(), _pw = new THREE.Vector3(), _q = new THREE.Quaternion();
 
   function hitCell(c) {
     if (!panel.visible) return null;
@@ -434,14 +453,20 @@ export function createXRMenu(opts) {
     const lsrc = [...session.inputSources].find((s) => s.handedness === 'left');
     if (lsrc && !lsrc.gamepad && !open) { open = true; refresh(); }
 
-    // wrist panel follows the left controller and faces the head
     const holder = leftCtrl();
-    if (panel.parent !== holder) { holder.add(panel); holder.add(hint); }
+    if (hint.parent !== holder) holder.add(hint);
     panel.visible = open;
-    if (open) {
-      panel.position.set(0, 0.04 + (PANEL_W * (layout.H / PW)) * 0.5, -0.02);
-      camera.getWorldPosition(_eye);
-      panel.lookAt(_eye);
+    if (menuMode === 'wrist') {                       // wrist panel follows the left controller and faces the head
+      if (panel.parent !== holder) holder.add(panel);
+      if (open) {
+        panel.position.set(0, 0.04 + (panelW() * (layout.H / PW)) * 0.5, -0.02);
+        camera.getWorldPosition(_eye);
+        panel.lookAt(_eye);
+      }
+    } else {                                          // floating: placed ~1.3 m ahead, below the eye line, then left alone (never head-locked)
+      if (panel.parent !== dolly) dolly.add(panel);
+      if (open && !placed) placeFloating();
+      if (!open) placed = false;
     }
     hint.visible = !open && performance.now() < hintUntil;
     if (hint.visible) { hint.position.set(0, 0.11, 0); camera.getWorldPosition(_eye); hint.lookAt(_eye); }
@@ -458,6 +483,17 @@ export function createXRMenu(opts) {
     if (changed) redrawPanel();
   }
 
+  function placeFloating() {
+    placed = true;
+    camera.getWorldDirection(_fwd); _fwd.y = 0;
+    if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
+    _fwd.normalize().applyQuaternion(_q.copy(dolly.quaternion).invert());
+    const hp = camera.position;
+    panel.position.set(hp.x + _fwd.x * 1.3, hp.y - 0.3 - (panelW() * (layout.H / PW)) * 0.18, hp.z + _fwd.z * 1.3);
+    dolly.updateMatrixWorld(true); panel.updateMatrixWorld(true);
+    camera.getWorldPosition(_eye); panel.getWorldPosition(_pw); _eye.y = _pw.y;
+    panel.lookAt(_eye);
+  }
   function toggle() { setOpen(!open); }
   function setOpen(v) {
     open = !!v;
@@ -479,6 +515,13 @@ export function createXRMenu(opts) {
       #xm-btn{position:fixed;top:40px;right:14px;z-index:40;font:600 13px system-ui,sans-serif;color:#ffe9c2;background:rgba(14,18,32,.78);
         border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:6px 13px;cursor:pointer;backdrop-filter:blur(6px)}
       #xm-btn:hover{background:rgba(40,50,86,.9)}
+      @media (pointer:coarse){
+        #xm-btn{top:calc(env(safe-area-inset-top,0px) + 50px);right:calc(env(safe-area-inset-right,0px) + 12px);min-height:46px;padding:10px 18px;font-size:16px}
+        #xm-panel{top:calc(env(safe-area-inset-top,0px) + 104px);right:calc(env(safe-area-inset-right,0px) + 10px);width:min(94vw,380px);max-height:calc(100vh - 120px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-size:15px}
+        .xm-cells button,.xm-cells span{min-height:44px;font-size:15px;padding:10px 4px}
+        .xm-lab{flex:0 0 84px;font-size:14px}
+        .xm-x{font-size:22px;padding:8px 12px;min-width:44px;min-height:44px}
+      }
       #xm-panel{position:fixed;top:80px;right:14px;z-index:40;width:292px;max-height:calc(100vh - 96px);overflow:auto;box-sizing:border-box;
         background:rgba(12,15,28,.93);color:#eef1ff;border:1px solid rgba(255,255,255,.2);border-radius:16px;padding:12px 12px 10px;
         font:13px/1.35 system-ui,sans-serif;backdrop-filter:blur(8px);box-shadow:0 10px 40px rgba(0,0,0,.45)}
@@ -552,11 +595,12 @@ export function createXRMenu(opts) {
   // Esc frees the mouse — show the menu so there is always something to click
   document.addEventListener('pointerlockchange', () => {
     lastLockChange = performance.now();
-    if (!document.pointerLockElement && !renderer.xr.isPresenting && opts.openOnUnlock !== false) setOpen(true);
+    if (!document.pointerLockElement && !renderer.xr.isPresenting && opts.openOnUnlock !== false && !isCoarse) setOpen(true);
   });
 
   // ---------- Enter VR button + session lifecycle ----------
-  const mode = caps.ar ? 'immersive-ar' : caps.vr ? 'immersive-vr' : null;
+  // a phone with only handheld AR (no VR, no controllers) would strand the user in a camera-feed session: hide the button there
+  const mode = (isCoarse && !caps.vr) ? null : caps.ar ? 'immersive-ar' : caps.vr ? 'immersive-vr' : null;
   let enterBtn = null;
   if (mode) {
     enterBtn = document.createElement('button');
