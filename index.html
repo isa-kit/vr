@@ -126,7 +126,7 @@
       const SECTIONS = [
         ['experience', 'Experiences', 'Sit back and watch. Calm places to be in, no goals.'],
         ['game', 'Games', 'Do something. Build, move, play.'],
-        ['lying', 'Lying down', 'Lie back and look up — on your back, reclined or seated. Gaze at real skies, or play gentle games overhead.'],
+        ['lying', 'Lying up', 'Lie back and look up — on your back, reclined or seated. Gaze at real skies, or play gentle games overhead.'],
       ];
       // worlds with a "lying" entry also appear here, opened in their Lying down posture (?lie=1); the world stays upright
       for (const s of scenes.slice()) if (s.lying && s.status === 'live') scenes.push({ ...s, name: s.lying.name, blurb: s.lying.blurb, category: 'lying', path: (s.path || s.id) + '/?lie=1', godot: null });

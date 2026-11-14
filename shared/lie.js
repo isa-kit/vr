@@ -207,7 +207,7 @@ export async function createLieGame(opts = {}) {
     hint: opts.hint || 'Click to play. Drag to look around. Esc for menu.',
     rows: [
       sectionRow('Play position'),
-      ...choiceGrid([['Lying down', 'lying'], ['Seated', 'seated']], () => S.mode, (m) => K.setMode(m), 2),
+      ...choiceGrid([['Lying up', 'lying'], ['Seated', 'seated']], () => S.mode, (m) => K.setMode(m), 2),
       stepperRow('Distance', () => DIST[S.dist][0], () => { S.dist = Math.max(0, S.dist - 1); save(); K.recenter(); }, () => { S.dist = Math.min(2, S.dist + 1); save(); K.recenter(); }),
       ...choiceGrid([['Aim: controllers', 'ctrl'], ['Aim: head', 'head']], () => S.aim, (a) => { S.aim = a; save(); }, 2),
       ...(opts.rows || []),
@@ -271,7 +271,7 @@ export async function createLieGame(opts = {}) {
   const by = -FH - 0.55;
   K.button({ text: '☰ Menu', x: -1.45, y: by, w: 1.2, onPress: () => menu.open() });
   K.button({ text: '⟳ Recenter', x: -0.05, y: by, w: 1.4, onPress: () => (K.xr ? comfort.fade(() => K.recenter()) : K.recenter()) });
-  K.button({ text: () => (S.mode === 'lying' ? '◒ Lying down' : '◓ Seated'), x: 1.55, y: by, w: 1.5, onPress: () => K.setMode(S.mode === 'lying' ? 'seated' : 'lying') });
+  K.button({ text: () => (S.mode === 'lying' ? '◒ Lying up' : '◓ Seated'), x: 1.55, y: by, w: 1.5, onPress: () => K.setMode(S.mode === 'lying' ? 'seated' : 'lying') });
 
   // toast
   const toastM = makeText({ w: 5.4, h: 0.6, size: 0.56, bg: 'rgba(12,16,36,0.55)' }); toastM.position.set(0, FH * 0.55, 0.05); toastM.visible = false; field.add(toastM);

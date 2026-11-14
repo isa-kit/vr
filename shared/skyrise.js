@@ -11,7 +11,7 @@
 //
 // The world stays UPRIGHT. Lying down never tilts the horizon into the overhead view; you lie on the real ground and
 // look at what is really above you. Going up is opt-in and always vertical-first:
-//   • Float up / down — slow constant speed (comfort speed setting), vignette on, stops at the ceiling or the ground.
+//   • Float up / Float down gently — slow constant speed (comfort speed setting), vignette on, stops at the ceiling or the ground.
 //     VR: hold the thumbstick up / down while lying.
 //   • Rise a level — one fade-through-black step ("the next branch" in trees, "higher" in sky / stars).
 //   • Drift where I look — a slow dreamlike dissolve to a point along your gaze (upward only, stays near home).
@@ -87,11 +87,14 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
     { section: 'Posture' },
     { label: 'Posture', cells: [
       { text: 'Sitting', action: () => R.setLying(false), active: () => !R.lying },
-      { text: 'Lying down', action: () => R.setLying(true), active: () => R.lying },
+      { text: 'Lying up', action: () => R.setLying(true), active: () => R.lying },
     ] },
     { label: 'Go up', visible: () => R.lying, cells: [
       { text: () => (R.floating === 1 ? '■ Stop' : '▲ ' + w.float), action: () => R.toggleFloat(1), active: () => R.floating === 1, w: 1.4 },
       { text: w.level, action: () => R.level() },
+    ] },
+    { label: 'Come down', visible: () => R.lying && R.height > 0.05, cells: [
+      { text: () => (R.floating === -1 ? '■ Stop' : '▼ Float down gently'), action: () => R.toggleFloat(-1), active: () => R.floating === -1, w: 1.4 },
     ] },
     { label: () => (R.height > 0.3 ? `Up ${Math.round(R.height)} m` : 'On the ground'), visible: () => R.lying, cells: [
       { text: w.drift, action: () => R.drift(), w: 1.4 },

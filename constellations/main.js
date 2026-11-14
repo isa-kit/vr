@@ -2,7 +2,7 @@
 // The stars of a real constellation hang overhead among fainter ones. Select a star, then a neighbour, to draw each
 // link of the figure. Faint guides can show the way. Finish the figure to hear its chord and read its short story.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie2';
+import { createLieGame } from '../shared/lie.js?v=lie3';
 
 // star positions are hand-placed approximations (x right, y up, about −1..1); links are index pairs
 const SKY = [

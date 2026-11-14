@@ -2,7 +2,7 @@
 // At dusk, dim paper lanterns drift up past you. Rest your aim on one (or pull the trigger / click / tap) to light it;
 // it glows and floats away into the sky, which slowly fills with lights. Three of one colour in a row ring a chord.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie2';
+import { createLieGame } from '../shared/lie.js?v=lie3';
 
 const PAPER = [
   { name: 'amber', paper: 0xf2b45a, glow: new THREE.Color(1.0, 0.62, 0.22) },
