@@ -1,0 +1,15 @@
+{
+  "id": "lanterns",
+  "name": "Lantern Glow",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "lanterns",
+  "blurb": "At dusk, paper lanterns drift up past you — rest your aim on one to light it and watch the sky fill with lights. Play lying down or seated.",
+  "locomotion": {
+    "type": "lying"
+  },
+  "controls": {
+    "panel": []
+  }
+}
