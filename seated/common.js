@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js?v=20261114h';
-import { createSkyRise } from '../shared/skyrise.js?v=rise8';
+import { createSkyRise } from '../shared/skyrise.js?v=rise9';
 import { createComfort } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 

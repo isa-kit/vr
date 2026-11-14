@@ -17,7 +17,7 @@
 //   • Drift where I look — a slow dreamlike dissolve to a point along your gaze (upward only, stays near home).
 //   • Back to the ground — fade home.
 // =====================================================================================================================
-import { createDrift } from './drift.js?v=drift2';
+import { createDrift } from './drift.js?v=drift3';
 
 const WORDS = {
   trees: { float: 'Float up', level: 'Next branch', drift: 'Drift where I look' },
@@ -55,7 +55,8 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
   const refresh = () => { const m = getMenu(); if (m) m.refresh(); };
   const sky = clouds && parent ? makeClouds(THREE, parent, 22, clouds === true ? 0xffffff : clouds) : null;
   // the float direction is user-definable (straight up by default): "Where I look" or "Point to set" (controller / click)
-  const D = R.dirPicker = createDrift({ THREE, scene: parent || rig.parent, camera, rig, comfort, getMenu, start: 'rise', cap: MAX, move: false, isMoving: () => R.floating !== 0 });
+  const D = R.dirPicker = createDrift({ THREE, scene: parent || rig.parent, camera, rig, comfort, getMenu, start: 'custom', startDir: [0, 1, 0], cap: MAX, move: false,
+    isMoving: () => R.floating !== 0, onGo: () => { if (R.lying) R.toggleFloat(1); } });   // right-hand compass: hold A + point, B = go / stop
   D.speedIdx = 1;
   const _v = new THREE.Vector3();
   let hooked = false;
@@ -103,13 +104,13 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
       { text: 'Lying up', action: () => R.setLying(true), active: () => R.lying },
     ] },
     { label: 'Float', visible: () => R.lying, cells: [
-      { text: () => (R.floating === 1 ? '■ Stop' : (D.mode === 'custom' ? '▶ Float my way' : '▲ ' + w.float)), action: () => R.toggleFloat(1), active: () => R.floating === 1, w: 1.3 },
-      { text: () => (R.floating === -1 ? '■ Stop' : '▼ Float down'), action: () => R.toggleFloat(-1), active: () => R.floating === -1, visible: () => R.height > 0.05 },
+      { text: () => (R.floating === 1 ? '■ Stop' : (D.dir.y > 0.98 ? '▲ ' + w.float : '▶ Float my way')), action: () => R.toggleFloat(1), active: () => R.floating === 1, w: 1.3 },
+      { text: () => (R.floating === -1 ? '■ Stop' : '▼ Float down gently'), action: () => R.toggleFloat(-1), active: () => R.floating === -1, visible: () => R.height > 0.05 },
       { text: w.level, action: () => R.level() },
     ] },
     { label: 'Direction', visible: () => R.lying, cells: [
-      { text: 'Straight up', action: () => D.setPreset('rise'), active: () => D.mode === 'rise' },
-      { text: 'Where I look', action: () => D.fromGaze(), active: () => D.mode === 'custom' && !D.armed },
+      { text: 'Forward', action: () => D.setPreset('forward'), active: () => D.mode === 'forward' },
+      { text: 'Up', action: () => D.setPreset('up'), active: () => D.mode === 'up' },
       { text: () => (D.armed ? 'Point + trigger…' : 'Point to set'), action: () => D.arm(), active: () => D.armed },
     ] },
     { label: 'Speed', visible: () => R.lying && R.floating !== 0, cells: [['Very slow', 0], ['Slow', 1], ['Gentle', 2]].map(([t, i]) => ({ text: t, action: () => { D.speedIdx = i; refresh(); }, active: () => D.speedIdx === i })) },
