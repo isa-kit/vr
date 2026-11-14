@@ -6,15 +6,15 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, softTexture, fbm, smoothstep, rng, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261114w';
+} from '../seated/common.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
-import { yieldNow } from '../seated/proc.js?v=20261114w';
-import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114w';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114w';
-import { createHeightfield, createTerrain, createGrass, createFlowers, createLitter, createFerns, createLogs } from '../procgen/terrain.js?v=20261114w';
-import { createRocks } from '../procgen/rocks.js?v=20261114w';
-import { createSky } from '../procgen/sky.js?v=20261114w';
-import { createWater } from '../procgen/water.js?v=20261114w';
+import { yieldNow } from '../seated/proc.js?v=20261114x';
+import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114x';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114x';
+import { createHeightfield, createTerrain, createGrass, createFlowers, createLitter, createFerns, createLogs } from '../procgen/terrain.js?v=20261114x';
+import { createRocks } from '../procgen/rocks.js?v=20261114x';
+import { createSky } from '../procgen/sky.js?v=20261114x';
+import { createWater } from '../procgen/water.js?v=20261114x';
 
 const R = rng(20260);
 const rr = (a, b) => a + R() * (b - a);

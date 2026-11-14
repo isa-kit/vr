@@ -4,7 +4,7 @@
 // WebXR (VR) + flat desktop.  All the hard stuff is cheated to stay light.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js?v=20261113c';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js?v=20261114g';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
 import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';

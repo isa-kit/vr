@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
-import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js';
+import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js?v=20261114g';
 import { createComfort } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 

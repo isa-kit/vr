@@ -368,5 +368,6 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
   Object.defineProperty(VR, 'mapPanel', { get: () => mapP });
   VR.wPanel = wP; VR.sPanel = sP; VR.press = press;
   scene.add(wP.mesh);
+  menu.addGrabTarget(wP.mesh, { visible: () => wP.mesh.visible && isXR() });   // grip to move the start / pause / victory card
   return VR;
 }

@@ -4,15 +4,15 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114w';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114w';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114x';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114w';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114w';
-import { createSplatMaterial, createGrass, createFlowers } from '../procgen/terrain.js?v=20261114w';
-import { createRocks } from '../procgen/rocks.js?v=20261114w';
-import { createSky } from '../procgen/sky.js?v=20261114w';
-import { createWater } from '../procgen/water.js?v=20261114w';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114x';
+import { createSplatMaterial, createGrass, createFlowers } from '../procgen/terrain.js?v=20261114x';
+import { createRocks } from '../procgen/rocks.js?v=20261114x';
+import { createSky } from '../procgen/sky.js?v=20261114x';
+import { createWater } from '../procgen/water.js?v=20261114x';
 
 const R = rng(7771);
 const rr = (a, b) => a + R() * (b - a);

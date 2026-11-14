@@ -3,7 +3,7 @@
 // mini map held on your controller. On desktop it is a classic RTS (box select, right-click orders); on phones it is touch.
 // Simulation: rts/sim.js (fixed 20 Hz, deterministic, headless-testable). Rendering: rts/gfx.js. Controller: rts/ctrl.js.
 import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/xrmenu.js?v=20261114f';
+import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/xrmenu.js?v=20261114g';
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
@@ -15,7 +15,7 @@ import { createCtrl } from './ctrl.js?v=rts4';
 import { createHud } from './hud.js?v=rts4';
 import { createDesk } from './desk.js?v=rts4';
 import { createSfx } from './sfx.js?v=rts4';
-import { createVR } from './vr.js?v=rts4';
+import { createVR } from './vr.js?v=rts5';
 import { createTutorial } from './tutorial.js?v=rts4';
 
 const KEY = 'oortia-rts-v1';

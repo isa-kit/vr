@@ -38,6 +38,8 @@
 //   • menu.onSelectStart/onSelectEnd((controller, hand, index) => …)   trigger events NOT consumed by the menu.
 //   • menu.onSqueeze((controller, hand, index, isDown) => …)           grip down/up (use for pick-up; see xrtools.js).
 //   • Controller models are drawn automatically (menu.grips[i]); pass controllerModels:false to disable.
+//   • Grip while the ray is on the floating menu (or its top handle bar) carries it; position is remembered per world
+//     ('Reset position' in the Menu row). menu.addGrabTarget(mesh,{visible,onGrab,onRelease}) gives any panel plane the same grab.
 //   • menu.onButton((hand, buttonIndex|'squeeze', controller) => …)    X/Y/A/B (4,5) and grip-down.
 //   • menu.refresh() after you change state from outside the menu; menu.open()/close()/toggle()/isOpen().
 //   • menu.withoutUI(fn) hides the wrist menu while fn runs (e.g. render-to-texture passes).
@@ -129,6 +131,22 @@ export function recenterRig(dolly, camera, homePos, homeYaw = 0) {
   dolly.position.x += homePos.x - w.x;
   dolly.position.z += homePos.z - w.z;
   dolly.updateMatrixWorld(true);
+}
+
+// ---------- grab handle (bar above a floating panel, "Grip to move") ----------
+const HANDLE_W = 0.6, HANDLE_ASPECT = 8, HANDLE_GAP = 0.012;
+function makeGrabHandle() {
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 64;
+  const g = cv.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.96)';
+  g.beginPath(); g.roundRect ? g.roundRect(2, 2, 508, 60, 30) : g.rect(2, 2, 508, 60); g.fill();
+  g.fillStyle = '#1a1407'; g.font = '700 34px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('\u2630  Grip to move', 256, 34);
+  const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshBasicMaterial({ map: tx, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false, toneMapped: false, fog: false, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
+  m.renderOrder = 1001; m.frustumCulled = false;
+  return m;
 }
 
 // ---------- panel layout (canvas) ----------
@@ -301,7 +319,8 @@ export function createXRMenu(opts) {
     quitCell ] },
     { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
       { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
-      { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') } ] }] : [
+      { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') },
+      { text: 'Reset position', action: () => resetPanelPos(), visible: () => menuMode === 'float' } ] }] : [
     { section: 'Options' },
     {
       cells: [
@@ -314,7 +333,8 @@ export function createXRMenu(opts) {
     },
     { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
         { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
-        { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') } ] },
+        { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') },
+        { text: 'Reset position', action: () => resetPanelPos(), visible: () => menuMode === 'float' } ] },
     {
       cells: [
         { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
@@ -340,10 +360,13 @@ export function createXRMenu(opts) {
     c.addEventListener('selectstart', () => onSelect(c, true));
     c.addEventListener('selectend', () => onSelect(c, false));
     c.addEventListener('squeezestart', () => {
+      if (tryGrab(c)) { c.userData.grabSwallow = true; return; }       // this grip picked up a panel: the world never sees it
       for (const f of btnDown) f(c.userData.hand, 'squeeze', c);
       for (const f of sqzList) f(c, c.userData.hand, i, true);
     });
-    c.addEventListener('squeezeend', () => { for (const f of sqzList) f(c, c.userData.hand, i, false); });
+    c.addEventListener('squeezeend', () => {
+      if (c.userData.grabSwallow) { c.userData.grabSwallow = false; releaseGrab(c); return; }
+      for (const f of sqzList) f(c, c.userData.hand, i, false); });
     return c;
   });
 
@@ -442,6 +465,97 @@ export function createXRMenu(opts) {
     try { const g = c.userData.src && c.userData.src.gamepad; if (g && g.hapticActuators && g.hapticActuators[0]) g.hapticActuators[0].pulse(0.4, 30); } catch (e) { /* ignore */ }
   }
 
+  // ---------- grabbable panels: grip while the ray is on a panel (or its handle bar) to carry it ----------
+  const grabTargets = [];
+  const _gi = new THREE.Matrix4(), _go = new THREE.Vector3(), _gd = new THREE.Vector3(), _glo = new THREE.Vector3(), _gz = new THREE.Vector3(), _gp = new THREE.Vector3();
+  const posKey = 'oortia-menu-pos:' + location.pathname.replace(/[^/]*$/, '');
+  let savedPos = null;
+  try { const j = JSON.parse(localStorage.getItem(posKey) || 'null'); if (j && [j.x, j.y, j.z].every(Number.isFinite)) savedPos = j; } catch (e) { /* ignore */ }
+  const savePos = () => { try { if (savedPos) localStorage.setItem(posKey, JSON.stringify(savedPos)); else localStorage.removeItem(posKey); } catch (e) { /* ignore */ } };
+
+  // mesh: a unit plane scaled to size. opts: visible(), onGrab(), onRelease(). Returns the target record.
+  function addGrabTarget(mesh, o = {}) {
+    const t = { mesh, visible: o.visible || (() => mesh.visible), onGrab: o.onGrab, onRelease: o.onRelease, main: !!o.main, handle: makeGrabHandle() };
+    mesh.add(t.handle); grabTargets.push(t);
+    return t;
+  }
+  function layoutHandle(t) {
+    const sx = Math.max(1e-4, t.mesh.scale.x), sy = Math.max(1e-4, t.mesh.scale.y);
+    const hm = (HANDLE_W * sx) / HANDLE_ASPECT;            // world-ish height in metres, keeps the label undistorted
+    t.handle.scale.set(HANDLE_W, hm / sy, 1);
+    t.handle.position.set(0, 0.5 + HANDLE_GAP / sy + hm / sy / 2, 0.002);
+    t.top = 0.5 + (HANDLE_GAP + hm) / sy + 0.01;            // local y of the handle's top edge
+  }
+  // ray vs the panel quad extended up over its handle -> distance or null
+  function grabHit(t, c) {
+    if (!t.visible()) return null;
+    const m = t.mesh; layoutHandle(t);
+    m.updateWorldMatrix(true, false); c.updateWorldMatrix(true, false);
+    _gi.copy(m.matrixWorld).invert();
+    _m.identity().extractRotation(c.matrixWorld);
+    _go.setFromMatrixPosition(c.matrixWorld); _gd.set(0, 0, -1).applyMatrix4(_m).normalize();
+    _glo.copy(_go).applyMatrix4(_gi); _gz.copy(_gd).applyMatrix4(_gi); _gd.set(0, 0, 0).applyMatrix4(_gi); _gz.sub(_gd);
+    if (Math.abs(_gz.z) < 1e-6) return null;
+    const d = -_glo.z / _gz.z; if (d <= 0.02) return null;
+    const x = _glo.x + _gz.x * d, y = _glo.y + _gz.y * d;
+    if (Math.abs(x) > 0.5 || y < -0.5 || y > t.top) return null;
+    return d;
+  }
+  function tryGrab(c) {
+    if (!renderer.xr.isPresenting || c.userData.grab) return false;
+    let best = null, bd = 1e9;
+    for (const t of grabTargets) { const d = grabHit(t, c); if (d !== null && d < bd) { best = t; bd = d; } }
+    if (!best) return false;
+    const m = best.mesh;
+    if (best.main && menuMode === 'wrist') {              // detach the wrist panel into float mode where it is
+      m.getWorldPosition(_gp); const wp = _gp.clone();
+      setMenuMode('float'); placed = true;
+      dolly.add(m); dolly.updateMatrixWorld(true); m.position.copy(dolly.worldToLocal(wp));
+    }
+    c.updateWorldMatrix(true, false); m.updateWorldMatrix(true, false);
+    m.getWorldPosition(_gp);
+    c.userData.grab = { t: best, off: _gp.clone().sub(_go.setFromMatrixPosition(c.matrixWorld)) };   // world offset hand -> panel: no lever-arm swing
+    haptic(c);
+    if (best.onGrab) best.onGrab();
+    return true;
+  }
+  function releaseGrab(c) {
+    const g = c.userData.grab; if (!g) return;
+    c.userData.grab = null;
+    if (g.t.main && menuMode === 'float') { savedPos = { x: g.t.mesh.position.x, y: g.t.mesh.position.y, z: g.t.mesh.position.z }; savePos(); }
+    if (g.t.onRelease) g.t.onRelease();
+  }
+  function updateGrabs() {
+    for (const c of ctrls) {
+      const g = c.userData.grab;
+      if (g) {
+        if (!g.t.visible()) { releaseGrab(c); continue; }
+        const m = g.t.mesh;
+        c.updateWorldMatrix(true, false);
+        _gp.setFromMatrixPosition(c.matrixWorld).add(g.off);   // direct hand follow, no smoothing
+        m.parent.updateWorldMatrix(true, false);
+        m.position.copy(m.parent.worldToLocal(_gp));
+        camera.getWorldPosition(_eye); m.getWorldPosition(_pw); _eye.y = _pw.y;
+        m.updateWorldMatrix(true, false); m.lookAt(_eye);       // yaw only, stays upright
+        c.userData.grabHover = g.t;
+      } else {
+        let best = null, bd = 1e9;
+        for (const t of grabTargets) { const d = grabHit(t, c); if (d !== null && d < bd) { best = t; bd = d; } }
+        c.userData.grabHover = best; c.userData.grabDist = bd;
+      }
+    }
+    for (const t of grabTargets) {
+      let hov = false, grabbed = false;
+      for (const c of ctrls) { if (c.userData.grabHover === t) hov = true; if (c.userData.grab && c.userData.grab.t === t) grabbed = true; }
+      layoutHandle(t);
+      t.handle.visible = t.visible();
+      t.handle.material.opacity = grabbed ? 1 : hov ? 0.95 : 0.35;
+      t.handle.material.color.setHex(grabbed ? 0xffd27f : 0xffffff);
+    }
+  }
+  const mainTarget = addGrabTarget(panel, { main: true, visible: () => open && panel.visible });
+  function resetPanelPos() { savedPos = null; savePos(); if (menuMode === 'float') placed = false; refresh(); }
+
   function onSelect(c, down) {
     if (down) {
       if (open && panel.visible) {
@@ -506,6 +620,7 @@ export function createXRMenu(opts) {
       if (open && !placed) placeFloating();
       if (!open) placed = false;
     }
+    updateGrabs();
     hint.visible = !open && performance.now() < hintUntil;
     if (hint.visible) { hint.position.set(0, 0.11, 0); camera.getWorldPosition(_eye); hint.lookAt(_eye); }
 
@@ -516,9 +631,10 @@ export function createXRMenu(opts) {
       const hold = c.userData.hold;                       // hold-to-repeat on ±steppers while the trigger stays down over the cell
       if (hold && h && h.cell === hold.cell && performance.now() >= hold.next) { hold.cell.action(); hold.next = performance.now() + 110; haptic(c); refresh(); }
       const cell = h ? h.cell : null;
-      c.userData.overMenu = !!h;
+      const gh = !h && c.userData.grabHover;               // ray on a panel's handle bar / grabbed panel
+      c.userData.overMenu = !!h || !!gh;
       if (cell !== c.userData.hover) { c.userData.hover = cell; changed = true; }
-      c.userData.ray.setLength(h ? h.dist : 4);
+      c.userData.ray.setLength(h ? h.dist : gh ? (c.userData.grab ? 0.3 : c.userData.grabDist) : 4);
     }
     if (changed) redrawPanel();
   }
@@ -529,6 +645,9 @@ export function createXRMenu(opts) {
     if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
     _fwd.normalize().applyQuaternion(_q.copy(dolly.quaternion).invert());
     const hp = camera.position;
+    if (savedPos && Math.hypot(savedPos.x - hp.x, savedPos.z - hp.z) < 5 && Math.abs(savedPos.y - hp.y) < 3) {   // remembered spot (rig-relative)
+      panel.position.set(savedPos.x, savedPos.y, savedPos.z);
+    } else
     panel.position.set(hp.x + _fwd.x * 1.3, hp.y - 0.3 - (panelW() * (layout.H / PW)) * 0.18, hp.z + _fwd.z * 1.3);
     dolly.updateMatrixWorld(true); panel.updateMatrixWorld(true);
     camera.getWorldPosition(_eye); panel.getWorldPosition(_pw); _eye.y = _pw.y;
@@ -699,7 +818,7 @@ export function createXRMenu(opts) {
     if (opts.setBackdrop) opts.setBackdrop(true);
     if (enterBtn) enterBtn.style.display = '';
     panel.visible = false; hint.visible = false;
-    for (const c of ctrls) c.userData.hover = null;
+    for (const c of ctrls) { c.userData.hover = null; c.userData.grab = null; c.userData.grabSwallow = false; c.userData.grabHover = null; }
     refresh();
     if (opts.onSessionEnd) opts.onSessionEnd();
   });
@@ -718,6 +837,7 @@ export function createXRMenu(opts) {
       panel.visible = false; hint.visible = false;
       try { fn(); } finally { panel.visible = pv; hint.visible = hv; }
     },
+    addGrabTarget,                          // (mesh, {visible, onGrab, onRelease}) — grip-to-move for any standalone panel plane
     onSqueeze: (f) => sqzList.push(f),       // (controller, hand, index, isDown)
     grips,
     onSelectStart: (f) => selStart.push(f),

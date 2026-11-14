@@ -3,15 +3,15 @@
 // headlands, dune grass and scrub.  The sun slowly sinks from golden hour into dusk.  Quality tier is automatic
 // (desktop / phone / headset) and switchable in the menu.  Wave sounds are cued to the visible wave clock.
 
-import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114w';
-import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114w';
+import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114x';
+import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
-import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114w';
-import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114w';
-import { createGrass, createFlowers, createLogs } from '../procgen/terrain.js?v=20261114w';
-import { createRocks } from '../procgen/rocks.js?v=20261114w';
-import { createSky } from '../procgen/sky.js?v=20261114w';
-import { createWater, createShoreline } from '../procgen/water.js?v=20261114w';
+import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';
+import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114x';
+import { createGrass, createFlowers, createLogs } from '../procgen/terrain.js?v=20261114x';
+import { createRocks } from '../procgen/rocks.js?v=20261114x';
+import { createSky } from '../procgen/sky.js?v=20261114x';
+import { createWater, createShoreline } from '../procgen/water.js?v=20261114x';
 
 const R = rng(31415);
 const rr = (a, b) => a + R() * (b - a);
