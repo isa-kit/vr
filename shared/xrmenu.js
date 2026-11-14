@@ -38,6 +38,7 @@
 //   • menu.onSelectStart/onSelectEnd((controller, hand, index) => …)   trigger events NOT consumed by the menu.
 //   • menu.onSqueeze((controller, hand, index, isDown) => …)           grip down/up (use for pick-up; see xrtools.js).
 //   • Controller models are drawn automatically (menu.grips[i]); pass controllerModels:false to disable.
+//   • Menu modes: Float / Wrist / Wheel (hold X/Y, point or push the stick, release). Wrist is a capped tablet; taller menus page.
 //   • Grip while the ray is on the floating menu (or its top handle bar) carries it; position is remembered per world
 //     ('Reset position' in the Menu row). menu.addGrabTarget(mesh,{visible,onGrab,onRelease}) gives any panel plane the same grab.
 //   • menu.onButton((hand, buttonIndex|'squeeze', controller) => …)    X/Y/A/B (4,5) and grip-down.
@@ -150,7 +151,7 @@ function makeGrabHandle() {
 }
 
 // ---------- panel layout (canvas) ----------
-const PW = 800, PAD = 28, ROW_H = 80, GAP = 12, SEC_H = 50, TITLE_H = 84, LABEL_FRAC = 0.3;
+const PW = 800, PAD = 28, ROW_H = 80, TILE_H = 160, GAP = 12, SEC_H = 50, TITLE_H = 84, LABEL_FRAC = 0.3;
 const PANEL_W = 0.36;   // metres (wrist); the floating menu is drawn 2.3× larger at ~1.3 m
 
 function flatten(rows) { return rows.flat(Infinity).filter(Boolean); }
@@ -169,12 +170,12 @@ function layoutRows(rows) {
     let x = x0;
     const placed = cells.map((cell) => {
       const w = ((totalW - GAP * (cells.length - 1)) * (cell.w || 1)) / wsum;
-      const p = { cell, x, y, w, h: ROW_H - GAP };
+      const p = { cell, x, y, w, h: (r.h || ROW_H) - GAP };
       x += w + GAP;
       return p;
     });
-    out.push({ label: r.label ? val(r.label) : null, y, h: ROW_H, placed });
-    y += ROW_H;
+    out.push({ label: r.label ? val(r.label) : null, y, h: r.h || ROW_H, placed });
+    y += r.h || ROW_H;
   }
   return { rows: out, H: y + PAD - GAP };
 }
@@ -238,7 +239,7 @@ function drawPanel(ctx, layout, title, hovered) {
       } else {
         ctx.fillStyle = '#ffe9c2';
       }
-      ctx.font = '600 36px system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.font = (p.h > 110 ? '700 46px' : '600 36px') + ' system-ui, sans-serif'; ctx.textAlign = 'center';
       ctx.fillText(text, p.x + p.w / 2, p.y + p.h / 2 + 2, p.w - 14);
     }
   }
@@ -267,9 +268,23 @@ export function createXRMenu(opts) {
   let open = false;
   let passthrough = false;
   let menuMode = 'float';
-  try { menuMode = localStorage.getItem('oortia-menu-mode') === 'wrist' ? 'wrist' : 'float'; } catch (e) { /* ignore */ }
-  const panelW = () => (menuMode === 'float' ? PANEL_W * 2.0 : PANEL_W);
-  const setMenuMode = (m) => { menuMode = m; try { localStorage.setItem('oortia-menu-mode', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; refresh(); };
+  // ONE global style for every world: 'wheel' | 'float' (shown as Dashboard) | 'wrist'
+  try { const st = localStorage.getItem('oortia-menu-style') || localStorage.getItem('oortia-menu-mode'); menuMode = st === 'wrist' ? 'wrist' : st === 'wheel' ? 'wheel' : 'float'; } catch (e) { /* ignore */ }
+  // remembered pose, GLOBAL (same spot in every world): offset in the HEAD frame (x right, y up, z back; pitch included) + size
+  const clampS = (v) => Math.min(2.5, Math.max(0.5, v));
+  let savedOff = null, menuScale = 1;
+  try { const j = JSON.parse(localStorage.getItem('oortia-menu-pose') || 'null');
+    if (j) { if ([j.x, j.y, j.z].every(Number.isFinite)) savedOff = { x: j.x, y: j.y, z: j.z }; if (Number.isFinite(j.s)) menuScale = clampS(j.s); } } catch (e) { /* ignore */ }
+  const savePose = () => { try { localStorage.setItem('oortia-menu-pose', JSON.stringify({ ...(savedOff || {}), s: menuScale })); } catch (e) { /* ignore */ } };
+  let pageNo = 0, pageCount = 1;
+  const MAX_PX = { wrist: 660, float: 1000 };
+  const pagerRow = { cells: [
+    { text: '\u25C0', tone: 'accent', action: () => { pageNo = (pageNo + pageCount - 1) % pageCount; } },
+    { text: () => 'Page ' + (pageNo + 1) + ' / ' + pageCount, w: 2 },
+    { text: '\u25B6', tone: 'accent', action: () => { pageNo = (pageNo + 1) % pageCount; } }] };
+  const panelW = () => (menuMode === 'wrist' ? PANEL_W : PANEL_W * 2.0 * menuScale);
+  const setMenuMode = (m) => { menuMode = m; try { localStorage.setItem('oortia-menu-style', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; if (m === 'wheel') open = false; refresh(); };
+  let view = 'top', viewName = '', keepView = false;
   let placed = false;
   let quitArmed = false, quitTimer = 0;
   const selStart = [], selEnd = [], btnDown = [], sqzList = [], menuListeners = [];
@@ -311,16 +326,24 @@ export function createXRMenu(opts) {
     },
   };
 
+  const inVR = () => renderer.xr.isPresenting;
+  const styleTile = (text, m) => ({ text, active: () => menuMode === m, action: () => setMenuMode(m) });
+  const styleRows = () => [
+    { h: TILE_H, cells: [styleTile('Wheel', 'wheel'), styleTile('Dashboard', 'float')] },
+    { h: TILE_H, cells: [styleTile('Wrist', 'wrist')] },
+    { ...stepperRow('Size', () => Math.round(menuScale * 100) + '%',
+        () => { menuScale = clampS(menuScale / 1.15); applyScale(); savePose(); },
+        () => { menuScale = clampS(menuScale * 1.15); applyScale(); savePose(); }, { repeat: true }),
+      visible: () => menuMode !== 'wrist' },
+    { visible: () => menuMode !== 'wrist', cells: [{ text: 'Reset position', action: () => resetPanelPos() }] },
+  ];
   const compact = !!opts.compactCommon;                // Passthrough / Sound / Recenter / Quit on ONE row (saves height in tall menus)
   const commonRows = compact ? [{ cells: [
     { text: () => 'Passthrough ' + (passthrough ? 'On' : 'Off'), active: () => passthrough, action: () => setPassthrough(!passthrough), visible: () => caps.ar && renderer.xr.isPresenting && inAR() },
     { text: () => 'Sound ' + (opts.sound && opts.sound.get() ? 'On' : 'Off'), active: () => !!(opts.sound && opts.sound.get()), action: () => opts.sound.set(!opts.sound.get()), visible: () => !!opts.sound },
     { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
     quitCell ] },
-    { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
-      { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
-      { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') },
-      { text: 'Reset position', action: () => resetPanelPos(), visible: () => menuMode === 'float' } ] }] : [
+    ] : [
     { section: 'Options' },
     {
       cells: [
@@ -331,10 +354,6 @@ export function createXRMenu(opts) {
           action: () => opts.sound.set(!opts.sound.get()), visible: () => !!opts.sound },
       ],
     },
-    { label: 'Menu', visible: () => renderer.xr.isPresenting, cells: [
-        { text: 'Floating', active: () => menuMode === 'float', action: () => setMenuMode('float') },
-        { text: 'Wrist', active: () => menuMode === 'wrist', action: () => setMenuMode('wrist') },
-        { text: 'Reset position', action: () => resetPanelPos(), visible: () => menuMode === 'float' } ] },
     {
       cells: [
         { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
@@ -416,7 +435,7 @@ export function createXRMenu(opts) {
   const ctx = canvas.getContext('2d');
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  let layout = layoutRows(allRows());
+  let layout = { rows: [], H: 200 };       // real layout is built by redrawPanel() at the end
   const panel = new THREE.Mesh(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, toneMapped: false, side: THREE.DoubleSide }));
@@ -426,10 +445,59 @@ export function createXRMenu(opts) {
   hint.visible = false;
   let hintUntil = 0;
 
+  // never a tall pole: rows beyond the height cap spill onto pages (wrist ≈ 0.30 m, floating ≈ 1.0 k px)
+  // ---- the ONE standard top level (same options, same order, in Wheel / Dashboard / Wrist) ----
+  const isTabRow = (r) => r.cells && r.cells.length > 1 && r.cells.every((c) => c.tone === 'tab');
+  function topItems() {
+    const it = [];
+    if (opts.pause) it.push({ text: opts.pause.text || 'Pause', run: opts.pause.action, active: opts.pause.active });
+    it.push({ text: 'Recenter', run: () => recenterAct() });
+    it.push({ text: 'Menu style', panel: true, run: () => { view = 'style'; viewName = 'Menu style'; pageNo = 0; } });
+    it.push({ text: quitCell.text, tone: 'danger', run: quitCell.action });
+    const flat = flatten([appRows]); let tabs = 0;
+    for (const r of flat) if (isTabRow(r) && !(r.visible && !r.visible())) for (const c of r.cells) {
+      tabs++; it.push({ text: c.text, active: c.active, panel: true, run: () => { c.action(); view = 'tab'; viewName = String(val(c.text)); pageNo = 0; } });
+    }
+    if (!tabs && flat.some((r) => !(r.visible && !r.visible()))) it.push({ text: 'Settings', panel: true, run: () => { view = 'tab'; viewName = 'Settings'; pageNo = 0; } });
+    if (opts.sound) it.push({ text: () => 'Sound ' + (opts.sound.get() ? 'On' : 'Off'), active: () => !!opts.sound.get(), run: () => opts.sound.set(!opts.sound.get()) });
+    if (caps.ar && renderer.xr.isPresenting && inAR()) it.push({ text: () => 'Passthrough ' + (passthrough ? 'On' : 'Off'), active: () => passthrough, run: () => setPassthrough(!passthrough) });
+    return it;
+  }
+  const backRow = { h: 100, cells: [{ text: '\u25C0  Back', tone: 'accent', action: () => { view = 'top'; pageNo = 0; } }] };
+  function vrContent() {
+    if (view === 'style') return { pin: [backRow], rows: styleRows() };
+    if (view === 'tab') return { pin: [backRow], rows: flatten([appRows]).filter((r) => !isTabRow(r)) };
+    const tiles = topItems().map((i) => ({ text: i.text, tone: i.tone, active: i.active, action: () => i.run() }));
+    const rows = [];
+    for (let k = 0; k < tiles.length; k += 2) rows.push({ h: TILE_H, cells: tiles.slice(k, k + 2) });
+    return { pin: [], rows };
+  }
+  const panelTitle = () => (view === 'top' ? title : viewName);
+  function pagedRows() {
+    const { pin, rows } = vrContent();
+    const hOf = (r) => (r.section ? SEC_H : (r.h || ROW_H));
+    const vis = rows.filter((r) => !(r.visible && !r.visible()) && (r.section || r.cells.some((c) => !c.visible || c.visible())));
+    const pinH = pin.reduce((a, r) => a + hOf(r), 0);
+    const budget = (menuMode === 'wrist' ? MAX_PX.wrist : MAX_PX.float) - TITLE_H - PAD + GAP - pinH;
+    if (vis.reduce((a, r) => a + hOf(r), 0) <= budget) { pageCount = 1; pageNo = 0; return [...pin, ...vis]; }
+    const pages = [[]]; let used = 0; const pb = budget - ROW_H;
+    for (const r of vis) {
+      const h = hOf(r);
+      if (used + h > pb && pages[pages.length - 1].length) {
+        const last = pages[pages.length - 1], moved = [];
+        while (last.length > 1 && last[last.length - 1].section) moved.unshift(last.pop());   // never strand a header
+        pages.push(moved); used = moved.reduce((a, m) => a + hOf(m), 0);
+      }
+      pages[pages.length - 1].push(r); used += h;
+    }
+    pageCount = pages.length; pageNo = Math.min(pageNo, pageCount - 1);
+    return [...pin, ...pages[pageNo], pagerRow];
+  }
+
   function redrawPanel() {
-    layout = layoutRows(allRows());
+    layout = layoutRows(pagedRows());
     if (canvas.height !== Math.ceil(layout.H)) { canvas.height = Math.ceil(layout.H); }
-    drawPanel(ctx, layout, title, ctrls.map((c) => c.userData.hover));
+    drawPanel(ctx, layout, panelTitle(), ctrls.map((c) => c.userData.hover));
     tex.needsUpdate = true;
     if (panelH !== layout.H) {
       panelH = layout.H;
@@ -466,16 +534,22 @@ export function createXRMenu(opts) {
   }
 
   // ---------- grabbable panels: grip while the ray is on a panel (or its handle bar) to carry it ----------
-  const grabTargets = [];
+  const grabTargets = [], _rl = { x: 0, y: 0 };
   const _gi = new THREE.Matrix4(), _go = new THREE.Vector3(), _gd = new THREE.Vector3(), _glo = new THREE.Vector3(), _gz = new THREE.Vector3(), _gp = new THREE.Vector3();
-  const posKey = 'oortia-menu-pos:' + location.pathname.replace(/[^/]*$/, '');
-  let savedPos = null;
-  try { const j = JSON.parse(localStorage.getItem(posKey) || 'null'); if (j && [j.x, j.y, j.z].every(Number.isFinite)) savedPos = j; } catch (e) { /* ignore */ }
-  const savePos = () => { try { if (savedPos) localStorage.setItem(posKey, JSON.stringify(savedPos)); else localStorage.removeItem(posKey); } catch (e) { /* ignore */ } };
-
+  const _hq = new THREE.Quaternion(), _hp = new THREE.Vector3(), _he = new THREE.Euler(), _hup = new THREE.Vector3();
+  function headFrame() {                       // head position + yaw/pitch frame (roll removed)
+    camera.updateWorldMatrix(true, false); camera.getWorldPosition(_hp); camera.getWorldQuaternion(_hq);
+    _he.setFromQuaternion(_hq, 'YXZ'); _he.z = 0; _hq.setFromEuler(_he);
+  }
+  function faceHead(m) {                       // upright yaw-facing normally; billboard to the head when looking steeply up/down
+    headFrame(); m.getWorldPosition(_pw); _eye.copy(_hp);
+    if (Math.abs(_he.x) > 0.85) m.up.copy(_hup.set(0, 1, 0).applyQuaternion(_hq)); else { m.up.set(0, 1, 0); _eye.y = _pw.y; }
+    m.updateWorldMatrix(true, false); m.lookAt(_eye); m.up.set(0, 1, 0);
+  }
+  let _lastGT = 0;
   // mesh: a unit plane scaled to size. opts: visible(), onGrab(), onRelease(). Returns the target record.
   function addGrabTarget(mesh, o = {}) {
-    const t = { mesh, visible: o.visible || (() => mesh.visible), onGrab: o.onGrab, onRelease: o.onRelease, main: !!o.main, handle: makeGrabHandle() };
+    const t = { mesh, visible: o.visible || (() => mesh.visible), onGrab: o.onGrab, onRelease: o.onRelease, main: !!o.main, scalable: !!o.scalable, handle: makeGrabHandle() };
     mesh.add(t.handle); grabTargets.push(t);
     return t;
   }
@@ -489,7 +563,11 @@ export function createXRMenu(opts) {
   // ray vs the panel quad extended up over its handle -> distance or null
   function grabHit(t, c) {
     if (!t.visible()) return null;
-    const m = t.mesh; layoutHandle(t);
+    layoutHandle(t);
+    const d = grabHitMesh(t.mesh, c, t.top);
+    return d;
+  }
+  function grabHitMesh(m, c, top = 0.5) {
     m.updateWorldMatrix(true, false); c.updateWorldMatrix(true, false);
     _gi.copy(m.matrixWorld).invert();
     _m.identity().extractRotation(c.matrixWorld);
@@ -498,7 +576,8 @@ export function createXRMenu(opts) {
     if (Math.abs(_gz.z) < 1e-6) return null;
     const d = -_glo.z / _gz.z; if (d <= 0.02) return null;
     const x = _glo.x + _gz.x * d, y = _glo.y + _gz.y * d;
-    if (Math.abs(x) > 0.5 || y < -0.5 || y > t.top) return null;
+    if (Math.abs(x) > 0.5 || y < -0.5 || y > top) return null;
+    _rl.x = x; _rl.y = y;
     return d;
   }
   function tryGrab(c) {
@@ -522,27 +601,46 @@ export function createXRMenu(opts) {
   function releaseGrab(c) {
     const g = c.userData.grab; if (!g) return;
     c.userData.grab = null;
-    if (g.t.main && menuMode === 'float') { savedPos = { x: g.t.mesh.position.x, y: g.t.mesh.position.y, z: g.t.mesh.position.z }; savePos(); }
+    // keep a remaining second hand continuous
+    const other = ctrls.find((o) => o.userData.grab && o.userData.grab.t === g.t);
+    if (other) { g.t.mesh.getWorldPosition(_gp); other.updateWorldMatrix(true, false); other.userData.grab.off = _gp.clone().sub(_go.setFromMatrixPosition(other.matrixWorld)); g.t.pair = null; }
+    else if (g.t.main && menuMode !== 'wrist') {                      // remember the pose relative to the head, pitch included
+      headFrame(); g.t.mesh.getWorldPosition(_gp); _gp.sub(_hp).applyQuaternion(_q.copy(_hq).invert());
+      const L = _gp.length(); if (L > 3) _gp.multiplyScalar(3 / L); else if (L < 0.35) _gp.multiplyScalar(0.35 / Math.max(L, 1e-4));
+      savedOff = { x: _gp.x, y: _gp.y, z: _gp.z }; savePose();
+    }
     if (g.t.onRelease) g.t.onRelease();
   }
   function updateGrabs() {
-    for (const c of ctrls) {
-      const g = c.userData.grab;
-      if (g) {
-        if (!g.t.visible()) { releaseGrab(c); continue; }
-        const m = g.t.mesh;
-        c.updateWorldMatrix(true, false);
-        _gp.setFromMatrixPosition(c.matrixWorld).add(g.off);   // direct hand follow, no smoothing
-        m.parent.updateWorldMatrix(true, false);
-        m.position.copy(m.parent.worldToLocal(_gp));
-        camera.getWorldPosition(_eye); m.getWorldPosition(_pw); _eye.y = _pw.y;
-        m.updateWorldMatrix(true, false); m.lookAt(_eye);       // yaw only, stays upright
-        c.userData.grabHover = g.t;
-      } else {
-        let best = null, bd = 1e9;
-        for (const t of grabTargets) { const d = grabHit(t, c); if (d !== null && d < bd) { best = t; bd = d; } }
-        c.userData.grabHover = best; c.userData.grabDist = bd;
+    const now = performance.now(), dt = Math.min(0.1, (now - (_lastGT || now)) / 1000); _lastGT = now;
+    for (const t of grabTargets) {
+      const gs = ctrls.filter((c) => c.userData.grab && c.userData.grab.t === t);
+      if (!gs.length) { t.pair = null; continue; }
+      if (!t.visible()) { for (const c of gs) releaseGrab(c); continue; }
+      _gp.set(0, 0, 0);
+      for (const c of gs) { c.updateWorldMatrix(true, false); _go.setFromMatrixPosition(c.matrixWorld); _gp.add(_go).add(c.userData.grab.off); }
+      _gp.multiplyScalar(1 / gs.length);                            // direct hand follow (midpoint when two-handed), no smoothing
+      if (t.scalable) {
+        if (gs.length === 2) {                                      // pull apart / together
+          const d = new THREE.Vector3().setFromMatrixPosition(gs[0].matrixWorld).distanceTo(new THREE.Vector3().setFromMatrixPosition(gs[1].matrixWorld));
+          if (!t.pair) t.pair = { d0: Math.max(d, 0.05), s0: menuScale };
+          menuScale = clampS(t.pair.s0 * d / t.pair.d0); applyScale();
+        } else {
+          t.pair = null;
+          const gp = gs[0].userData.src && gs[0].userData.src.gamepad, y = gp ? (gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1]) : 0;
+          if (Math.abs(y) > 0.15) { menuScale = clampS(menuScale * Math.exp(-y * dt * 1.2)); applyScale(); }   // stick up = bigger
+        }
       }
+      const m = t.mesh; m.parent.updateWorldMatrix(true, false);
+      m.position.copy(m.parent.worldToLocal(_gp));
+      faceHead(m);
+      for (const c of gs) c.userData.grabHover = t;
+    }
+    for (const c of ctrls) {
+      if (c.userData.grab) continue;
+      let best = null, bd = 1e9;
+      for (const t of grabTargets) { const d = grabHit(t, c); if (d !== null && d < bd) { best = t; bd = d; } }
+      c.userData.grabHover = best; c.userData.grabDist = bd;
     }
     for (const t of grabTargets) {
       let hov = false, grabbed = false;
@@ -553,8 +651,9 @@ export function createXRMenu(opts) {
       t.handle.material.color.setHex(grabbed ? 0xffd27f : 0xffffff);
     }
   }
-  const mainTarget = addGrabTarget(panel, { main: true, visible: () => open && panel.visible });
-  function resetPanelPos() { savedPos = null; savePos(); if (menuMode === 'float') placed = false; refresh(); }
+  const mainTarget = addGrabTarget(panel, { main: true, scalable: true, visible: () => open && panel.visible });
+  function resetPanelPos() { savedOff = null; menuScale = 1; savePose(); applyScale(); if (menuMode !== 'wrist') placed = false; refresh(); }
+  function applyScale() { panel.scale.set(panelW(), panelW() * (layout.H / PW), 1); }
 
   function onSelect(c, down) {
     if (down) {
@@ -595,12 +694,13 @@ export function createXRMenu(opts) {
       for (const idx of [4, 5]) {            // X/Y on the left, A/B on the right
         const p = !!(gp.buttons[idx] && gp.buttons[idx].pressed);
         if (p && !prev[idx]) {
-          if (hand === 'left') toggle();
+          if (hand === 'left') { if (menuMode === 'wheel' && !open) wheelHold = { idx, t0: performance.now(), shown: false }; else toggle(); }
           for (const f of btnDown) f(hand, idx);
-        }
+        } else if (!p && prev[idx] && hand === 'left' && wheelHold && wheelHold.idx === idx) endWheel();
         prev[idx] = p;
       }
     }
+    if (wheelHold) updateWheel();
     // hand tracking (no gamepad on the left source): keep the menu open so it stays reachable
     const lsrc = [...session.inputSources].find((s) => s.handedness === 'left');
     if (lsrc && !lsrc.gamepad && !open) { open = true; refresh(); }
@@ -611,7 +711,7 @@ export function createXRMenu(opts) {
     if (menuMode === 'wrist') {                       // wrist panel follows the left controller and faces the head
       if (panel.parent !== holder) holder.add(panel);
       if (open) {
-        panel.position.set(0, 0.04 + (panelW() * (layout.H / PW)) * 0.5, -0.02);
+        panel.position.set(0, 0.03 + (panelW() * (layout.H / PW)) * 0.42, -0.09);   // tablet held in front of the hand, tilted to the eyes
         camera.getWorldPosition(_eye);
         panel.lookAt(_eye);
       }
@@ -639,22 +739,81 @@ export function createXRMenu(opts) {
     if (changed) redrawPanel();
   }
 
-  function placeFloating() {
-    placed = true;
-    camera.getWorldDirection(_fwd); _fwd.y = 0;
-    if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
-    _fwd.normalize().applyQuaternion(_q.copy(dolly.quaternion).invert());
-    const hp = camera.position;
-    if (savedPos && Math.hypot(savedPos.x - hp.x, savedPos.z - hp.z) < 5 && Math.abs(savedPos.y - hp.y) < 3) {   // remembered spot (rig-relative)
-      panel.position.set(savedPos.x, savedPos.y, savedPos.z);
-    } else
-    panel.position.set(hp.x + _fwd.x * 1.3, hp.y - 0.3 - (panelW() * (layout.H / PW)) * 0.18, hp.z + _fwd.z * 1.3);
-    dolly.updateMatrixWorld(true); panel.updateMatrixWorld(true);
-    camera.getWorldPosition(_eye); panel.getWorldPosition(_pw); _eye.y = _pw.y;
-    panel.lookAt(_eye);
+  function placeFloating() {                   // at the remembered HEAD-relative spot (or just below the gaze), from the CURRENT head pose
+    placed = true; headFrame();
+    const o = savedOff || { x: 0, y: -0.2, z: -1.2 };
+    _gp.set(o.x, o.y, o.z).applyQuaternion(_hq).add(_hp);
+    dolly.updateMatrixWorld(true);
+    panel.position.copy(dolly.worldToLocal(_gp));
+    applyScale(); faceHead(panel);
+  }
+  // ---------- wheel (radial) quick menu: hold X/Y, point or push the stick, release to choose; a short tap still toggles the panel ----------
+  const WHEEL_M = 0.34, WCV = 512;
+  const wcv = document.createElement('canvas'); wcv.width = wcv.height = WCV;
+  const wctx = wcv.getContext('2d'), wtex = new THREE.CanvasTexture(wcv); wtex.colorSpace = THREE.SRGBColorSpace;
+  const wheel = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: wtex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+  wheel.renderOrder = 1002; wheel.visible = false; wheel.frustumCulled = false; wheel.scale.setScalar(WHEEL_M);
+  let wheelHold = null, wheelSel = -1, wheelItems = [];
+  const recenterAct = () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); };
+  function buildWheel() {
+    let it = topItems();
+    if (it.length > 8) it = [...it.slice(0, 7), { text: 'More\u2026', panel: true, run: () => { view = 'top'; pageNo = 0; } }];
+    return it;
+  }
+  function openAtView() { keepView = true; setOpen(true); keepView = false; }
+  function drawWheel() {
+    const g = wctx, N = wheelItems.length, C = WCV / 2, R = C - 4, r0 = 70;
+    g.clearRect(0, 0, WCV, WCV);
+    for (let i = 0; i < N; i++) {
+      const th = -Math.PI / 2 + (i * 2 * Math.PI) / N, h = Math.PI / N - 0.02, it = wheelItems[i];
+      g.beginPath(); g.arc(C, C, R, th - h, th + h); g.arc(C, C, r0, th + h, th - h, true); g.closePath();
+      g.fillStyle = i === wheelSel ? 'rgba(255,214,150,0.97)' : it.tone === 'danger' ? 'rgba(120,36,44,0.92)' : it.active && val(it.active) ? 'rgba(86,112,214,0.92)' : 'rgba(18,22,40,0.9)'; g.fill();
+      g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.35)'; g.stroke();
+      g.fillStyle = i === wheelSel ? '#1a1407' : '#f2f4ff'; g.font = '700 30px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(val(it.text)), C + Math.cos(th) * (R + r0) / 2, C + Math.sin(th) * (R + r0) / 2, 120);
+    }
+    g.beginPath(); g.arc(C, C, r0 - 8, 0, 7); g.fillStyle = 'rgba(12,15,28,0.9)'; g.fill();
+    g.fillStyle = '#ffe9c2'; g.font = '600 22px system-ui, sans-serif'; g.fillText(wheelSel >= 0 ? 'Release' : 'Point', C, C);
+    wtex.needsUpdate = true;
+  }
+  function wheelPick(c) {
+    const N = wheelItems.length, gp = c.userData.src && c.userData.src.gamepad;
+    let ang = null;
+    if (gp) {
+      const a = gp.axes, p2 = Math.hypot(a[2] || 0, a[3] || 0), p0 = Math.hypot(a[0] || 0, a[1] || 0);
+      const sx = p2 >= p0 ? a[2] || 0 : a[0] || 0, sy = p2 >= p0 ? a[3] || 0 : a[1] || 0;
+      if (Math.hypot(sx, sy) > 0.5) ang = Math.atan2(sx, -sy);
+    }
+    if (ang === null) {
+      wheel.visible = true; const d = grabHitMesh(wheel, c);
+      if (d === null || Math.hypot(_rl.x, _rl.y) < 0.14) return -1;
+      ang = Math.atan2(_rl.x, _rl.y);
+    }
+    return (((Math.round(ang / (2 * Math.PI / N)) % N) + N) % N);
+  }
+  function showWheel() {
+    const c = leftCtrl(); wheelItems = buildWheel(); wheelSel = -1;
+    c.updateWorldMatrix(true, false); _m.identity().extractRotation(c.matrixWorld);
+    _gd.set(0, 0, -1).applyMatrix4(_m).normalize();
+    _gp.setFromMatrixPosition(c.matrixWorld).addScaledVector(_gd, 0.3);
+    dolly.updateMatrixWorld(true); wheel.position.copy(dolly.worldToLocal(_gp));
+    if (wheel.parent !== dolly) dolly.add(wheel);
+    wheel.visible = true; faceHead(wheel); drawWheel(); haptic(c); wheelHold.shown = true;
+  }
+  function updateWheel() {
+    if (!wheelHold.shown) { if (performance.now() - wheelHold.t0 > 250) showWheel(); return; }
+    const s = wheelPick(leftCtrl());
+    if (s !== wheelSel) { wheelSel = s; drawWheel(); if (s >= 0) haptic(leftCtrl()); }
+  }
+  function endWheel() {
+    const h = wheelHold; wheelHold = null;
+    if (!h.shown) { toggle(); return; }                // short tap: the normal panel
+    const it = wheelItems[wheelSel]; wheel.visible = false; wheelSel = -1;
+    if (it && it.run) { it.run(); if (it.panel) openAtView(); refresh(); }
   }
   function toggle() { setOpen(!open); }
   function setOpen(v) {
+    if (v && !open && !keepView) { view = 'top'; pageNo = 0; }
     open = !!v;
     if (open && !renderer.xr.isPresenting && document.pointerLockElement) document.exitPointerLock();
     refresh();
@@ -814,7 +973,7 @@ export function createXRMenu(opts) {
     if (opts.onSessionStart) opts.onSessionStart();
   });
   renderer.xr.addEventListener('sessionend', () => {
-    open = false; passthrough = false;
+    open = false; passthrough = false; wheelHold = null; wheel.visible = false;
     if (opts.setBackdrop) opts.setBackdrop(true);
     if (enterBtn) enterBtn.style.display = '';
     panel.visible = false; hint.visible = false;
@@ -828,6 +987,7 @@ export function createXRMenu(opts) {
 
   return {
     update, refresh, toggle,
+    openView: (v) => { view = v === 'style' ? 'style' : v === 'settings' ? 'tab' : 'top'; viewName = v === 'style' ? 'Menu style' : 'Settings'; pageNo = 0; keepView = true; setOpen(true); keepView = false; refresh(); },
     open: () => setOpen(true), close: () => setOpen(false), isOpen: () => open,
     controllers: ctrls,
     rays: ctrls.map((c) => c.userData.ray),

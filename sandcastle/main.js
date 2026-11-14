@@ -9,7 +9,7 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114g';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114h';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
 import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';

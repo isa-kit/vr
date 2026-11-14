@@ -3,7 +3,7 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261114g';
+import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261114h';
 import { createToolkit } from '../shared/xrtools.js?v=20261113h';
 import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113h';
 import { createTouch } from '../shared/touch.js?v=20261113h';
