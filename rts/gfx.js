@@ -3,9 +3,9 @@
 // whole army costs a couple of dozen draw calls. A fog-of-war texture darkens every world material via onBeforeCompile.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeNoise, rng } from '../procgen/noise.js?v=rts2';
-import { createRocks } from '../procgen/rocks.js?v=rts2';
-import { UT, BT, N, K, WL } from './sim.js?v=rts2';
+import { makeNoise, rng } from '../procgen/noise.js?v=rts3';
+import { createRocks } from '../procgen/rocks.js?v=rts3';
+import { UT, BT, N, K, WL } from './sim.js?v=rts3';
 
 export const TEAM_COL = [0x2f94ff, 0xff5a2a];
 export const CELL = 3.6 / N;                       // metres per map cell at table scale 1
@@ -268,6 +268,15 @@ export function createView({ scene, S, renderer, quality = 'high' }) {
   };
   const ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, opacity: 0.45, depthWrite: false, toneMapped: false })); ghost.visible = false; ghost.renderOrder = 9; overlayGroup.add(ghost);
   V.setGhost = (type, cx, cz, ok) => { if (!type) { ghost.visible = false; return; } const s = BT[type].size; ghost.visible = true; ghost.scale.set(s, 1.6, s); ghost.position.set(cx + s / 2, map.heightAt(cx + s / 2, cz + s / 2) + 0.8, cz + s / 2); ghost.material.color.setHex(ok ? 0x66ff88 : 0xff6666); };
+  const aimRing = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.72, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.95, depthTest: false, toneMapped: false })); aimRing.visible = false; aimRing.renderOrder = 9; overlayGroup.add(aimRing);
+  const aimLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x9dffb0, transparent: true, opacity: 0.9, depthTest: false, toneMapped: false })); aimLine.frustumCulled = false; aimLine.renderOrder = 9; aimLine.visible = false; overlayGroup.add(aimLine);
+  V.setAim = (a) => {
+    if (!a) { aimRing.visible = false; aimLine.visible = false; return; }
+    const y = map.heightAt(a.x, a.z) + 0.12; aimRing.visible = true; aimRing.position.set(a.x, y, a.z); aimRing.scale.setScalar(a.kind === 'attack' ? 1.25 : 1);
+    aimRing.material.color.setHex(a.kind === 'attack' ? 0xff6a5a : a.kind === 'gather' ? 0x6fe8ff : 0x7dffb0);
+    aimLine.material.color.copy(aimRing.material.color);
+    if (a.path && a.path.length > 1) { const arr = new Float32Array(a.path.length * 3); a.path.forEach((p, i) => { arr[i * 3] = p.x; arr[i * 3 + 1] = map.heightAt(p.x, p.z) + 0.3; arr[i * 3 + 2] = p.z; }); aimLine.geometry.dispose(); aimLine.geometry = new THREE.BufferGeometry(); aimLine.geometry.setAttribute('position', new THREE.BufferAttribute(arr, 3)); aimLine.visible = true; } else aimLine.visible = false;
+  };
   const hand = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color: 0x9dffb0, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false })); hand.visible = false; hand.renderOrder = 9; overlayGroup.add(hand);
   V.setBrush = (p, r) => { if (!p) { hand.visible = false; return; } hand.visible = true; hand.position.set(p.x, p.y, p.z); hand.scale.setScalar(r); };
 
@@ -422,6 +431,7 @@ export function createView({ scene, S, renderer, quality = 'high' }) {
     return null;
   }
   const sphereT = (o, d, c, r) => { const mx = o.x - c.x, my = o.y - c.y, mz = o.z - c.z, b = mx * d.x + my * d.y + mz * d.z, cc = mx * mx + my * my + mz * mz - r * r; if (cc > 0 && b > 0) return null; const disc = b * b - cc; if (disc < 0) return null; const t = -b - Math.sqrt(disc); return t < 0 ? 0 : t; };
+  const boxT = (o, d, x0, y0, z0, x1, y1, z1) => { let tn = 0, tf = 1e9; for (const [oo, dd, a, b] of [[o.x, d.x, x0, x1], [o.y, d.y, y0, y1], [o.z, d.z, z0, z1]]) { if (Math.abs(dd) < 1e-9) { if (oo < a || oo > b) return null; } else { let t1 = (a - oo) / dd, t2 = (b - oo) / dd; if (t1 > t2) [t1, t2] = [t2, t1]; tn = Math.max(tn, t1); tf = Math.min(tf, t2); if (tn > tf) return null; } } return tn; };
   // pick(o, d, {team, pad}) in BOARD-LOCAL space -> {kind, t, x, z, y, ent?, node?}
   V.pick = (o, d, { team = 0, pad = 0, units = true } = {}) => {
     let best = null;
@@ -432,7 +442,7 @@ export function createView({ scene, S, renderer, quality = 'high' }) {
     }
     for (const b of S.buildings()) {
       if (b.team !== team && S.fogOn && S.vis[team][Math.floor(b.z) * N + Math.floor(b.x)] < 1) continue;
-      consider(sphereT(o, d, { x: b.x, y: b.y + 1.0, z: b.z }, b.size * 0.62 + pad), 'bld', b);
+      consider(boxT(o, d, b.cx - pad, b.y - 0.3, b.cz - pad, b.cx + b.size + pad, b.y + (b.type === 'hq' ? 3.6 : 2.2) + pad, b.cz + b.size + pad), 'bld', b);
     }
     for (const n of map.nodes) if (n.amount > 0 && (!S.fogOn || S.vis[team][Math.floor(n.z) * N + Math.floor(n.x)] >= 1)) consider(sphereT(o, d, { x: n.x, y: map.heightAt(n.x, n.z) + 0.6, z: n.z }, 0.95 + pad), 'node', null, n);
     const gt = groundT(o, d);

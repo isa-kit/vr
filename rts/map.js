@@ -2,7 +2,7 @@
 // A 56x56-cell diorama: hills, a river (deep water blocks, fords are shallow and slow), forests that block movement,
 // rocks, and crystal ("ore") nodes. Everything is a pure function of the seed (procgen/noise.js), so the simulation can run
 // headless in node and the browser alike. Cell (i,j) covers x in [i,i+1], z in [j,j+1]. Heights live on a (N+1)^2 vertex grid.
-import { makeNoise, rng } from '../procgen/noise.js?v=rts2';
+import { makeNoise, rng } from '../procgen/noise.js?v=rts3';
 
 export const N = 56;
 export const WL = 0.45;                       // water level (cell units)

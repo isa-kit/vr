@@ -1,5 +1,5 @@
 // ============================ rts/hud.js — DOM heads-up display for desktop and phone (hidden while in VR) ============================
-import { UT, BT } from './sim.js?v=rts2';
+import { UT, BT } from './sim.js?v=rts3';
 
 const CSS = `
 #rts-hud{position:fixed;inset:0;pointer-events:none;z-index:8;font:600 13px/1.25 system-ui,sans-serif;color:#eaf2ff;-webkit-user-select:none;user-select:none}

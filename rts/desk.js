@@ -2,8 +2,8 @@
 // Left-drag box select · right-click move/attack/gather · WASD/edge pan · Q/E rotate · wheel zoom · 1-9 groups (Ctrl/hold to assign)
 // Touch: tap = select / command, drag = box select, two fingers = pan + pinch zoom + twist, mini map tap = jump.
 import * as THREE from 'three';
-import { N } from './sim.js?v=rts2';
-import { CELL } from './gfx.js?v=rts2';
+import { N } from './sim.js?v=rts3';
+import { CELL } from './gfx.js?v=rts3';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function createDesk({ canvas, camera, getView, getS, C, hud, mini, isActive, isTouch, onMenu, onPause }) {

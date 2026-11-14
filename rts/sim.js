@@ -1,8 +1,8 @@
 // ============================ rts/sim.js — deterministic fixed-step RTS simulation (no THREE, no DOM) ============================
 // 20 Hz fixed step (DT = 0.05 s) decoupled from rendering; same seed + same commands => identical match.
 // Entities (units and buildings) share one id space. Teams are 0 (player) and 1 (opponent). All positions are in map cells.
-import { genMap, createNav, N, K, WL } from './map.js?v=rts2';
-import { rng } from '../procgen/noise.js?v=rts2';
+import { genMap, createNav, N, K, WL } from './map.js?v=rts3';
+import { rng } from '../procgen/noise.js?v=rts3';
 
 export { N, K, WL };
 export const DT = 0.05;

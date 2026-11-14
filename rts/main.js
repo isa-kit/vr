@@ -7,14 +7,15 @@ import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, 
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { createSim, DT, UT, BT, N } from './sim.js?v=rts2';
-import { createAI } from './ai.js?v=rts2';
-import { createView, CELL } from './gfx.js?v=rts2';
-import { createMini } from './mini.js?v=rts2';
-import { createCtrl } from './ctrl.js?v=rts2';
-import { createHud } from './hud.js?v=rts2';
-import { createDesk } from './desk.js?v=rts2';
-import { createSfx } from './sfx.js?v=rts2';
+import { createSim, DT, UT, BT, N } from './sim.js?v=rts3';
+import { createAI } from './ai.js?v=rts3';
+import { createView, CELL } from './gfx.js?v=rts3';
+import { createMini } from './mini.js?v=rts3';
+import { createCtrl } from './ctrl.js?v=rts3';
+import { createHud } from './hud.js?v=rts3';
+import { createDesk } from './desk.js?v=rts3';
+import { createSfx } from './sfx.js?v=rts3';
+import { createVR } from './vr.js?v=rts3';
 
 const KEY = 'oortia-rts-v1';
 const $ = (id) => document.getElementById(id);
@@ -26,7 +27,7 @@ const P = { diff: 'normal', sound: true, selMode: 'box', miniMode: 'send', ...JS
 const saveP = () => { try { localStorage.setItem(KEY, JSON.stringify({ diff: P.diff, sound: P.sound, selMode: P.selMode, miniMode: P.miniMode })); } catch (e) { /* private mode */ } };
 
 const G = { S: null, view: null, mini: null, ai: null, phase: 'title', paused: false, tutorial: null, seed: 7, acc: 0, over: false };
-let renderer, scene, camera, dolly, fx, menu, comfort, touch, caps, sfx, C, hud, desk, floor, stand, clock = new THREE.Clock(), xr = false;
+let renderer, scene, camera, dolly, fx, menu, comfort, touch, caps, sfx, C, hud, desk, vr, floor, stand, clock = new THREE.Clock(), xr = false;
 const T = { x: 0, y: 0.85, z: -2.1, yaw: 0, scale: 1 };          // table placement (world metres); scale steps are faded, never smooth
 const SCALE_STEPS = [0.5, 1, 1.6, 2.5, 4, 8];
 
@@ -51,7 +52,7 @@ async function init() {
   hud = createHud({ C, mini: miniProxy, getS: () => G.S, touchDevice: touch.isTouch, onAction: (a) => { if (a === 'pause') togglePause(); } });
   desk = createDesk({ canvas: renderer.domElement, camera, getView: () => G.view, getS: () => G.S, C, hud, mini: () => G.mini, isActive: () => G.phase === 'play' && !xr && !G.paused, isTouch: touch.isTouch, onMenu: () => menu.toggle(), onPause: togglePause });
   C.onCenter = (x, z) => { if (xr) vrJump(x, z); else desk.center(x, z); };
-  C.onToast = (t, k) => hud.toast(t, k);
+  C.onToast = (t, k) => { hud.toast(t, k); if (vr) vr.toast(t, k); };
 
   comfort = createComfort({ renderer, scene, camera, dolly, onQuality: (q) => { if (G.view) G.view.setQuality(q); } });
   comfort.paused = false;
@@ -61,13 +62,14 @@ async function init() {
     rows: menuRows(),
     sound: { get: () => P.sound, set: (v) => { P.sound = v; sfx.set(v); saveP(); } },
     fade: comfort.fade,
-    setBackdrop: (v) => { floor.visible = v; if (G.view) G.view.root.visible = v; scene.background = v ? new THREE.Color(0x8fb2d8) : null; },
+    setBackdrop: (v) => { floor.visible = v && !(xr && T.scale >= 4); if (G.view) G.view.root.visible = v; scene.background = v ? new THREE.Color(0x8fb2d8) : null; },
     onBeforeEnter: () => sfx.ensure(),
     onSessionStart: () => { xr = true; hud.setVR(true); document.body.classList.add('rts-vr'); onXRStart(); },
     onSessionEnd: () => { xr = false; hud.setVR(false); document.body.classList.remove('rts-vr'); onXREnd(); },
     quitUrl: '../',
   });
   comfort.attachMenu(menu);
+  vr = createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView: () => G.view, getS: () => G.S, getMini: () => G.mini, T, SCALE_STEPS, placeBoard, isXR: () => xr, G, onReady: () => { menu.refresh(); if (G.screenSpec) showScreen(G.screenSpec); } });
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
   addEventListener('pointerdown', () => sfx.ensure(), { once: true });
   addEventListener('keydown', () => sfx.ensure(), { once: true });
@@ -75,7 +77,7 @@ async function init() {
   newMatch({ idle: true, diff: P.diff });
   showTitle();
   renderer.setAnimationLoop(frame);
-  if (location.hash === '#debug') Object.assign(window, { G, C, THREE, desk, hud, T });
+  if (location.hash === '#debug') Object.assign(window, { G, C, THREE, desk, hud, T, __vr: { vr, menu, camera, dolly, renderer, tableStep, setXR: (v) => { xr = v; document.body.classList.toggle('rts-vr', v); v ? onXRStart() : onXREnd(); } } });
 }
 
 // ---------------------------------------------------------------- room: floor, pedestal
@@ -92,6 +94,7 @@ function buildRoom() {
 function placeBoard() {
   if (!G.view) return;
   G.view.setBoard(new THREE.Vector3(T.x, T.y, T.z), T.yaw, T.scale);
+  floor.visible = !(xr && T.scale >= 4);
   stand.position.set(T.x, T.y / 2 - 0.1, T.z); stand.scale.set(1, (T.y + 0.0) / 0.8, 1); stand.visible = T.scale <= 1.7;
   stand.scale.set(1.0, 1, 1); stand.position.y = (T.y - 0.5) / 2; stand.scale.y = (T.y - 0.5) / 0.8;
 }
@@ -110,7 +113,7 @@ function newMatch({ idle = false, diff = P.diff, tutorial = false, seed = null }
   placeBoard();
   desk.frame(0); desk.apply();
   G.phase = idle ? 'title' : 'play';
-  if (!idle) hud.screen(null);
+  if (!idle) showScreen(null);
   if (!idle && !tutorial) { const n = S.nearestNode(S.startPos(0).x, S.startPos(0).z); if (n) S.cmd(0, { t: 'gather', ids: S.units(0).map((u) => u.id), node: n.id }); }
   if (G.tutorialHook) G.tutorialHook(tutorial);
   S.updateVision();
@@ -119,28 +122,30 @@ function skirmishSquad(S) {          // used while no AI: a defending enemy squa
   const h = S.get(S.team[1].hq);
   [['infantry', -4, 5], ['infantry', -2.8, 5.4], ['infantry', -1.5, 5.6], ['ranged', -3.4, 6.6], ['ranged', -2, 6.8], ['scout', 0, 6]].forEach(([t, dx, dz]) => S.spawnUnit(1, t, h.x + dx, h.z + dz));
 }
-function togglePause() { if (G.phase !== 'play') return; G.paused = !G.paused; if (G.paused) showPause(); else hud.screen(null); menu.refresh(); }
+function togglePause() { if (G.phase !== 'play') return; G.paused = !G.paused; if (G.paused) showPause(); else showScreen(null); menu.refresh(); }
 function showTitle() {
   G.phase = 'title';
-  hud.screen({
+  showScreen({
     title: 'Tabletop Command', lines: ['A real-time strategy game played on a table. In VR you reach into the diorama; on desktop and phone it is a classic RTS.', 'Gather crystals, build an army, destroy the red Citadel.'],
     html: `<div class="row">${['easy', 'normal', 'hard'].map((d) => `<button data-diff="${d}" class="${P.diff === d ? 'on' : ''}">${d[0].toUpperCase() + d.slice(1)}</button>`).join('')}</div>
       <ul><li><b>Desktop</b>: left-drag box select · right-click move / attack / gather · WASD pan · wheel zoom · Q/E rotate · 1-9 groups</li>
       <li><b>Phone</b>: tap to select &amp; command · drag a box · two fingers pan, pinch, twist · tap the mini map</li>
       <li><b>VR</b>: Enter VR (top right), clear about 2 m of floor, stand at the table edge</li></ul>`,
     buttons: [{ text: 'Start match', big: true, action: () => newMatch({ diff: P.diff }) }].concat(FEAT.tutorial ? [{ text: 'Tutorial', big: true, action: () => startTutorial() }] : []),
+    vrRows: [['easy', 'normal', 'hard'].map((d) => ({ text: d[0].toUpperCase() + d.slice(1), on: P.diff === d, action: () => { P.diff = d; saveP(); showTitle(); } })), [{ text: 'Start match', big: true, action: () => newMatch({ diff: P.diff }) }].concat(FEAT.tutorial ? [{ text: 'Tutorial', action: () => startTutorial() }] : [])],
     foot: 'Menu (☰) has pause, difficulty, formations, table controls and comfort settings.',
   });
   document.querySelectorAll('#rts-screen [data-diff]').forEach((b) => b.addEventListener('click', () => { P.diff = b.dataset.diff; saveP(); showTitle(); menu.refresh(); }));
 }
 function showPause() {
-  hud.screen({ title: 'Paused', lines: ['Everything is frozen.'], buttons: [{ text: 'Resume', big: true, action: togglePause }, { text: 'Restart', action: () => newMatch({ diff: P.diff }) }, { text: 'Main menu', action: () => { newMatch({ idle: true }); showTitle(); } }] });
+  showScreen({ title: 'Paused', lines: ['Everything is frozen.'], buttons: [{ text: 'Resume', big: true, action: togglePause }, { text: 'Restart', action: () => newMatch({ diff: P.diff }) }, { text: 'Main menu', action: () => { newMatch({ idle: true }); showTitle(); } }] });
 }
 function showOver() {
   const S = G.S, won = S.winner === 0, t = S.team[0], m = Math.floor(S.time / 60), s = String(Math.floor(S.time % 60)).padStart(2, '0');
   won ? sfx.win() : sfx.lose();
-  hud.screen({ title: won ? 'Victory' : 'Defeat', lines: [won ? 'The red Citadel has fallen.' : 'Your Citadel has fallen.', `Time ${m}:${s} · Enemy units defeated ${t.kills} · Units lost ${t.lost} · Ore gathered ${Math.floor(t.mined)}`], buttons: [{ text: 'Play again', big: true, action: () => newMatch({ diff: P.diff }) }, { text: 'Main menu', action: () => { newMatch({ idle: true }); showTitle(); } }] });
+  showScreen({ title: won ? 'Victory' : 'Defeat', lines: [won ? 'The red Citadel has fallen.' : 'Your Citadel has fallen.', `Time ${m}:${s} · Enemy units defeated ${t.kills} · Units lost ${t.lost} · Ore gathered ${Math.floor(t.mined)}`], buttons: [{ text: 'Play again', big: true, action: () => newMatch({ diff: P.diff }) }, { text: 'Main menu', action: () => { newMatch({ idle: true }); showTitle(); } }] });
 }
+function showScreen(spec) { G.screenSpec = spec; hud.screen(spec); if (vr) vr.showSpec(spec); }
 function startTutorial() { newMatch({ tutorial: true }); }
 
 // ---------------------------------------------------------------- menu rows
@@ -160,6 +165,7 @@ function menuRows() {
     { cells: [{ text: 'Rider', action: () => C.train('scout') }, { text: 'Catapult', action: () => C.train('siege') }] },
     { cells: [{ text: 'Build Depot', action: () => C.beginBuild('depot') }, { text: 'Build Barracks', action: () => C.beginBuild('barracks') }] },
     { label: 'Select (VR)', visible: inXR, cells: [['Box', 'box'], ['Lasso', 'lasso']].map(([t, v]) => ({ text: t, active: () => C.selMode === v, action: () => { C.selMode = v; P.selMode = v; saveP(); } })) },
+    { label: 'Map hand (VR)', visible: inXR, cells: [['Left', 'left'], ['Right', 'right']].map(([t, v]) => ({ text: t, active: () => vr.hand === v, action: () => { vr.hand = v; } })) },
     { label: 'Map click (VR)', visible: inXR, cells: [['Send units', 'send'], ['Jump view', 'view']].map(([t, v]) => ({ text: t, active: () => C.miniMode === v, action: () => { C.miniMode = v; P.miniMode = v; saveP(); } })) },
     sectionRow('Table'),
     { label: 'Rotate', visible: inXR, cells: [{ text: '◀ 45°', action: () => tableStep('rot', -1) }, { text: '45° ▶', action: () => tableStep('rot', 1) }] },
@@ -175,22 +181,22 @@ function tableStep(kind, dir) {
   const apply = () => {
     if (kind === 'rot') T.yaw += dir * Math.PI / 4;
     else if (kind === 'h') T.y = clamp(T.y + dir * 0.05, 0.4, 1.3);
-    else if (kind === 's') { const i = SCALE_STEPS.indexOf(T.scale); T.scale = SCALE_STEPS[clamp((i < 0 ? 1 : i) + dir, 0, SCALE_STEPS.length - 1)]; }
-    else if (kind === 'home') { T.x = 0; T.z = -2.1 * Math.max(1, T.scale * 0.8); T.yaw = 0; }
-    placeBoard();
+    else if (kind === 'home') { T.x = 0; T.z = -2.1; T.yaw = 0; T.y = T.scale >= 4 ? 0 : 0.85; if (T.scale > 1) { const c = vr.viewCentre ? null : null; } }
+    placeBoard(); vr.placeStrip();
   };
+  if (kind === 's') { vr.scaleStep(dir); return; }
   if (renderer.xr.isPresenting) comfort.fade(apply); else apply();
 }
-function vrJump(x, z) { /* implemented with the VR layer */ }
-function onXRStart() { sfx.ensure(); placeBoard(); }
-function onXREnd() { placeBoard(); }
+function vrJump(x, z) { vr.jumpTo(x, z); }
+function onXRStart() { sfx.ensure(); T.x = 0; T.z = -2.1; T.y = 0.85; T.scale = 1; T.yaw = 0; placeBoard(); vr.enter(); }
+function onXREnd() { vr.exit(); T.x = 0; T.z = -2.1; T.y = 0.85; T.scale = 1; T.yaw = 0; placeBoard(); if (G.screenSpec) hud.screen(G.screenSpec); }
 
 // ---------------------------------------------------------------- frame
 const evBuf = [];
 function frame() {
   const dt = Math.min(0.1, clock.getDelta()), S = G.S;
   if (!S) return;
-  const running = G.phase === 'play' && !G.paused && !comfort.paused;
+  const running = G.phase === 'play' && !G.paused && !comfort.paused && (!xr || vr.ready);
   if (running) {
     G.acc += dt;
     let steps = 0;
@@ -200,7 +206,7 @@ function frame() {
   if (evBuf.length) { C.handleEvents(evBuf); G.view.handleEvents(evBuf, { calm: comfort.reducedMotion }); evBuf.length = 0; }
   if (S.over && G.phase === 'play') { G.phase = 'over'; showOver(); }
   C.prune();
-  if (!xr) { desk.update(dt); desk.apply(); }
+  if (!xr) { desk.update(dt); desk.apply(); } else vr.update(dt);
   G.view.update(dt, performance.now() / 1000, camera, { selected: C.sel, team: 0, calm: G.paused || comfort.paused || comfort.reducedMotion, hoverId: C.hoverId });
   if (!xr) hud.update({ paused: G.paused, viewPoly: G.phase === 'play' ? desk.viewPoly() : null });
   if (menu) menu.update();

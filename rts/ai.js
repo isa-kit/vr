@@ -1,7 +1,7 @@
 // ============================ rts/ai.js — scripted opponent (gathers, expands, builds an army, attacks in waves) ============================
 // Plays through exactly the same command API as the player (S.cmd), once per "think" interval of simulation time.
 // It does not read fog of war except for knowing where the enemy base started (like most RTS skirmish AIs).
-import { UT, BT, DIFF } from './sim.js?v=rts2';
+import { UT, BT, DIFF } from './sim.js?v=rts3';
 
 export function createAI(S, team, diff = 'normal') {
   const D = DIFF[diff] || DIFF.normal, me = S.team[team], foe = 1 - team;
