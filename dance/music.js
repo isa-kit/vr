@@ -41,7 +41,7 @@ const TRACKS = {
 
 export function createMusic() {
   let ctx = null, master = null, bus = null, delay = null, noiseBuf = null, volume = 0.7, sound = true;
-  let useCtx = false, fb = 0, run = null, timer = null, paused = false, offsetMs = 0;
+  let REC = null, useCtx = false, fb = 0, run = null, timer = null, paused = false, offsetMs = 0;
   const M = { forceFallback: false, timeScale: 1, ctx: () => ctx, offsetMs: (v) => { if (v !== undefined) offsetMs = v; return offsetMs; }, playing: () => !!run };
 
   M.ensure = function ensure() {
@@ -72,41 +72,41 @@ export function createMusic() {
   const env = (g, t, a, peak, d) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); };
   function osc(type, f, t, dur, g) { const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.connect(g); o.start(t); o.stop(t + dur); return o; }
   function noise(t, dur, g) { const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.connect(g); s.start(t, Math.random() * 0.5, dur); }
-  function kick(t, v = 1) {
+  function kick(t, v = 1) { if (REC) { REC.push(['kick', t, 0.3, 0, v]); return; }
     const g = ctx.createGain(); g.connect(bus); const o = ctx.createOscillator(); o.type = 'sine';
     o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.13);
     env(g, t, 0.002, 0.95 * v, 0.28); o.connect(g); o.start(t); o.stop(t + 0.32);
   }
-  function snare(t, v = 1) {
+  function snare(t, v = 1) { if (REC) { REC.push(['snare', t, 0.2, 0, v]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 0.7; const g = ctx.createGain(); g.connect(bus); f.connect(g);
     env(g, t, 0.002, 0.34 * v, 0.17); noise(t, 0.22, f);
     const g2 = ctx.createGain(); g2.connect(bus); env(g2, t, 0.002, 0.2 * v, 0.1); osc('triangle', 185, t, 0.14, g2);
   }
-  function hat(t, v = 1, open = false) {
+  function hat(t, v = 1, open = false) { if (REC) { REC.push(['hat', t, open ? 0.25 : 0.08, 0, v, open ? 'open' : 'closed']); return; }
     const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7200; const g = ctx.createGain(); g.connect(bus); f.connect(g);
     env(g, t, 0.001, 0.07 * v, open ? 0.2 : 0.045); noise(t, open ? 0.25 : 0.08, f);
   }
-  function clap(t, v = 1) {
+  function clap(t, v = 1) { if (REC) { REC.push(['clap', t, 0.2, 0, v]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1300; f.Q.value = 1.2; const g = ctx.createGain(); g.connect(bus); f.connect(g);
     for (let i = 0; i < 3; i++) { g.gain.setValueAtTime(0.0001, t + i * 0.011); g.gain.exponentialRampToValueAtTime(0.22 * v, t + i * 0.011 + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.011 + 0.05); }
     g.gain.setValueAtTime(0.0001, t + 0.033); g.gain.exponentialRampToValueAtTime(0.2 * v, t + 0.036); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
     noise(t, 0.22, f);
   }
-  function bass(t, midi, dur, v = 1) {
+  function bass(t, midi, dur, v = 1) { if (REC) { REC.push(['bass', t, dur, midi, v]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 3; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(260, t + dur);
     const g = ctx.createGain(); f.connect(g); g.connect(bus); env(g, t, 0.006, 0.42 * v, dur);
     osc('sawtooth', mtof(midi), t, dur + 0.05, f); osc('sine', mtof(midi - 12), t, dur + 0.05, f);
   }
-  function chord(t, midis, dur, type, v = 1) {
+  function chord(t, midis, dur, type, v = 1) { if (REC) { REC.push(['chord', t, dur, midis, v, type]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = type === 'hard' ? 1900 : 1300; const g = ctx.createGain(); f.connect(g); g.connect(bus);
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.085 * v, t + 0.04); g.gain.setValueAtTime(0.085 * v, t + dur * 0.8); g.gain.linearRampToValueAtTime(0.0001, t + dur);
     for (const m of midis) for (const det of [-6, 6]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = det; o.connect(f); o.start(t); o.stop(t + dur + 0.05); }
   }
-  function pluck(t, midi, v = 1) {
+  function pluck(t, midi, v = 1) { if (REC) { REC.push(['pluck', t, 0.2, midi, v]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(3600, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.16); const g = ctx.createGain(); f.connect(g); g.connect(bus);
     env(g, t, 0.003, 0.09 * v, 0.17); osc('square', mtof(midi), t, 0.2, f);
   }
-  function lead(t, midi, dur, wave, v = 1) {
+  function lead(t, midi, dur, wave, v = 1) { if (REC) { REC.push(['lead', t, dur, midi, v, wave]); return; }
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = wave === 'sawtooth' ? 2800 : 3600; const g = ctx.createGain(); f.connect(g); g.connect(bus);
     const send = ctx.createGain(); send.gain.value = 0.32; g.connect(send); send.connect(delay);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.13 * v, t + 0.015); g.gain.setValueAtTime(0.1 * v, t + Math.max(0.02, dur - 0.06)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
@@ -122,6 +122,67 @@ export function createMusic() {
     if (grade === 'perfect') { const g2 = ctx.createGain(); g2.connect(bus); env(g2, t + 0.05, 0.004, 0.06, 0.25); osc('sine', mtof(base + 7), t + 0.05, 0.3, g2); }
   };
   function click(t, strong) { const g = ctx.createGain(); g.connect(bus); env(g, t, 0.001, strong ? 0.25 : 0.14, 0.06); osc('square', strong ? 1500 : 1000, t, 0.08, g); }
+
+
+  // ---------- songs: one small interface (see SONG-FORMAT.md) ----------
+  // song = { format:1, id, title, bpm, meter:[3|4,4], tempoFit:{min,max}, length (beats), instruments:{id:{preset|synth|drum}}, sections:[{name,from,to}], tracks:[{instrument, events:[[beat,dur,pitch,vel,param?]]}] }
+  const TPB = 48;                                                      // ticks per beat for scheduled events (quantisation 1/48 beat)
+  function bakeWith(fn, ticks) { REC = []; try { fn(); } finally { var ev = REC; REC = null; } return ev; }
+  function toSong(ev, meta) {
+    const by = {};
+    for (const [inst, t, dur, pitch, vel, p] of ev) (by[inst] = by[inst] || []).push([Math.round(t * 1000) / 1000, Math.round(dur * 1000) / 1000, pitch, Math.round(vel * 100) / 100, ...(p === undefined ? [] : [p])]);
+    const instruments = {}, tracks = [];
+    for (const k of Object.keys(by)) { instruments[k] = { preset: k }; tracks.push({ instrument: k, events: by[k].sort((a, b) => a[0] - b[0]) }); }
+    return { format: 1, author: 'built-in', ...meta, instruments, tracks };
+  }
+  // built-in solo track → song object
+  M.bakeSolo = function bakeSolo(trackId, bars, meta) {
+    const tr = TRACKS[trackId]; tr.leadNotes = tr.leadNotes || new Map(tr.lead.map(([s, n, d]) => [s, [n, d]]));
+    const R = { id: trackId, track: tr, bpm: 60, stepDur: 0.25, totalBeats: (bars - 1) * 4 };
+    const ev = bakeWith(() => { for (let s = 0; s <= bars * 16; s++) playStep(R, s, s * 0.25); });
+    const sections = tr.sections.map(([a, b, l]) => ({ name: l.split(' ').length > 5 ? 'full' : l.split(' ').includes('lead') ? 'lead' : 'groove', from: a * 4, to: Math.min(b, bars) * 4, layers: l.split(' ') })).filter((x) => x.to > x.from);
+    return toSong(ev, { ...meta, bpm: meta.bpm, meter: [4, 4], length: bars * 4, loop: false, sections });
+  };
+  // built-in style feel → song object (8 bars so the 4-bar chord loop repeats)
+  M.bakeFeel = function bakeFeel(feel, meter, meta) {
+    const R = { feel, bpm: 60, meter, click: false, vol: 1 }, bars = 8;
+    const ev = bakeWith(() => { for (let s = 0; s < bars * meter * 12; s++) playFeel(R, s, s / 12); });
+    return toSong(ev, { ...meta, meter: [meter, 4], length: bars * meter, loop: true, sections: [{ name: 'groove', from: 0, to: bars * meter }] });
+  };
+  // generic synth instrument from numbers
+  function synthVoice(t, inst, midi, dur, v) {
+    const S = inst.synth, e = S.env || { a: 0.01, d: 0.1, s: 0.6, r: 0.1 }, g = ctx.createGain(); g.connect(bus);
+    const peak = (S.gain ?? 0.15) * v, f = ctx.createBiquadFilter(); f.type = (S.filter && S.filter.type) || 'lowpass'; f.Q.value = (S.filter && S.filter.q) || 0.7;
+    const base = (S.filter && S.filter.freq) || 3000, amt = (S.filter && S.filter.envAmt) || 0;
+    f.frequency.setValueAtTime(base * (1 + amt), t); f.frequency.exponentialRampToValueAtTime(Math.max(60, base), t + e.a + e.d + 0.001); f.connect(g);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + e.a); g.gain.linearRampToValueAtTime(peak * e.s, t + e.a + e.d); g.gain.setValueAtTime(peak * e.s, t + Math.max(e.a + e.d, dur)); g.gain.linearRampToValueAtTime(0.0001, t + Math.max(e.a + e.d, dur) + e.r);
+    for (const o of S.osc || [{ type: 'sawtooth' }]) { const os = ctx.createOscillator(); os.type = o.type || 'sawtooth'; os.frequency.value = mtof(midi + (o.semi || 0)); os.detune.value = o.detune || 0; const og = ctx.createGain(); og.gain.value = o.gain ?? 1; os.connect(og); og.connect(f); os.start(t); os.stop(t + Math.max(e.a + e.d, dur) + e.r + 0.05); }
+    if (S.noise) { const n = ctx.createGain(); n.gain.value = S.noise; n.connect(f); noise(t, dur + e.r, n); }
+  }
+  function fireEvent(inst, ev, t, bd) {            // ev = [beat, dur, pitch, vel, param?]; durations are in beats
+    const [, dur, pitch, vel, p] = ev, d = dur * bd, v = vel ?? 1;
+    if (inst.synth) { for (const n of Array.isArray(pitch) ? pitch : [pitch]) synthVoice(t, inst, n, d, v); return; }
+    switch (inst.preset) {
+      case 'kick': return kick(t, v); case 'snare': return snare(t, v); case 'hat': return hat(t, v, p === 'open'); case 'clap': return clap(t, v);
+      case 'bass': return bass(t, pitch, d, v); case 'chord': return chord(t, pitch, d, p, v); case 'pluck': return pluck(t, pitch, v);
+      case 'lead': return lead(t, pitch, d, p || 'triangle', v); case 'perc': return perc(t, pitch, v, d, p || 'square');
+    }
+  }
+  // load a song object and schedule it on the beat clock. opts: { bpm, countIn, loop:{start,len}|null (beats; practice loops), wrap, beatLoop (len of the game's beat loop) }
+  M.startSong = function startSong(song, opts = {}) {
+    M.stop();
+    const bpm = opts.bpm || song.bpm || 100, L = song.length || 16, ok = !M.forceFallback && M.ensure() && ctx.state === 'running'; useCtx = !!ok;
+    const buckets = new Map();
+    for (const tr of song.tracks) { const inst = song.instruments[tr.instrument]; if (!inst) continue; for (const ev of tr.events) { const k = Math.round(ev[0] * TPB); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push([inst, ev]); } }
+    const countIn = opts.countIn ?? (song.meter ? song.meter[0] : 4), lead = 0.25, per = TPB * 1;
+    const loop = opts.loop || (opts.beatLoop ? { start: 0, len: opts.beatLoop } : null);
+    run = { song, buckets, L, stepDur: 60 / bpm / TPB, bpm, countIn, step: -countIn * TPB, loop, wrap: !opts.loop && !!opts.wrap, gameLoop: opts.loop, meter: song.meter ? song.meter[0] : 4, click: !!opts.click, countOnly: !!opts.countOnly, style: false, id: song.id, t0: 0, nextT: 0 };
+    if (useCtx) { run.nextT = ctx.currentTime + lead; run.t0 = run.nextT + countIn * 60 / bpm; } else { fb = -lead; run.t0 = countIn * 60 / bpm; }
+    paused = false; if (useCtx) { schedule(); timer = setInterval(schedule, 40); }
+    return run;
+  };
+  M.section = function section() { if (!run || !run.song) return null; const b = ((M._virtual || 0) % run.L + run.L) % run.L; return (run.song.sections || []).find((x) => b >= x.from && b < x.to) || null; };
+  M.songInfo = () => (run && run.song ? { id: run.song.id, title: run.song.title, bpm: run.bpm, length: run.L } : null);
 
   // ---------- scheduler ----------
   function sectionLayers(track, bar) { for (const [a, b, l] of track.sections) if (bar >= a && bar < b) return l.split(' '); return []; }
@@ -148,6 +209,17 @@ export function createMusic() {
     const R = run, horizon = ctx.currentTime + 0.25;
     while (R.nextT < horizon) {
       const s = R.step, t = Math.max(R.nextT, ctx.currentTime + 0.005);
+      if (R.song) {
+        if (s < 0) { if (s % TPB === 0) click(t, s === -R.countIn * TPB || (-s / TPB) % R.meter === 0); }
+        else {
+          if (R.click && s % TPB === 0) click(t, (s / TPB) % R.meter === 0);
+          if (!R.countOnly) {
+            let k = s; if (R.gameLoop) k = R.gameLoop.start * TPB + (s % (R.gameLoop.len * TPB)); else if (R.wrap) k = s % (R.L * TPB);
+            const list = R.buckets.get(k); if (list) { const bd = 60 / R.bpm; for (const [inst, ev] of list) fireEvent(inst, ev, t, bd); }
+          }
+        }
+        R.step++; R.nextT += R.stepDur; continue;
+      }
       if (s < 0) { const per = R.style ? 12 : 4; if (s % per === 0) click(t, s === -R.countIn * per || (R.style && (-s / 12) % R.meter === 0)); }
       else if (R.style) playFeel(R, s, t);
       else if (!R.style && !R.loop && R.totalBeats && s > R.totalBeats * 4) { /* finished */ }
@@ -158,7 +230,7 @@ export function createMusic() {
 
 
   // ---------- style loops for the dance school (12 ticks per beat; feel templates) ----------
-  function perc(t, f, v = 1, d = 0.05, type = 'square') { const g = ctx.createGain(); g.connect(bus); env(g, t, 0.001, 0.12 * v, d); osc(type, f, t, d + 0.02, g); }
+  function perc(t, f, v = 1, d = 0.05, type = 'square') { if (REC) { REC.push(['perc', t, d, f, v, type]); return; } const g = ctx.createGain(); g.connect(bus); env(g, t, 0.001, 0.12 * v, d); osc(type, f, t, d + 0.02, g); }
   const PROG = {
     swing: [[45, 'min'], [45, 'min'], [50, 'min'], [45, 'min']], ecs: [[48, 'maj'], [48, 'maj'], [53, 'maj'], [55, 'maj']],
     salsa: [[50, 'min'], [43, 'maj'], [48, 'maj'], [45, 'maj']], bachata: [[45, 'min'], [41, 'maj'], [48, 'maj'], [43, 'maj']],

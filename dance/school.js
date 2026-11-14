@@ -2,9 +2,9 @@
 // Style → Pattern → lesson steps: Watch · Footwork · Hands · Practice · Dance · Chain.
 // Patterns are JSON files in ./patterns (see PATTERNS.md); couple.js turns them into two moving bodies.
 // Only head + two hands are tracked, so scoring covers timing, hand path / connection, and body travel / turn. Footwork is taught, not scored.
-import { createFigure } from './figure.js?v=20261117d';
-import * as CP from './couple.js?v=20261117d';
-import * as G from './game.js?v=20261117d';
+import { createFigure } from './figure.js?v=20261118b';
+import * as CP from './couple.js?v=20261118b';
+import * as G from './game.js?v=20261118b';
 
 const STEPS = [['watch', 'Watch'], ['foot', 'Footwork'], ['hands', 'Hands'], ['practice', 'Practice'], ['dance', 'Dance'], ['chain', 'Chain']];
 const STEP_HELP = {
@@ -20,21 +20,29 @@ const SPEAK = { '&': 'and', S: 'slow', Q: 'quick', '4-1': 'four one' };
 
 export function createSchool(env) {
   const { THREE, scene, camera, dolly, music, ui, stage } = env;
-  const H = { active: false, styles: null, styleId: null, pattern: null, pageNo: 0, step: 'watch', role: 'lead', tempo: 1, view: 'front', spoken: true, clickOnly: false, playing: false, paused: false,
+  const H = { songId: null, active: false, styles: null, styleId: null, pattern: null, pageNo: 0, step: 'watch', role: 'lead', tempo: 1, view: 'front', spoken: true, clickOnly: false, playing: false, paused: false,
     pausedByMenu: false, C: null, xf: { rot: 0, ox: 0, oz: -1.6 }, base: null, swap: false, events: null, scorer: null, sampler: null, lastCount: -1, lastK: 0, chainList: [], runs: 0, hit: [false, false], total: 4, results: null, hudPop: { t: -9 } };
   const cache = {};
   const V = new THREE.Vector3(), V2 = new THREE.Vector3();
 
   // ---------- data ----------
-  async function loadIndex() { if (!H.styles) { const r = await fetch(new URL('./patterns/index.json?v=20261117d', import.meta.url)); H.styles = (await r.json()).styles; } return H.styles; }
-  async function loadPattern(id) { if (!cache[id]) { const r = await fetch(new URL('./patterns/' + id + '.json?v=20261117d', import.meta.url)); cache[id] = await r.json(); } return cache[id]; }
+  async function loadIndex() { if (!H.styles) { const r = await fetch(new URL('./patterns/index.json?v=20261118b', import.meta.url)); H.styles = (await r.json()).styles; } return H.styles; }
+  async function loadPattern(id) { if (!cache[id]) { const r = await fetch(new URL('./patterns/' + id + '.json?v=20261118b', import.meta.url)); cache[id] = await r.json(); } return cache[id]; }
 
   // ---------- scene objects ----------
   const root = new THREE.Group(); root.visible = false; scene.add(root);
   const slot = new THREE.Group(); root.add(slot);                       // pattern-frame group (floor marks, footprints, trails): world = R(rot)·(x, −y) + o
-  const mkFig = (role, basic) => createFigure(THREE, { tintL: COL[role], tintR: COL[role], basic, jacket: role === 'lead' ? 0x5a3fd6 : 0xd9546e, pants: role === 'lead' ? 0x232a4d : 0x1f4a52 });
-  const figs = { lead: mkFig('lead', false), follow: mkFig('follow', false) }, mfigs = { lead: mkFig('lead', true), follow: mkFig('follow', true) };
-  for (const r of ['lead', 'follow']) { root.add(figs[r].root); stage.mirror.add(mfigs[r].root); mfigs[r].root.visible = false; }
+  const models = { ...(env.models ? env.models() : { lead: 'male', follow: 'female' }) };
+  const mkFig = (role, basic) => createFigure(THREE, { tintL: COL[role], tintR: COL[role], basic, body: models[role] });
+  const figs = {}, mfigs = {};
+  function buildFigs() {
+    for (const r of ['lead', 'follow']) {
+      if (figs[r]) { root.remove(figs[r].root); stage.mirror.remove(mfigs[r].root); }
+      figs[r] = mkFig(r, false); mfigs[r] = mkFig(r, true); root.add(figs[r].root); stage.mirror.add(mfigs[r].root);
+    }
+  }
+  buildFigs();
+  function setModel(role, body) { models[role] = body; buildFigs(); if (env.onModels) env.onModels({ ...models }); renderBar(); }
   const fp = { params: { lead: {}, follow: {} } };
   const marks = new THREE.Group(); slot.add(marks);
   const trails = new THREE.Group(); slot.add(trails);
@@ -139,7 +147,7 @@ export function createSchool(env) {
       <div class="row">${STEPS.map(([id, nm]) => btn('step:' + id, nm + (vrOnly(id) ? ' · VR' : ''), H.step === id, vrOnly(id) && !env.isXR())).join('')}</div>
       <div class="row">${btn('role:lead', 'Lead', H.role === 'lead')}${btn('role:follow', 'Follow', H.role === 'follow')}<span class="sep"></span>${[0.5, 0.75, 1].map((t) => btn('tempo:' + t, t * 100 + '%', H.tempo === t)).join('')}<span class="sep"></span>
         ${['front', 'side', 'top', 'orbit'].map((v) => btn('view:' + v, v[0].toUpperCase() + v.slice(1), H.view === v)).join('')}<span class="sep"></span>
-        ${btn('play', H.paused ? '▶ Play' : '❚❚ Pause', false)}${btn('spoken', 'Say counts', H.spoken)}${btn('click', 'Metronome only', H.clickOnly)}${btn('back', '‹ Patterns', false)}</div>
+        ${btn('model:lead', 'Lead: ' + (models.lead === 'male' ? 'Man' : 'Woman'), false)}${btn('model:follow', 'Follow: ' + (models.follow === 'male' ? 'Man' : 'Woman'), false)}${btn('song', '♪ ' + songLabel(), false)}<span class="sep"></span>${btn('play', H.paused ? '▶ Play' : '❚❚ Pause', false)}${btn('spoken', 'Say counts', H.spoken)}${btn('click', 'Metronome only', H.clickOnly)}${btn('back', '‹ Patterns', false)}</div>
       <div class="help">${STEP_HELP[H.step]}</div>`;
   }
   bar.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && !b.disabled) action(b.dataset.a); });
@@ -190,9 +198,15 @@ export function createSchool(env) {
     music.timeScale = 1;
     await music.ensure();
     const loopLen = H.step === 'chain' ? merged.beats : P.beats;
-    music.startStyle({ feel, bpm, meter, beats: loopLen, countIn: meter, click: H.clickOnly, countOnly: H.clickOnly });
+    const eligible = songChoices(); if (!eligible.find((x) => x.id === H.songId)) H.songId = null;
+    const sid = H.songId || env.lib.builtinFor('feel', feel), song = await env.lib.get(sid);
+    music.startSong(song, { bpm, countIn: meter, beatLoop: loopLen, wrap: true, click: H.clickOnly, countOnly: H.clickOnly });
     H.playing = true; H.paused = false; H.cnt = H.step === 'chain' ? 0 : P.beats;
   }
+  function songChoices() { const P = H.pattern, feel = (H.styles.find((s) => s.id === H.styleId) || {}).feel || 'swing', meter = parseInt(P.meter) || 4, b = P.tempo.default * H.tempo;
+    return env.lib.eligible({ min: P.tempo.min, max: P.tempo.max, meter }).filter((x) => x.source === 'library' || x.id === env.lib.builtinFor('feel', feel)).map((x) => ({ ...x, inRange: b >= x.tempoFit.min && b <= x.tempoFit.max })); }
+  function songLabel() { if (!H.pattern) return ''; const l = songChoices(), cur = l.find((x) => x.id === H.songId) || l[0]; return cur ? `${cur.title} · fits ${cur.tempoFit.min}–${cur.tempoFit.max} BPM` : 'none'; }
+  function cycleSong(d) { const l = songChoices(); if (!l.length) return; const i = Math.max(0, l.findIndex((x) => x.id === (H.songId || l[0].id))); H.songId = l[(i + d + l.length) % l.length].id; begin(); }
   function stopPlay() { music.stop(); H.playing = false; }
   function pause() { if (!H.playing || H.paused) return; music.pause(); H.paused = true; renderBar(); }
   function resume() { if (!H.paused) return; music.resume(); H.paused = false; renderBar(); }
@@ -214,6 +228,8 @@ export function createSchool(env) {
     else if (id.startsWith('role:')) { H.role = id.slice(5); begin(); }
     else if (id.startsWith('tempo:')) { H.tempo = parseFloat(id.slice(6)); begin(); }
     else if (id.startsWith('view:')) { H.view = id.slice(5); renderBar(); }
+    else if (id.startsWith('model:')) { const r = id.slice(6); setModel(r, models[r] === 'male' ? 'female' : 'male'); }
+    else if (id === 'song') cycleSong(1);
     else if (id === 'play') { H.paused ? resume() : pause(); }
     else if (id === 'spoken') { H.spoken = !H.spoken; renderBar(); }
     else if (id === 'click') { H.clickOnly = !H.clickOnly; begin(); }
@@ -324,12 +340,15 @@ export function createSchool(env) {
       { section: 'Dance school' },
       ...choiceGrid(STEPS.map(([id, nm]) => [nm, id]), () => H.step, (id) => { H.step = id; begin(); }, 3),
       ...choiceGrid([['Lead', 'lead'], ['Follow', 'follow']], () => H.role, (id) => { H.role = id; begin(); }, 2),
+      { label: 'Lead dancer', cells: [['Man', 'male'], ['Woman', 'female']].map(([t, v]) => ({ text: t, active: () => models.lead === v, action: () => setModel('lead', v) })) },
+      { label: 'Follow dancer', cells: [['Man', 'male'], ['Woman', 'female']].map(([t, v]) => ({ text: t, active: () => models.follow === v, action: () => setModel('follow', v) })) },
       ...choiceGrid([['50 %', 0.5], ['75 %', 0.75], ['100 %', 1]], () => H.tempo, (v) => { H.tempo = v; begin(); }, 3),
+      { label: 'Song', cells: [{ text: '◀', action: () => cycleSong(-1), tone: 'accent' }, { text: () => songLabel(), w: 4 }, { text: '▶', action: () => cycleSong(1), tone: 'accent' }] },
       toggleRow('Say counts', () => H.spoken, (v) => { H.spoken = v; }),
       toggleRow('Metronome only', () => H.clickOnly, (v) => { H.clickOnly = v; begin(); }),
       { cells: [{ text: 'Patterns', action: () => { stopPlay(); env.show(patternScreen()); }, tone: 'accent' }] },
     ], on);
   }
 
-  return { H, open, close, action, update, applyCamera, rows, hud: () => H.hud, active: () => H.active, setSampler: (f) => { H.sampler = f; }, renderBar, root, figs, scorerOf: () => H.scorer, begin, hudPop: () => H.hudPop };
+  return { H, models, setModel, open, close, action, update, applyCamera, rows, hud: () => H.hud, active: () => H.active, setSampler: (f) => { H.sampler = f; }, renderBar, root, figs, scorerOf: () => H.scorer, begin, hudPop: () => H.hudPop };
 }

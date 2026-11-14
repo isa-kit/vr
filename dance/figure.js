@@ -5,67 +5,103 @@
 // Dimensions (metres): height ≈ 1.76, arm 0.30 + 0.34, leg 0.44 + 0.43, shoulders ±0.19, hips ±0.095.
 // ====================================================================================================================
 
-export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic = false, jacket = 0x5a3fd6, pants = 0x232a4d } = {}) {
+export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic = false, body = 'male', jacket, pants } = {}) {
   const V3 = THREE.Vector3, Q = THREE.Quaternion;
+  const FEM = body === 'female';
   const root = new THREE.Group();
-  const D = { ankleY: 0.075, thigh: 0.44, shin: 0.43, pelvisY: 0.93, hipHalf: 0.095, spine: 0.46, shoulderHalf: 0.19, upper: 0.3, fore: 0.34, H: 1.76 };
+  // body parameters: everything about the build comes from these numbers
+  const B = FEM
+    ? { ankleY: 0.1, thigh: 0.42, shin: 0.41, pelvisY: 0.89, hipHalf: 0.105, spine: 0.43, shoulderHalf: 0.165, upper: 0.28, fore: 0.31, H: 1.67, arm: 0.039, leg: 0.92, neck: 0.044, head: 0.111, skin: 0xe3b090, hair: 0x4a2418, outfit: jacket ?? 0xc2395a, pants: pants ?? 0x4a2a52, shoe: 0x2a2030 }
+    : { ankleY: 0.075, thigh: 0.44, shin: 0.43, pelvisY: 0.93, hipHalf: 0.095, spine: 0.46, shoulderHalf: 0.2, upper: 0.3, fore: 0.34, H: 1.78, arm: 0.05, leg: 1, neck: 0.06, head: 0.118, skin: 0xc58a64, hair: 0x1c1410, outfit: jacket ?? 0x2a3a82, pants: pants ?? 0x1c2036, shoe: 0x15151c };
+  const D = { ankleY: B.ankleY, thigh: B.thigh, shin: B.shin, pelvisY: B.pelvisY, hipHalf: B.hipHalf, spine: B.spine, shoulderHalf: B.shoulderHalf, upper: B.upper, fore: B.fore, H: B.H };
   D.armLen = D.upper + D.fore;
 
   const mk = (color, o = {}) => basic
     ? new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(o.glow ? 1.4 : 0.55), toneMapped: false })
     : new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.55, metalness: o.metal ?? 0.05, emissive: o.glow ? color : 0x000000, emissiveIntensity: o.glow ?? 0 });
   const M = {
-    skin: mk(0xd9a07a, { rough: 0.7 }), jacket: mk(jacket, { rough: 0.5 }), jacketDark: mk(0x3a2a9a, { rough: 0.55 }), shirt: mk(0xf2eefc, { rough: 0.6 }),
-    pants: mk(pants, { rough: 0.6 }), shoe: mk(0xf6f6fb, { rough: 0.4 }), hair: mk(0x20152e, { rough: 0.45 }), hairHi: mk(0xff5aa5, { rough: 0.5, glow: 0.6 }),
-    dark: mk(0x1a1424, { rough: 0.8 }), white: mk(0xffffff, { rough: 0.3 }), mouth: mk(0xb8404f, { rough: 0.6 }),
-    glowL: mk(tintL, { glow: 2.2, rough: 0.3 }), glowR: mk(tintR, { glow: 2.2, rough: 0.3 }), sole: mk(0x66e0ff, { glow: 1.6 }), stripe: mk(0xffd24a, { glow: 1.2 }),
+    skin: mk(B.skin, { rough: 0.7 }), jacket: mk(B.outfit, { rough: 0.5 }), jacketDark: mk(new THREE.Color(B.outfit).multiplyScalar(0.7).getHex(), { rough: 0.55 }), shirt: mk(0xf4f1fa, { rough: 0.6 }),
+    pants: mk(B.pants, { rough: 0.6 }), shoe: mk(B.shoe, { rough: 0.3, metal: 0.2 }), hair: mk(B.hair, { rough: 0.45 }), hairHi: mk(FEM ? 0xd9803a : 0x4a3a2a, { rough: 0.5 }),
+    dark: mk(0x1a1424, { rough: 0.8 }), white: mk(0xffffff, { rough: 0.3 }), mouth: mk(FEM ? 0xb03050 : 0x9a5a4a, { rough: 0.6 }),
+    glowL: mk(tintL, { glow: 2.2, rough: 0.3 }), glowR: mk(tintR, { glow: 2.2, rough: 0.3 }), sole: mk(0x66e0ff, { glow: 1.6 }), stripe: mk(0xffd24a, { glow: 1.0 }),
+    tie: mk(FEM ? 0xffd24a : 0xb02a3a, { rough: 0.5, glow: FEM ? 0.8 : 0 }),
   };
   const add = (parent, geo, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
   const sph = (r, w = 20, h = 14) => new THREE.SphereGeometry(r, w, h);
 
   // ---------- torso (a real group: pelvis pivot, tilted by lean / twist; head hangs off it) ----------
   const torso = new THREE.Group(); root.add(torso);
-  { const p = add(torso, sph(1, 22, 14), M.pants, 0, -0.02, 0); p.scale.set(0.175, 0.115, 0.12);
-    const w = add(torso, new THREE.CylinderGeometry(0.125, 0.15, 0.24, 18), M.jacketDark, 0, 0.14, 0); w.scale.z = 0.78;
-    const belt = add(torso, new THREE.TorusGeometry(0.14, 0.014, 8, 28), M.stripe, 0, 0.05, 0); belt.rotation.x = Math.PI / 2; belt.scale.set(1, 0.8, 1);
-    const c = add(torso, sph(1, 24, 16), M.jacket, 0, 0.34, 0); c.scale.set(0.225, 0.2, 0.13);
-    const zip = add(torso, new THREE.BoxGeometry(0.012, 0.36, 0.01), M.stripe, 0, 0.27, 0.127);
-    add(torso, new THREE.CylinderGeometry(0.052, 0.062, 0.1, 12), M.skin, 0, 0.53, 0);
-    for (const s of [-1, 1]) add(torso, sph(0.07), M.jacket, s * D.shoulderHalf, D.spine, 0);
-    add(torso, new THREE.TorusGeometry(0.075, 0.012, 8, 20), M.shirt, 0, 0.5, 0.012).rotation.x = Math.PI / 2 * 0.9;
+  if (!FEM) {   // male: tailored jacket, white shirt, tie, trousers
+    add(torso, sph(1, 22, 14), M.pants, 0, -0.02, 0).scale.set(0.185, 0.115, 0.125);
+    const w = add(torso, new THREE.CylinderGeometry(0.135, 0.16, 0.24, 18), M.shirt, 0, 0.14, 0); w.scale.z = 0.78;
+    const belt = add(torso, new THREE.TorusGeometry(0.15, 0.013, 8, 28), M.dark, 0, 0.05, 0); belt.rotation.x = Math.PI / 2; belt.scale.set(1, 0.8, 1);
+    add(torso, sph(1, 24, 16), M.jacket, 0, 0.34, 0).scale.set(0.245, 0.215, 0.135);
+    add(torso, new THREE.BoxGeometry(0.1, 0.34, 0.01), M.shirt, 0, 0.3, 0.131);            // shirt front in the jacket opening
+    add(torso, new THREE.BoxGeometry(0.026, 0.24, 0.012), M.tie, 0, 0.3, 0.138);            // tie
+    add(torso, new THREE.CylinderGeometry(B.neck, B.neck * 1.12, 0.1, 12), M.skin, 0, 0.54, 0);
+    for (const s of [-1, 1]) add(torso, sph(0.076), M.jacket, s * D.shoulderHalf, D.spine, 0);
+    add(torso, new THREE.TorusGeometry(0.08, 0.014, 8, 20), M.shirt, 0, 0.51, 0.012).rotation.x = Math.PI / 2 * 0.9;
+  } else {      // female: fitted bodice, flared knee-length skirt, narrower waist, wider hips
+    add(torso, sph(1, 22, 14), M.pants, 0, -0.03, 0).scale.set(0.2, 0.12, 0.128);
+    const w = add(torso, new THREE.CylinderGeometry(0.1, 0.135, 0.24, 18), M.jacket, 0, 0.13, 0); w.scale.z = 0.8;
+    add(torso, new THREE.TorusGeometry(0.115, 0.013, 8, 28), M.stripe, 0, 0.04, 0).rotation.x = Math.PI / 2;
+    add(torso, sph(1, 24, 16), M.jacket, 0, 0.32, 0).scale.set(0.195, 0.18, 0.12);
+    const skirt = add(torso, new THREE.CylinderGeometry(0.15, 0.27, 0.34, 28, 1, true), M.jacketDark, 0, -0.13, 0); skirt.material.side = THREE.DoubleSide;
+    add(torso, new THREE.TorusGeometry(0.27, 0.01, 6, 36), M.stripe, 0, -0.3, 0).rotation.x = Math.PI / 2;
+    add(torso, new THREE.CylinderGeometry(B.neck, B.neck * 1.15, 0.1, 12), M.skin, 0, 0.5, 0);
+    for (const s of [-1, 1]) add(torso, sph(0.052), M.skin, s * D.shoulderHalf, D.spine, 0);
+    add(torso, new THREE.TorusGeometry(0.058, 0.007, 8, 24), M.stripe, 0, 0.49, 0.03).rotation.x = Math.PI / 2 * 1.1;                // necklace
   }
-  const head = new THREE.Group(); head.position.set(0, 0.69, 0); torso.add(head);
-  { const sk = add(head, sph(0.118, 28, 20), M.skin); sk.scale.set(0.95, 1.05, 1);
-    const hair = add(head, new THREE.SphereGeometry(0.128, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.56), M.hair, 0, 0.012, -0.012); hair.rotation.x = -0.28;
-    add(head, sph(0.05), M.hair, 0, 0.13, -0.09);                                       // bun
-    const streak = add(head, new THREE.TorusGeometry(0.128, 0.011, 8, 28, Math.PI * 0.55), M.hairHi, 0, 0.012, 0.0); streak.rotation.set(0.1, Math.PI / 2, 0.45); streak.position.x = 0.03;
-    for (const s of [-1, 1]) {
-      add(head, sph(0.017, 10, 8), M.dark, s * 0.042, 0.018, 0.108).scale.set(1, 1.3, 0.6);
-      add(head, sph(0.005, 6, 6), M.white, s * 0.042 + s * 0.004, 0.026, 0.116);
-      add(head, sph(0.03, 10, 8), M.skin, s * 0.118, 0.0, 0).scale.set(0.5, 1, 0.8);   // ears
-      const brow = add(head, new THREE.BoxGeometry(0.036, 0.007, 0.006), M.hair, s * 0.044, 0.055, 0.108); brow.rotation.z = -s * 0.15;
+  const head = new THREE.Group(); head.position.set(0, D.spine + 0.23, 0); torso.add(head);
+  { const hr = B.head;
+    const sk = add(head, sph(hr, 28, 20), M.skin); sk.scale.set(FEM ? 0.92 : 1.0, FEM ? 1.06 : 1.04, 1);
+    if (!FEM) add(head, sph(hr * 0.9, 16, 12), M.skin, 0, -0.045, 0.012).scale.set(1.0, 0.8, 0.95);                         // squarer jaw
+    if (FEM) {
+      const hair = add(head, new THREE.SphereGeometry(hr * 1.11, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.6), M.hair, 0, 0.012, -0.018); hair.rotation.x = -0.3;
+      for (let k = 0; k < 6; k++) add(head, sph(0.045 - k * 0.003, 10, 8), M.hair, 0, 0.05 - k * 0.062, -0.11 - k * 0.012);       // ponytail
+      add(head, sph(0.02, 8, 6), M.stripe, 0, 0.065, -0.115);                                                                     // hair tie
+      for (const s of [-1, 1]) add(head, sph(0.011, 8, 6), M.stripe, s * 0.108, -0.035, 0.0);                                    // earrings
+    } else {
+      const hair = add(head, new THREE.SphereGeometry(hr * 1.1, 28, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), M.hair, 0, 0.018, -0.006); hair.rotation.x = -0.12;
+      for (const s of [-1, 1]) add(head, sph(0.026, 8, 6), M.hair, s * 0.108, -0.01, 0.01).scale.set(0.5, 1.5, 1);              // sideburns
     }
-    add(head, sph(0.12 * 0.12, 8, 6), M.skin, 0, -0.012, 0.118);                       // nose
-    const mouth = add(head, new THREE.TorusGeometry(0.03, 0.005, 6, 14, Math.PI), M.mouth, 0, -0.036, 0.108); mouth.rotation.z = Math.PI; mouth.scale.set(1, 0.7, 1);
-    for (const s of [-1, 1]) add(head, sph(0.016, 8, 6), mk(0xe58a8a, {}), s * 0.07, -0.025, 0.1).scale.set(1, 0.6, 0.4);   // cheeks
+    for (const s of [-1, 1]) {
+      add(head, sph(0.016, 10, 8), M.dark, s * 0.042, 0.018, hr * 0.92).scale.set(1, 1.3, 0.6);
+      add(head, sph(0.005, 6, 6), M.white, s * 0.042 + s * 0.004, 0.026, hr * 0.98);
+      if (FEM) add(head, new THREE.BoxGeometry(0.026, 0.004, 0.006), M.dark, s * 0.045, 0.043, hr * 0.93).rotation.z = -s * 0.25;                // lashes
+      add(head, sph(0.03, 10, 8), M.skin, s * hr, 0.0, 0).scale.set(0.5, 1, 0.8);
+      const brow = add(head, new THREE.BoxGeometry(FEM ? 0.032 : 0.042, FEM ? 0.005 : 0.01, 0.006), M.hair, s * 0.044, FEM ? 0.058 : 0.052, hr * 0.92); brow.rotation.z = -s * (FEM ? 0.2 : 0.08);
+    }
+    add(head, sph(0.014, 8, 6), M.skin, 0, -0.012, hr * 0.99);
+    const mouth = add(head, new THREE.TorusGeometry(0.028, FEM ? 0.006 : 0.004, 6, 14, Math.PI), M.mouth, 0, -0.036, hr * 0.92); mouth.rotation.z = Math.PI; mouth.scale.set(1, 0.7, 1);
+    if (FEM) for (const s of [-1, 1]) add(head, sph(0.016, 8, 6), mk(0xe58a8a, {}), s * 0.066, -0.025, hr * 0.88).scale.set(1, 0.6, 0.4);
   }
 
   // ---------- limbs ----------
+  const ak = B.arm / 0.05;
   function limb(r0, r1, mat) {              // tapered cylinder, spans y 0..1 (scale.y = length), r0 at the start
     const g = new THREE.CylinderGeometry(r1, r0, 1, 14, 1); g.translate(0, 0.5, 0);
     const m = new THREE.Mesh(g, mat); root.add(m); return m;
   }
   const joint = (r, mat) => { const m = new THREE.Mesh(sph(r, 14, 10), mat); root.add(m); return m; };
-  const mkArm = (glow) => ({ upper: limb(0.05, 0.044, M.jacket), fore: limb(0.042, 0.034, M.skin), cuff: limb(0.046, 0.046, glow), elbow: joint(0.046, M.jacket), hand: joint(0.058, glow), palm: joint(0.04, M.skin), shoulderBall: null });
-  const mkLeg = () => ({ thigh: limb(0.082, 0.062, M.pants), shin: limb(0.06, 0.044, M.pants), knee: joint(0.062, M.pants), shoe: new THREE.Group() });
+  const mkArm = (glow) => ({ upper: limb(0.05 * ak, 0.044 * ak, FEM ? M.skin : M.jacket), fore: limb(0.042 * ak, 0.034 * ak, M.skin), cuff: limb(0.046 * ak, 0.046 * ak, glow), elbow: joint(0.046 * ak, FEM ? M.skin : M.jacket), hand: joint(0.055 * Math.sqrt(ak), glow), palm: joint(0.04 * ak, M.skin), shoulderBall: null });
+  const lk = FEM ? 0.9 : 1;
+  const mkLeg = () => ({ thigh: limb(0.082 * lk, 0.062 * lk, FEM ? M.skin : M.pants), shin: limb(0.06 * lk, 0.044 * lk, FEM ? M.skin : M.pants), knee: joint(0.062 * lk, FEM ? M.skin : M.pants), shoe: new THREE.Group() });
   const arms = { L: mkArm(M.glowL), R: mkArm(M.glowR) };
   const legs = [mkLeg(), mkLeg()];
   for (const l of legs) {
     root.add(l.shoe);
-    const s = add(l.shoe, new THREE.CapsuleGeometry(0.048, 0.13, 6, 12), M.shoe, 0, -0.026, 0.045); s.rotation.x = Math.PI / 2; s.scale.set(1, 1, 0.82);
-    add(l.shoe, new THREE.BoxGeometry(0.1, 0.012, 0.25), M.sole, 0, -0.07, 0.05);
-    add(l.shoe, sph(0.04, 10, 8), M.shirt, 0, 0.0, -0.01);
-    add(l.shoe, new THREE.CylinderGeometry(0.044, 0.05, 0.06, 12), M.pants, 0, 0.03, -0.01);
+    if (FEM) {   // heels: slim pointed shoe, raised heel block, glowing sole strip
+      const s = add(l.shoe, new THREE.CapsuleGeometry(0.036, 0.12, 6, 12), M.shoe, 0, -0.03, 0.05); s.rotation.x = Math.PI / 2; s.scale.set(1, 1, 0.7);
+      add(l.shoe, new THREE.CylinderGeometry(0.013, 0.009, D.ankleY - 0.012, 8), M.shoe, 0, -(D.ankleY - 0.012) / 2 - 0.012, -0.03);
+      add(l.shoe, new THREE.BoxGeometry(0.07, 0.008, 0.2), M.sole, 0, -0.062, 0.06);
+      add(l.shoe, sph(0.03, 10, 8), M.skin, 0, 0.0, -0.01);
+    } else {     // dance shoes: low polished oxford, glowing sole
+      const s = add(l.shoe, new THREE.CapsuleGeometry(0.047, 0.15, 6, 12), M.shoe, 0, -0.03, 0.05); s.rotation.x = Math.PI / 2; s.scale.set(1, 1, 0.72);
+      add(l.shoe, new THREE.BoxGeometry(0.1, 0.012, 0.27), M.sole, 0, -0.068, 0.055);
+      add(l.shoe, sph(0.04, 10, 8), M.shirt, 0, 0.0, -0.01);
+      add(l.shoe, new THREE.CylinderGeometry(0.044, 0.05, 0.06, 12), M.pants, 0, 0.03, -0.01);
+    }
   }
   // ---------- contact shadow-ish glow under the figure is handled by the stage; nothing here ----------
 
@@ -166,7 +202,7 @@ export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic 
   const _Y = new V3(0, 1, 0), _lat = new V3(), _fw = new V3();
   function updateWorld(o) {
     E.set(o.pitch || 0, o.yaw, o.roll || 0); state.torsoQ.setFromEuler(E);
-    P.pel.set(o.px, o.py, o.pz); torso.position.copy(P.pel); torso.quaternion.copy(state.torsoQ);
+    P.pel.set(o.px, o.py * (D.pelvisY / 0.93), o.pz); torso.position.copy(P.pel); torso.quaternion.copy(state.torsoQ);
     head.quaternion.setFromEuler(E.set(-(o.pitch || 0) * 0.5, 0, -(o.roll || 0) * 0.6, 'YXZ'));
     _lat.set(Math.cos(o.yaw), 0, -Math.sin(o.yaw)); _fw.set(Math.sin(o.yaw), 0, Math.cos(o.yaw));
     for (let i = 0; i < 2; i++) {
@@ -187,7 +223,7 @@ export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic 
     }
     for (let i = 0; i < 2; i++) {
       const w = i === 0 ? -1 : 1, f = o.feet[i], lg = legs[i];
-      P.hip[i].set(o.px, o.py, o.pz).addScaledVector(_lat, w * D.hipHalf).y -= 0.03;
+      P.hip[i].copy(P.pel).addScaledVector(_lat, w * D.hipHalf).y -= 0.03;
       P.ank[i].set(f.x, D.ankleY + f.lift, f.z);
       _pole.set(0, 0.15, 0).addScaledVector(new V3(Math.sin(f.yaw), 0, Math.cos(f.yaw)), 1).addScaledVector(_lat, w * 0.25).normalize();
       ik(P.hip[i], P.ank[i], D.thigh, D.shin, _pole, P.knee[i], _c);

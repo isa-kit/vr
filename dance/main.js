@@ -6,13 +6,14 @@ import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, 
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261117d';
-import * as G from './game.js?v=20261117d';
-import { createMusic } from './music.js?v=20261117d';
-import { createFigure } from './figure.js?v=20261117d';
-import { createStage, createSparkles } from './stage.js?v=20261117d';
-import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261117d';
-import { createSchool } from './school.js?v=20261117d';
+import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261118b';
+import * as G from './game.js?v=20261118b';
+import { createMusic } from './music.js?v=20261118b';
+import { createFigure } from './figure.js?v=20261118b';
+import { createStage, createSparkles } from './stage.js?v=20261118b';
+import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261118b';
+import { createSchool } from './school.js?v=20261118b';
+import { createSongLibrary } from './songs.js?v=20261118b';
 
 const KEY = 'oortia-dance-v1';
 const TINT = { L: 0x3fd8ff, R: 0xff6fb0 };
@@ -23,14 +24,15 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const GRADE_COL = { perfect: '#ffd24a', good: '#6fe6ff', ok: '#b9c3ff', miss: '#ff7a8a' };
 
 // ---------- settings ----------
-const S = { routine: 'easy', mirror: true, speed: 1, volume: 0.7, practice: null, offsetMs: 0, sound: true, view: 3.9 };
+const S = { soloModel: 'female', leadModel: 'male', followModel: 'female', routine: 'easy', mirror: true, speed: 1, volume: 0.7, practice: null, offsetMs: 0, sound: true, view: 3.9 };
 try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* private mode */ }
 S.practice = null;
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ routine: S.routine, mirror: S.mirror, speed: S.speed, volume: S.volume, offsetMs: S.offsetMs })); } catch (e) { /* ignore */ } };
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ soloModel: S.soloModel, leadModel: S.leadModel, followModel: S.followModel, routine: S.routine, mirror: S.mirror, speed: S.speed, volume: S.volume, offsetMs: S.offsetMs })); } catch (e) { /* ignore */ } };
 
 // ---------- globals ----------
 let renderer, scene, camera, dolly, fx, menu, comfort, touch, caps, music, stage, ui, wallHud, strip, sparkles;
-let fig, figM, school, schoolOn = false;
+let fig, figM, school, schoolOn = false, lib;
+const soloSong = {};
 let mode = 'watch';                 // 'watch' | 'play' | 'xr'
 let state = 'title';                // title safety calibrate select countdown dance paused resuming results
 let calib = G.defaultCalib();
@@ -66,6 +68,7 @@ async function init() {
   dolly = new THREE.Group(); dolly.add(camera); scene.add(dolly);
   stage = createStage({ THREE, scene, renderer, tier: tier0 });
   music = createMusic();
+  lib = createSongLibrary({ music }); lib.init();
   buildDancers();
   buildGuides();
   ui = createUI(THREE, { onAction });
@@ -75,7 +78,7 @@ async function init() {
   sparkles = createSparkles(THREE); scene.add(sparkles.points);
 
   school = createSchool({
-    THREE, scene, camera, dolly, music, ui, stage, isXR: () => !!window.__fakeXR || renderer.xr.isPresenting, menu: () => menu,
+    THREE, scene, camera, dolly, music, ui, stage, lib, models: () => ({ lead: S.leadModel, follow: S.followModel }), onModels: (mm) => { S.leadModel = mm.lead; S.followModel = mm.follow; save(); }, isXR: () => !!window.__fakeXR || renderer.xr.isPresenting, menu: () => menu,
     show: (spec) => { ui.show(spec); }, hideScreen: () => ui.hide(),
     hands: () => { const out = [null, null]; for (let i = 0; i < 2; i++) { const h = menu.controllers[i].userData.hand; if (!menu.controllers[i].userData.src) continue; menu.grips[i].getWorldPosition(_w); const p = [_w.x, _w.y, _w.z]; if (h === 'right') out[0] = p; else if (h === 'left') out[1] = p; } return out; },
     handController: (pi) => { for (let i = 0; i < 2; i++) { const h = menu.controllers[i].userData.hand; if ((pi === 0 && h === 'right') || (pi === 1 && h === 'left')) return i; } return 0; },
@@ -87,10 +90,12 @@ async function init() {
     hint: 'Copy the dancer on every beat. Menu: routine, mirror, speed, practice one move, pause or quit. Desktop play: mouse = hands · Space swap hand · Shift/Alt freeze a hand · wheel = depth · arrows, S, Z, X = poses.',
     rows: [
       sectionRow('Routine'),
+      { label: 'Solo dancer', cells: [['Man', 'male'], ['Woman', 'female']].map(([t, v]) => ({ text: t, active: () => S.soloModel === v, action: () => { S.soloModel = v; save(); buildDancers(); menu.refresh(); } })) },
       ...choiceGrid([['Easy', 'easy'], ['Medium', 'medium'], ['Hard', 'hard']], () => S.routine, (id) => setRoutine(id), 3),
       toggleRow('Mirror', () => S.mirror, (v) => { S.mirror = v; save(); onSettingChanged(); }),
       { label: 'Speed', cells: [['75 %', 0.75], ['100 %', 1]].map(([tx, v]) => ({ text: tx, active: () => S.speed === v, action: () => { S.speed = v; save(); onSettingChanged(); } })) },
-      stepperRow('Music', () => Math.round(S.volume * 100) + ' %', () => vol(-0.1), () => vol(0.1), { repeat: true }),
+      stepperRow('Song', () => songText(), () => cycleSong(-1), () => cycleSong(1)),
+      stepperRow('Volume', () => Math.round(S.volume * 100) + ' %', () => vol(-0.1), () => vol(0.1), { repeat: true }),
       stepperRow('Practice', () => S.practice || 'Off', () => cyclePractice(-1), () => cyclePractice(1)),
       stepperRow('Timing', () => (S.offsetMs > 0 ? '+' : '') + S.offsetMs + ' ms', () => { S.offsetMs -= 10; music.offsetMs(S.offsetMs); save(); }, () => { S.offsetMs += 10; music.offsetMs(S.offsetMs); save(); }, { repeat: true }),
       stepperRow('View', () => S.view.toFixed(1) + ' m', () => { S.view = clamp(S.view - 0.4, 1.8, 9); orbit.dist = S.view; }, () => { S.view = clamp(S.view + 0.4, 1.8, 9); orbit.dist = S.view; }, { repeat: true }),
@@ -123,10 +128,11 @@ async function init() {
 
 // ---------- dancers & guides ----------
 function buildDancers() {
-  fig = createFigure(THREE, { tintL: TINT.L, tintR: TINT.R });
+  if (fig) { scene.remove(fig.root); stage.mirror.remove(figM.root); }
+  fig = createFigure(THREE, { tintL: TINT.L, tintR: TINT.R, body: S.soloModel });
   fig.root.position.set(0, 0, DANCER_Z); scene.add(fig.root);
   fig.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  figM = createFigure(THREE, { tintL: TINT.L, tintR: TINT.R, basic: true });
+  figM = createFigure(THREE, { tintL: TINT.L, tintR: TINT.R, basic: true, body: S.soloModel });
   figM.root.position.set(0, 0, DANCER_Z); stage.mirror.add(figM.root);
 }
 function glowTex() { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 32, 2, 32, 32, 30); g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(0.45, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); }
@@ -209,6 +215,9 @@ const LEVEL_INFO = () => { const r = ROUTINES[S.routine]; return `${r.level} · 
 function practiceList() { const seen = ['Off']; for (const m of ROUTINES[S.routine].moves) if (m.label !== 'Groove' && !seen.includes(m.label)) seen.push(m.label); return seen; }
 function cyclePractice(d) { const l = practiceList(), i = Math.max(0, l.indexOf(S.practice || 'Off')); const n = l[(i + d + l.length) % l.length]; S.practice = n === 'Off' ? null : n; refreshScreen(); if (menu) menu.refresh(); }
 function setRoutine(id) { S.routine = id; S.practice = null; save(); onSettingChanged(); }
+function soloChoices() { const r = ROUTINES[S.routine], b = r.bpm * S.speed; return lib.eligible({ min: b, max: b, meter: 4, kind: 'solo' }).filter((x) => x.source === 'library' || x.id === lib.builtinFor('solo', S.routine)); }
+function songText() { const id = soloSong[S.routine] || lib.builtinFor('solo', S.routine); return lib.fitText(id); }
+function cycleSong(d) { const l = soloChoices(), id = soloSong[S.routine] || lib.builtinFor('solo', S.routine), i = Math.max(0, l.findIndex((x) => x.id === id)); soloSong[S.routine] = l[(i + d + l.length) % l.length].id; menu.refresh(); if (['countdown', 'dance', 'paused', 'resuming'].includes(state)) startRun(); }
 function vol(d) { S.volume = clamp(Math.round((S.volume + d) * 10) / 10, 0, 1); music.setVolume(S.volume); save(); }
 function onSettingChanged() { if (['countdown', 'dance', 'paused', 'resuming'].includes(state)) startRun(); else refreshScreen(); if (menu) menu.refresh(); }
 
@@ -306,7 +315,8 @@ async function startRun() {
   loopInfo = null;
   if (S.practice) { const occ = r.moves.find((m) => m.label === S.practice); if (occ) { const start = 4 * Math.floor(occ.beat / 4), end = occ.beat + occ.dur + 0.45; loopInfo = { start, len: 4 * Math.max(1, Math.ceil((end - start) / 4)) }; } }
   scorer = G.createScorer(compiled); scoring = mode !== 'watch';
-  music.start({ track: r.track, bpm: r.bpm, speed: S.speed, countIn: r.countIn, loop: loopInfo, totalBeats: loopInfo ? 0 : r.beats });
+  const song = await lib.get(soloSong[S.routine] || lib.builtinFor('solo', S.routine));
+  music.startSong(song, { bpm: r.bpm * S.speed, countIn: r.countIn, loop: loopInfo, wrap: false });
   music.offsetMs(S.offsetMs); lastBeat = -99; pausedByMenu = false;
   ui.hide(); state = 'countdown'; hudPop = { text: '', color: '#fff', t: -9 };
   updateHudVisibility();
@@ -527,7 +537,7 @@ function driveBoard() {
 // ---------- debug / test hook (#debug) ----------
 function exposeDebug() {
   window.__dance = {
-    school, G, ROUTINES, COMP, S, THREE, scene, camera, music, stage, fig, calib: () => calib, setCalib: (c) => { calib = c; },
+    lib, school, G, ROUTINES, COMP, S, THREE, scene, camera, music, stage, fig, calib: () => calib, setCalib: (c) => { calib = c; },
     state: () => state, mode: () => mode, beat: () => music.beat(), scorer: () => scorer, orbit, onAction, goto, setMode: (m) => { mode = m; },
     setSampler: (f) => { sampler = f; }, target: () => samplePose(compiled, music.beat()), seek: (b) => music.setBeat(b),
     advance: (dt, n = 1) => { for (let i = 0; i < n; i++) animate(dt, i < n - 1); }, usingAudio: () => music.usingAudio(), pop: () => hudPop, sample: () => sample, dolly, ui, menu,
