@@ -15,5 +15,9 @@
   "controls": {
     "panel": []
   },
-  "category": "experience"
+  "category": "experience",
+  "lying": {
+    "name": "Forest — lying on the forest floor",
+    "blurb": "Lie on the moss under tall trees and look up through the canopy. Float up the trunk, branch by branch, to the treetops."
+  }
 }

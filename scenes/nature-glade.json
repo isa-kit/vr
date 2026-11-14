@@ -68,5 +68,9 @@
     "path": "godot/nature",
     "status": "live"
   },
-  "category": "experience"
+  "category": "experience",
+  "lying": {
+    "name": "Glade — lying in the grass",
+    "blurb": "Lie in the glade and watch clouds and birds pass over. Float up above the trees, or drift to where you look."
+  }
 }

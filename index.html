@@ -110,7 +110,7 @@
         const cfg = g ? (s.godot || {}) : { status: s.status, path: s.path || s.id };
         const live = cfg.status === 'live';
         const tag = live ? 'a' : 'div';
-        const href = live ? ` href="${cfg.path}/"` : '';
+        const href = live ? ` href="${cfg.path.includes('?') ? cfg.path : cfg.path + '/'}"` : '';
         const label = g ? (live ? 'Ready' : 'In progress') : (live ? 'Ready' : 'Soon');
         const cta = live ? 'Enter →' : (g ? 'Godot build in progress' : 'In the works');
         return `<${tag} class="card ${g ? 'godot' : 'js'} ${live ? 'live' : 'soon'}"${href}>
@@ -126,7 +126,10 @@
       const SECTIONS = [
         ['experience', 'Experiences', 'Sit back and watch. Calm places to be in, no goals.'],
         ['game', 'Games', 'Do something. Build, move, play.'],
+        ['lying', 'Lying down', 'Lie back and look up — on your back, reclined or seated. Gaze at real skies, or play gentle games overhead.'],
       ];
+      // worlds with a "lying" entry also appear here, opened in their Lying down posture (?lie=1); the world stays upright
+      for (const s of scenes.slice()) if (s.lying && s.status === 'live') scenes.push({ ...s, name: s.lying.name, blurb: s.lying.blurb, category: 'lying', path: (s.path || s.id) + '/?lie=1', godot: null });
       grid.innerHTML = SECTIONS.map(([id, title, line]) => {
         const rows = scenes.filter(s => (s.category || 'experience') === id);
         if (!rows.length) return '';

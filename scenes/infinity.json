@@ -49,5 +49,9 @@
     "path": "godot/infinity",
     "status": "live"
   },
-  "category": "experience"
+  "category": "experience",
+  "lying": {
+    "name": "Infinity — lying under the lights",
+    "blurb": "Lie on the floor of the light field and gaze up into it. Drift up among the lights."
+  }
 }

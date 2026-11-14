@@ -15,5 +15,9 @@
   "controls": {
     "panel": []
   },
-  "category": "experience"
+  "category": "experience",
+  "lying": {
+    "name": "Beach — lying on the sand",
+    "blurb": "Lie on warm sand and watch clouds and gulls drift overhead. Float up into the sky when you like."
+  }
 }

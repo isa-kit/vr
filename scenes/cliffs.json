@@ -15,5 +15,9 @@
   "controls": {
     "panel": []
   },
-  "category": "experience"
+  "category": "experience",
+  "lying": {
+    "name": "Cliffs — lying on the ledge",
+    "blurb": "Lie on the grassy cliff ledge and watch clouds drift across the sky above the sea."
+  }
 }
