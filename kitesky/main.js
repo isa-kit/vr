@@ -11,9 +11,10 @@ Promise.resolve().then(init).catch((e) => { console.error(e); const s = document
 
 function kiteTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
-  const q = [['#ff6b6b', 128, 0, 0, 128], ['#ffd166', 128, 0, 256, 128], ['#4ecdc4', 0, 128, 128, 256], ['#5b7cfa', 256, 128, 128, 256]];
+  // the plane is turned 45°, so each edge triangle becomes one quarter of the diamond and the diagonals are the spars
+  const q = [['#ff6b6b', 0, 0, 256, 0], ['#ffd166', 256, 0, 256, 256], ['#5b7cfa', 256, 256, 0, 256], ['#4ecdc4', 0, 256, 0, 0]];
   for (const [col, x1, y1, x2, y2] of q) { g.fillStyle = col; g.beginPath(); g.moveTo(128, 128); g.lineTo(x1, y1); g.lineTo(x2, y2); g.closePath(); g.fill(); }
-  g.strokeStyle = 'rgba(60,40,30,0.9)'; g.lineWidth = 6; g.beginPath(); g.moveTo(128, 0); g.lineTo(128, 256); g.moveTo(0, 128); g.lineTo(256, 128); g.stroke();
+  g.strokeStyle = 'rgba(60,40,30,0.9)'; g.lineWidth = 6; g.beginPath(); g.moveTo(0, 0); g.lineTo(256, 256); g.moveTo(256, 0); g.lineTo(0, 256); g.stroke();
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 function cloudTexture() {
