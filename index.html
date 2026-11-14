@@ -87,6 +87,7 @@
       forest:        'linear-gradient(#cfe0c0, #6f9a56 45%, #1f3a22)',
       cliffs:        'linear-gradient(#f6c98a, #f0e4cc 38%, #3f86a8 40%, #1d4f6e)',
       beach:         'linear-gradient(#a9dcf2, #e8f6fb 42%, #5fb5d0 44%, #ecd9a3 70%)',
+      starcatch:     'radial-gradient(6px 6px at 62% 30%, #fff, transparent), linear-gradient(135deg, transparent 52%, #cfe0ff66 60%, transparent 63%), radial-gradient(120px 90px at 50% 40%, #2a3a8a66, transparent), #03050f',
       dance:         'radial-gradient(90px 70px at 50% 45%, #ff6fb544, transparent), linear-gradient(#1b1030, #3a1a4f 60%, #120a20)',
     };
     const grid = document.getElementById('grid');
@@ -128,7 +129,7 @@
         return `<div class="sec"><h2 class="sec-title">${title}</h2><p class="sec-line">${line}</p></div>` +
           rows.map(s => `<section class="row">
             <h3 class="row-title">${s.name}</h3>
-            ${card(s, 'js')}${card(s, 'godot')}
+            ${card(s, 'js')}${s.godot ? card(s, 'godot') : ''}
           </section>`).join('');
       }).join('');
     } catch (e) {

@@ -1,0 +1,11 @@
+{
+  "id": "starcatch",
+  "name": "Star Catcher",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "starcatch",
+  "blurb": "Lie back and catch slow shooting stars overhead — point and pull the trigger, or just rest your aim on one. Play lying down or seated.",
+  "locomotion": { "type": "lying" },
+  "controls": { "panel": [] }
+}
