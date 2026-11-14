@@ -8,7 +8,7 @@ import { detectXR, createXRMenu, sectionRow, choiceGrid, swatchGrid } from '../s
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { createDrift } from '../shared/drift.js?v=drift3';
+import { createDrift } from '../shared/drift.js?v=drift5';
 
 const KEY = 'oortia-skywand-v2';
 const COLORS = [['Gold', '#ffd27a'], ['Rose', '#ff8fb0'], ['Sky', '#8fd3ff'], ['Mint', '#8ff0c0'], ['Violet', '#b9a0ff'], ['White', '#ffffff'], ['Ember', '#ff9a5a'], ['Rainbow', 'rainbow']];

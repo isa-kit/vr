@@ -17,7 +17,7 @@
 //   • Drift where I look — a slow dreamlike dissolve to a point along your gaze (upward only, stays near home).
 //   • Back to the ground — fade home.
 // =====================================================================================================================
-import { createDrift } from './drift.js?v=drift3';
+import { createDrift } from './drift.js?v=drift5';
 
 const WORDS = {
   trees: { float: 'Float up', level: 'Next branch', drift: 'Drift where I look' },
@@ -133,7 +133,7 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
     let dir = R.floating;
     if (keys.PageUp || keys.KeyE) dir = 1; else if (keys.PageDown || keys.KeyQ) dir = -1;
     const m = getMenu();
-    if (renderer.xr.isPresenting && m && m.controllers) {          // hold the thumbstick up / down
+    if (renderer.xr.isPresenting && m && m.controllers && !D.aiming) {   // hold the thumbstick up / down (not while aiming the compass)
       for (const c of m.controllers) {
         const g = c.userData.src && c.userData.src.gamepad; if (!g || !g.axes) continue;
         const y = g.axes.length > 3 ? g.axes[3] : g.axes[1] || 0;
