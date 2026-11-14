@@ -1,0 +1,18 @@
+{
+  "id": "skywand",
+  "name": "Sky Wand",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "skywand",
+  "blurb": "Drift slowly in one straight direction — forward, rising or floating down — and draw glowing lines, ribbons, dots or sparkles in the air with your wand. Trails stream past and can fade away. Sit or lie up.",
+  "locomotion": {
+    "type": "drift"
+  },
+  "controls": {
+    "panel": []
+  },
+  "also": [
+    "lying"
+  ]
+}

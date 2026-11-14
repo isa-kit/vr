@@ -92,6 +92,7 @@
       constellations: 'radial-gradient(4px 4px at 20% 40%, #fff, transparent), radial-gradient(4px 4px at 38% 62%, #fff, transparent), radial-gradient(4px 4px at 55% 45%, #fff, transparent), radial-gradient(4px 4px at 72% 66%, #fff, transparent), radial-gradient(4px 4px at 88% 42%, #fff, transparent), radial-gradient(110px 80px at 50% 50%, #1e2a6a88, transparent), #03050f',
       kitesky: 'linear-gradient(45deg, transparent 44%, #ff6b6b 44%, #ff6b6b 50%, #ffd166 50%, #ffd166 56%, transparent 56%), radial-gradient(70px 30px at 30% 70%, #ffffffcc, transparent), linear-gradient(#2f6fc8, #7fb4ea)',
       cloudpairs: 'radial-gradient(22px 16px at 30% 38%, #fff, transparent), radial-gradient(22px 16px at 70% 38%, #fff, transparent), radial-gradient(22px 16px at 30% 72%, #fff, transparent), radial-gradient(22px 16px at 70% 72%, #ffd34d, transparent), linear-gradient(#2f6fc8, #7fb4ea)',
+      skywand: 'radial-gradient(3px 3px at 30% 30%, #fff, transparent), linear-gradient(160deg, transparent 40%, #8fd3ffcc 46%, transparent 52%), linear-gradient(200deg, transparent 55%, #ffd27acc 60%, transparent 64%), linear-gradient(#0b1238, #3a3474 60%, #e39a7a)',
       dance:         'radial-gradient(90px 70px at 50% 45%, #ff6fb544, transparent), linear-gradient(#1b1030, #3a1a4f 60%, #120a20)',
     };
     const grid = document.getElementById('grid');
@@ -129,6 +130,7 @@
         ['lying', 'Lying up', 'Lie back and look up — on your back, reclined or seated. Gaze at real skies, or play gentle games overhead.'],
       ];
       // worlds with a "lying" entry also appear here, opened in their Lying down posture (?lie=1); the world stays upright
+      for (const s of scenes.slice()) for (const c of (s.also || [])) scenes.push({ ...s, category: c });   // listed in a second section too
       for (const s of scenes.slice()) if (s.lying && s.status === 'live') scenes.push({ ...s, name: s.lying.name, blurb: s.lying.blurb, category: 'lying', path: (s.path || s.id) + '/?lie=1', godot: null });
       grid.innerHTML = SECTIONS.map(([id, title, line]) => {
         const rows = scenes.filter(s => (s.category || 'experience') === id);
