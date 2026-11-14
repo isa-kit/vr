@@ -1,0 +1,15 @@
+{
+  "id": "cloudpairs",
+  "name": "Cloud Pairs",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "cloudpairs",
+  "blurb": "A memory game in the sky: turn over little clouds overhead to find matching pictures — suns, moons, kites and rainbows. Play lying down or seated.",
+  "locomotion": {
+    "type": "lying"
+  },
+  "controls": {
+    "panel": []
+  }
+}
