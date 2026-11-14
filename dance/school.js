@@ -2,9 +2,9 @@
 // Style → Pattern → lesson steps: Watch · Footwork · Hands · Practice · Dance · Chain.
 // Patterns are JSON files in ./patterns (see PATTERNS.md); couple.js turns them into two moving bodies.
 // Only head + two hands are tracked, so scoring covers timing, hand path / connection, and body travel / turn. Footwork is taught, not scored.
-import { createFigure } from './figure.js?v=20261117c';
-import * as CP from './couple.js?v=20261117c';
-import * as G from './game.js?v=20261117c';
+import { createFigure } from './figure.js?v=20261117d';
+import * as CP from './couple.js?v=20261117d';
+import * as G from './game.js?v=20261117d';
 
 const STEPS = [['watch', 'Watch'], ['foot', 'Footwork'], ['hands', 'Hands'], ['practice', 'Practice'], ['dance', 'Dance'], ['chain', 'Chain']];
 const STEP_HELP = {
@@ -26,8 +26,8 @@ export function createSchool(env) {
   const V = new THREE.Vector3(), V2 = new THREE.Vector3();
 
   // ---------- data ----------
-  async function loadIndex() { if (!H.styles) { const r = await fetch(new URL('./patterns/index.json?v=20261117c', import.meta.url)); H.styles = (await r.json()).styles; } return H.styles; }
-  async function loadPattern(id) { if (!cache[id]) { const r = await fetch(new URL('./patterns/' + id + '.json?v=20261117c', import.meta.url)); cache[id] = await r.json(); } return cache[id]; }
+  async function loadIndex() { if (!H.styles) { const r = await fetch(new URL('./patterns/index.json?v=20261117d', import.meta.url)); H.styles = (await r.json()).styles; } return H.styles; }
+  async function loadPattern(id) { if (!cache[id]) { const r = await fetch(new URL('./patterns/' + id + '.json?v=20261117d', import.meta.url)); cache[id] = await r.json(); } return cache[id]; }
 
   // ---------- scene objects ----------
   const root = new THREE.Group(); root.visible = false; scene.add(root);
@@ -296,7 +296,7 @@ export function createSchool(env) {
     if (!xr) { const c = document.getElementById('lcnt'); if (c) c.textContent = H.hud.label; const t = document.getElementById('ltip'); if (t) t.textContent = H.hud.tip; }
   }
   const lerp = (a, b, t) => a + (b - a) * t;
-  function stepTip(L) { const r = H.role; let best = null; for (const role of ['lead', 'follow']) for (const s of H.C.P.steps[role]) { if (s.tip && s.beat <= L + 0.05 && (role === r || H.step === 'watch') && (!best || s.beat > best.beat || (s.beat === best.beat && role === r))) best = { ...s, role }; } return best ? (best.role === 'lead' ? 'Lead: ' : 'Follow: ') + best.tip : ''; }
+  function stepTip(L) { const r = H.role; let best = null; for (const role of ['lead', 'follow']) for (const s of H.C.P.steps[role]) { if (s.tip && s.beat <= L + 1e-6 && (role === r || H.step === 'watch') && (!best || s.beat > best.beat || (s.beat === best.beat && role === r))) best = { ...s, role }; } return best ? (best.role === 'lead' ? 'Lead: ' : 'Follow: ') + best.tip : ''; }
   let lastSay = 0;
   function say(label) {
     if (!('speechSynthesis' in window)) return; const w = SPEAK[label] || label; if (/^\(/.test(label)) return;
@@ -311,7 +311,7 @@ export function createSchool(env) {
     const tgt = V.set(H.base ? H.base.ox : 0, 0.85, H.base ? H.base.oz : -1.6), asp = innerWidth / innerHeight, dist = asp < 0.8 ? 6.2 : 4.4;
     c.up.set(0, 1, 0);
     if (H.view === 'front') { c.position.set(tgt.x, 1.7, tgt.z + dist); c.lookAt(tgt.x, 0.9, tgt.z); }
-    else if (H.view === 'side') { c.position.set(tgt.x + dist, 1.5, tgt.z + 0.01); c.lookAt(tgt.x, 0.9, tgt.z); }
+    else if (H.view === 'side') { c.position.set(tgt.x, 1.15, tgt.z - dist); c.lookAt(tgt.x, 0.9, tgt.z); }
     else if (H.view === 'top') { c.position.set(tgt.x, asp < 0.8 ? 5.6 : 3.6, tgt.z + 0.01); c.up.set(0, 0, -1); c.lookAt(tgt.x, 0, tgt.z); }
     else { const o = orbitState; c.position.set(tgt.x + Math.sin(o.yaw) * Math.cos(o.pitch) * dist, 0.9 + Math.sin(o.pitch) * dist, tgt.z + Math.cos(o.yaw) * Math.cos(o.pitch) * dist); c.lookAt(tgt.x, 0.9, tgt.z); }
     return true;

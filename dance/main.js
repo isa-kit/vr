@@ -6,13 +6,13 @@ import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, 
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261117c';
-import * as G from './game.js?v=20261117c';
-import { createMusic } from './music.js?v=20261117c';
-import { createFigure } from './figure.js?v=20261117c';
-import { createStage, createSparkles } from './stage.js?v=20261117c';
-import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261117c';
-import { createSchool } from './school.js?v=20261117c';
+import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261117d';
+import * as G from './game.js?v=20261117d';
+import { createMusic } from './music.js?v=20261117d';
+import { createFigure } from './figure.js?v=20261117d';
+import { createStage, createSparkles } from './stage.js?v=20261117d';
+import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261117d';
+import { createSchool } from './school.js?v=20261117d';
 
 const KEY = 'oortia-dance-v1';
 const TINT = { L: 0x3fd8ff, R: 0xff6fb0 };
