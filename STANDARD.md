@@ -16,7 +16,7 @@ Start a new app by copying `template/` (see §9).
 ## 1. One bootstrap
 
 ```js
-import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app1';
+import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app2';
 
 const app = await createOortiaApp({
   id: 'myapp', title: 'My App',
@@ -40,8 +40,17 @@ and rays, and mouse + touch fallbacks.
   non-conforming: version strings drift and the browser loads two copies.
 - Older kits (`shared/lie.js`, `seated/common.js`) and hand-wired worlds go
   through `standardChrome()` in the same file — the single place that creates
-  the menu + comfort pair. Nobody calls `createXRMenu` or `createComfort`
-  anywhere else.
+  the menu. Nobody calls `createXRMenu` anywhere else, and every shared helper
+  (`createComfort`, row helpers, `recenterRig`) is imported from `app.js`.
+
+Two levels of conformance, used in the table in §10:
+
+- **Full** — built on `createOortiaApp`. Everything in this document holds by
+  construction. Required for every new app.
+- **Chrome** — an older world keeps its own renderer, loop, movement and
+  recenter code but gets its menu, Pause and comfort from `standardChrome`.
+  The menu, buttons and Pause are standard; movement and posture are the
+  world's own and are listed as exceptions.
 
 ## 2. Buttons
 
@@ -209,12 +218,26 @@ module URL with a different `?v=` is a different module.
 
 ## 10. Conformance today
 
-| World | State | Notes |
-|---|---|---|
-| `template/` | Conforms | Built only on `createOortiaApp`. |
-| All other worlds | Pending | Migration in progress. |
+| World | Level | What is standard | Exceptions (and why) |
+|---|---|---|---|
+| `template/` | Full | Everything | — |
+| Sky Wand | Full | Everything: menu tabs, Pause, posture, drift + compass, press / release | — |
+| Star Catcher, Lantern Glow, Star Stories, Kite Ribbons, Cloud Pairs | Chrome (kit) | Menu, Pause (game time stops), comfort, site-wide posture, no locomotion | `shared/lie.js` keeps its own renderer, loop and overhead-field placement (it predates the bootstrap and is its model for Lying up); its flat settings list shows as one "Settings" tile instead of tabs. |
+| Forest, Cliffs, Beach | Chrome (kit) | Menu, Pause, comfort, Lying up via `?lie=1` | `seated/common.js` keeps its own loop, drag-look with inertia and seat system. The front-page card decides the posture, not the last-used one, because each world has a separate Lying up card. |
+| Infinity Lights | Chrome | Menu (tabbed), Pause, comfort, snap turn | Own flying movement at the comfort speed setting — faster than the 0.45 m/s drift cap, steered by the stick. Predates §5; needs a design decision before changing. |
+| Nature — Glade & Cliffs | Chrome | Menu, Pause, comfort, snap turn, teleport | Own walking (with run on desktop), terrain following, binoculars. Walking speed follows the comfort setting but was not re-checked against the 1.6 m/s cap. |
+| Sand Castle | Chrome | Menu, Pause, comfort, snap turn | Claims A / B for tool cycling (allowed: no drift); own walking, scale change and sculpt input. Too input-heavy to move safely without a headset. |
+| Dance | Chrome | Menu, Pause tile drives the game's own pause, comfort | Own body tracking, recenter (`recenterBody`) and in-world screens. The countdown on resume is the game's. |
+| Tabletop Command (RTS) | Chrome | Menu (tabbed), Pause tile drives the match pause, comfort | Own table grab / zoom navigation and desk controls. |
 
-(This table is updated as worlds are migrated.)
+Site-wide gaps still open:
+
+- The desktop / phone overlay menu lists rows directly; the standard top-level
+  tiles (and so the Pause tile) are the VR views. On flat screens Pause is the
+  "Pause world motion" row under Comfort, or the game's own button.
+- `shared/lie.js` still nudges the floating menu into view itself when lying;
+  this belongs in `xrmenu.js`.
+- None of the migrations has been checked in a headset yet.
 
 ## 11. Godot
 

@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
-import { standardChrome, STANDARD, detectXR, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/app.js?v=app1';   // menu + comfort + Pause: the app standard (STANDARD.md)
+import { standardChrome, STANDARD, detectXR, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/app.js?v=app2';   // menu + comfort + Pause: the app standard (STANDARD.md)
 import { createSkyRise } from '../shared/skyrise.js?v=rise11';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 

@@ -3,8 +3,8 @@
 // mini map held on your controller. On desktop it is a classic RTS (box select, right-click orders); on phones it is touch.
 // Simulation: rts/sim.js (fixed 20 Hz, deterministic, headless-testable). Rendering: rts/gfx.js. Controller: rts/ctrl.js.
 import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/xrmenu.js?v=20261114h';
-import { createComfort } from '../shared/comfort.js?v=20261114f';
+import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app2';
+import { createComfort } from '../shared/app.js?v=app2';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 import { createSim, DT, UT, BT, N } from './sim.js?v=rts4';
@@ -58,7 +58,7 @@ async function init() {
   tut = createTutorial({ G, C, hud, getVR: () => vr, isTouch: touch.isTouch, isXR: () => xr, showScreen, newMatch, showTitle });
   comfort = createComfort({ renderer, scene, camera, dolly, onQuality: (q) => { if (G.view) G.view.setQuality(q); } });
   comfort.paused = false;
-  menu = createXRMenu({
+  menu = standardChrome({ comfort, scene, comfortRows: false, compactCommon: false, pause: { get: () => !!G.paused, set: (v) => { if (!!G.paused !== v) togglePause(); } },   // the app standard: Pause first, then Recenter / Menu style / Quit (STANDARD.md)
     renderer, camera, dolly, caps, title: 'Tabletop Command',
     hint: 'Desktop: drag to box-select, right-click to command, WASD pan, wheel zoom. Phone: tap to select, drag to box-select, two fingers pan & zoom.',
     rows: menuRows(),
@@ -69,8 +69,7 @@ async function init() {
     onSessionStart: () => { xr = true; hud.setVR(true); document.body.classList.add('rts-vr'); onXRStart(); },
     onSessionEnd: () => { xr = false; hud.setVR(false); document.body.classList.remove('rts-vr'); onXREnd(); },
     quitUrl: '../',
-  });
-  comfort.attachMenu(menu);
+  }).menu;
   vr = createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView: () => G.view, getS: () => G.S, getMini: () => G.mini, T, SCALE_STEPS, placeBoard, isXR: () => xr, G, onReady: () => { menu.refresh(); if (G.screenSpec) showScreen(G.screenSpec); } });
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
   addEventListener('pointerdown', () => sfx.ensure(), { once: true });

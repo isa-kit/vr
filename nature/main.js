@@ -4,10 +4,10 @@
 // WebXR (VR) + flat desktop.  All the hard stuff is cheated to stay light.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/xrmenu.js?v=20261114h';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/app.js?v=app2';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113c';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app2';
 import { createTouch } from '../shared/touch.js?v=20261113c';
 import { createBirds } from '../shared/birds.js?v=20261113c';
 import { createSky } from '../procgen/sky.js?v=20261115a';
@@ -204,7 +204,7 @@ async function init() {
 
   rise = createSkyRise({ THREE, renderer, camera, rig: dolly, comfort, getMenu: () => menu, story: 'trees', ceiling: 50, step: 6, home: () => lieSpot, clouds: true, parent: world, isPaused: () => comfort.paused,
     onLying: (on) => { if (on) lieSpot = { x: dolly.position.x, y: terrainH(dolly.position.x, dolly.position.z), z: dolly.position.z }; pitch = on ? 1.42 : 0; } });
-  menu = createXRMenu({
+  menu = standardChrome({ comfort, scene, comfortRows: false, compactCommon: false,   // the app standard: Pause first, then Recenter / Menu style / Quit (STANDARD.md)
     renderer, camera, dolly, caps,
     title: 'Nature — Glade & Cliffs',
     hint: touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · Pause world motion in Comfort', 'WASD walk · mouse look · Shift run · hold Z for binoculars · click the view to look around · Esc/M menu. In VR: grip the spyglass at your side and raise it to your eye.'),
@@ -221,9 +221,8 @@ async function init() {
     recenter,
     onBeforeEnter: startAudio,
     onSessionEnd: () => { dolly.rotation.set(0, 0, 0); yaw = 0; pitch = 0; },   // don't carry VR rig yaw into flat mode
-  });
-
-  comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
+  }).menu;
+  touch.onChange = () => menu.refresh();
   if (/[?&]lie=1/.test(location.search)) rise.setLying(true);   // front-page "Lying down" cards
   // spyglass: a hand-held lens (render-to-texture, ×6) floating at your left hip; grip to grab, look through it
   kit = createToolkit({ renderer, scene, dolly, camera, menu });

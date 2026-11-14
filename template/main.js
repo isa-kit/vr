@@ -2,7 +2,7 @@
 // Everything standard (menu + its Wheel / Dashboard / Wrist style, Pause, Recenter, Quit, comfort, posture incl.
 // Lying up, slow straight drift with the right-hand compass, controller rays, mouse + touch) comes from
 // shared/app.js. This file only says WHAT THE APP IS. Rules: /STANDARD.md. Checklist: STANDARD.md §9.
-import { THREE, createOortiaApp, sectionRow, choiceGrid, buttonRow } from '../shared/app.js?v=app1';
+import { THREE, createOortiaApp, sectionRow, choiceGrid, buttonRow } from '../shared/app.js?v=app2';
 
 const TINTS = [['Gold', '#ffd27a'], ['Sky', '#8fd3ff'], ['Rose', '#ff8fb0'], ['Mint', '#8ff0c0']];
 

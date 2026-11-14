@@ -4,7 +4,7 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114std1';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114std2';
 import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
 import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';

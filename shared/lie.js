@@ -18,7 +18,7 @@
 // floating menu along your gaze (the stock placement assumes you look at the horizon).
 // ====================================================================================================================
 import * as THREE from 'three';
-import { standardChrome, STANDARD, detectXR, sectionRow, choiceGrid, stepperRow } from './app.js?v=app1';   // menu + comfort + Pause come from the app standard
+import { standardChrome, STANDARD, detectXR, sectionRow, choiceGrid, stepperRow } from './app.js?v=app2';   // menu + comfort + Pause come from the app standard
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';
 

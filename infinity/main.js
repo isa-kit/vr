@@ -3,9 +3,9 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/xrmenu.js?v=20261114h';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/app.js?v=app2';
 import { createToolkit } from '../shared/xrtools.js?v=20261113h';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261113h';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app2';
 import { createTouch } from '../shared/touch.js?v=20261113h';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113h';
@@ -160,7 +160,7 @@ function init() {
   const driftCap = () => 1.0 * [1, 1.6, 2.5][comfort.settings.speed] * (comfort.reducedMotion ? 0.5 : 1);
   rise = createSkyRise({ THREE, renderer, camera, rig: dolly, comfort, getMenu: () => menu, story: 'stars', ceiling: 60, step: 8, home: () => lieSpot,
     onLying: (on) => { if (on) lieSpot = { x: dolly.position.x, y: dolly.position.y, z: dolly.position.z }; pitch = on ? 1.42 : 0; yaw = 0; } });
-  menu = createXRMenu({
+  menu = standardChrome({ comfort, scene, comfortRows: false,   // the app standard: Pause first, then Recenter / Menu style / Quit (STANDARD.md)
     renderer, camera, dolly, caps,
     title: 'Infinity Lights',
     compactCommon: true,
@@ -209,9 +209,8 @@ function init() {
     setBackdrop,
     recenter,
     onBeforeEnter: startAudio,
-  });
-
-  comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
+  }).menu;
+  touch.onChange = () => menu.refresh();
   if (/[?&]lie=1/.test(location.search)) rise.setLying(true);   // front-page "Lying down" cards
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   buildWand();

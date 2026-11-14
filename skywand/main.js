@@ -3,33 +3,28 @@
 // the air with a wand. Lines, ribbons, dots or sparkles stay where you drew them in the world, so they stream past and
 // behind you as you drift; they can fade away over time. Constant speed, no turning, vignette from shared/comfort.js.
 // Desktop: drag to draw, right-drag / arrow keys to look. Phone: one finger draws, two fingers look.
-import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, choiceGrid, swatchGrid } from '../shared/xrmenu.js?v=20261114g';
-import { createComfort } from '../shared/comfort.js?v=20261114f';
-import { createTouch } from '../shared/touch.js?v=20261114f';
-import { beautify } from '../shared/beauty.js?v=20261114f';
-import { createDrift } from '../shared/drift.js?v=drift5';
+// Built on the app standard (shared/app.js, STANDARD.md): menu, Pause, comfort, posture, drift + compass all come from there.
+import { THREE, createOortiaApp, sectionRow, choiceGrid, swatchGrid } from '../shared/app.js?v=app2';
 
 const KEY = 'oortia-skywand-v2';
 const COLORS = [['Gold', '#ffd27a'], ['Rose', '#ff8fb0'], ['Sky', '#8fd3ff'], ['Mint', '#8ff0c0'], ['Violet', '#b9a0ff'], ['White', '#ffffff'], ['Ember', '#ff9a5a'], ['Rainbow', 'rainbow']];
 const BRUSHES = [['Line', 'line'], ['Ribbon', 'ribbon'], ['Dots', 'dots'], ['Sparkles', 'sparkle']];
-const MAX_SPEED = 0.45;                 // hard cap (m/s) for the straight drift — slow is key for comfort
 const FADES = [['Never', 0], ['10 s', 10], ['30 s', 30], ['1 min', 60]];
 const SIZES = [['Fine', 0.6], ['Medium', 1], ['Bold', 1.8]];
 const TOP = 160, BOTTOM = 2.5;
-const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', fade: 30, size: 1, posture: 'seated' },
+const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', fade: 30, size: 1 },
   (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* */ } };
 
-let renderer, scene, camera, dolly, menu, comfort, touch, fx, caps, drift, xr = false;
-const strokes = [], clock = new THREE.Clock();
-let now = 0, yaw = 0, pitch = 0;
+let app, scene, camera, dolly, menu, comfort, drift;
+const strokes = [];
+let now = 0;
 
 Promise.resolve().then(init).catch((e) => { console.error(e); const s = document.getElementById('status'); if (s) s.textContent = 'Could not start: ' + e.message; });
 
 // ---------- world ----------
 function buildWorld() {
-  const world = new THREE.Group(); scene.add(world);
+  const world = new THREE.Group(); app.world.add(world);   // app.world: hidden in one go by passthrough
   const geo = new THREE.SphereGeometry(400, 48, 24), col = [], p = geo.attributes.position, c = new THREE.Color();
   const top = new THREE.Color(0x0b1238), mid = new THREE.Color(0x3a3474), low = new THREE.Color(0xe39a7a), under = new THREE.Color(0x10142a);
   for (let i = 0; i < p.count; i++) {
@@ -134,90 +129,41 @@ function penDown(pen) { if (!pen.down) { pen.down = true; pen.stroke = newStroke
 function penUp(pen) { pen.down = false; if (pen.stroke) pen.stroke.drawing = false; pen.stroke = null; }
 
 async function init() {
-  caps = await detectXR();
-  scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b1238);
-  camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.03, 1200);
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: caps.ar, powerPreference: 'high-performance' });
-  if (caps.ar) renderer.setClearColor(0x000000, 0);
-  touch = createTouch({ canvas: renderer.domElement, look: false });
-  renderer.setPixelRatio(touch.pixelRatio(2)); renderer.setSize(innerWidth, innerHeight); renderer.xr.enabled = true;
-  try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) { /* */ }
-  document.body.appendChild(renderer.domElement); renderer.domElement.style.touchAction = 'none';
-  fx = beautify(renderer, scene, camera, { tone: 'aces', exposure: 1.0, bloom: touch.isTouch ? 0.25 : 0.4, radius: 0.45, threshold: 0.96 });
-  dolly = new THREE.Group(); dolly.add(camera); scene.add(dolly);
-  camera.position.y = 1.15;
+  app = await createOortiaApp({
+    id: 'skywand', title: 'Sky Wand',
+    capabilities: { locomotion: 'drift', posture: ['seated', 'lying-up'], passthrough: true },
+    background: 0x0b1238, fov: 70, near: 0.03, far: 1200,
+    tone: (touch) => ({ tone: 'aces', exposure: 1.0, bloom: touch.isTouch ? 0.25 : 0.4, radius: 0.45, threshold: 0.96 }),
+    home: null,                                   // Recenter resets the heading only; you stay where you have drifted to
+    flatDrag: 'act',                              // drag draws; right-drag / two fingers / arrow keys look
+    hint: matchMedia('(pointer: coarse)').matches ? 'One finger draws · two fingers look · ☰ for brushes, colours and drift' : 'Drag to draw · right-drag or arrow keys to look · Esc/M for brushes, colours and drift',
+    tabs: () => [{ name: 'Brush', rows: [
+      sectionRow('Brush'),
+      ...choiceGrid(BRUSHES, () => P.brush, (v) => { P.brush = v; save(); }, 4),
+      ...swatchGrid(COLORS.map(([n, c]) => [n, c, c === 'rainbow' ? ['#ff6b6b', '#ffd166', '#06d6a0', '#5b7cfa'] : [c]]), () => P.color, (v) => { P.color = v; save(); }, 4),
+      { label: 'Size', cells: SIZES.map(([t, v]) => ({ text: t, action: () => { P.size = v; save(); }, active: () => P.size === v })) },
+      { label: 'Fade', cells: FADES.map(([t, v]) => ({ text: t, action: () => { P.fade = v; save(); }, active: () => P.fade === v })) },
+      { cells: [{ text: 'Clear the sky', action: clearAll, tone: 'danger' }] },
+    ] }],
+  });
+  ({ scene, camera, dolly, menu, comfort, drift } = app);
   scene.add(new THREE.HemisphereLight(0xbfc8ff, 0x202030, 0.9));
   const W = buildWorld();
   const startY = () => 40;
   dolly.position.set(0, startY(), 0);
-  setPosture(P.posture);
 
-  comfort = createComfort({ renderer, scene, camera, dolly });
-  drift = createDrift({ THREE, scene, camera, rig: dolly, comfort, getMenu: () => menu, start: 'still', cap: MAX_SPEED });
-  const rows = [
-    sectionRow('Brush'),
-    ...choiceGrid(BRUSHES, () => P.brush, (v) => { P.brush = v; save(); }, 4),
-    ...swatchGrid(COLORS.map(([n, c]) => [n, c, c === 'rainbow' ? ['#ff6b6b', '#ffd166', '#06d6a0', '#5b7cfa'] : [c]]), () => P.color, (v) => { P.color = v; save(); }, 4),
-    { label: 'Size', cells: SIZES.map(([t, v]) => ({ text: t, action: () => { P.size = v; save(); }, active: () => P.size === v })) },
-    { label: 'Fade', cells: FADES.map(([t, v]) => ({ text: t, action: () => { P.fade = v; save(); }, active: () => P.fade === v })) },
-    { cells: [{ text: 'Clear the sky', action: clearAll, tone: 'danger' }] },
-    ...drift.rows(),
-    { label: 'Posture', cells: [{ text: 'Sitting', action: () => setPosture('seated'), active: () => P.posture === 'seated' }, { text: 'Lying up', action: () => setPosture('lying'), active: () => P.posture === 'lying' }] },
-    ...comfort.rows({ movement: false }),
-  ];
-  menu = createXRMenu({
-    renderer, camera, dolly, caps, title: 'Sky Wand', rows, compactCommon: true,
-    hint: touch.isTouch ? 'One finger draws · two fingers look · ☰ for brushes, colours and drift' : 'Drag to draw · right-drag or arrow keys to look · Esc/M for brushes, colours and drift',
-    fade: comfort.fade,
-    recenter: () => { yaw = 0; },
-    setBackdrop: (v) => { W.world.visible = v; scene.background = v ? new THREE.Color(0x0b1238) : null; },
-    onSessionStart: () => { xr = true; camera.position.y = 0; },
-    onSessionEnd: () => { xr = false; camera.position.y = 1.15; },
-    quitUrl: '../',
-  });
-  comfort.attachMenu(menu);
   menu.controllers.forEach((c) => makePen(c));
   const mousePen = makePen(null); mousePen.tip.visible = false;
-  menu.onSelectStart((c, hand, i) => { if (drift.captureController(c)) return; penDown(pens[i]); });
-  menu.onSelectEnd((c, hand, i) => penUp(pens[i]));
+  const penOf = (aim) => (aim.kind === 'ctrl' ? pens[aim.index] : mousePen);
+  app.onPress((aim) => penDown(penOf(aim)));      // trigger / mouse / touch; "Point to set" clicks are consumed by the bootstrap
+  app.onRelease((aim) => penUp(penOf(aim)));
+  const deskPoint = () => app.pointer.ray.at(1.4, new THREE.Vector3());
 
-  function setPosture(v) { P.posture = v; save(); pitch = v === 'lying' ? 1.4 : 0; yaw = 0; }
-
-  // flat-screen drawing + look
-  const cv = renderer.domElement, ndc = new THREE.Vector2(), ray = new THREE.Raycaster();
-  let look = null; const touches = new Map();
-  const deskPoint = () => { ray.setFromCamera(ndc, camera); return ray.ray.at(1.4, new THREE.Vector3()); };
-  cv.addEventListener('contextmenu', (e) => e.preventDefault());
-  cv.addEventListener('pointerdown', (e) => {
-    touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch (er) { /* */ }
-    if (e.button === 2 || touches.size >= 2) { penUp(mousePen); look = { x: e.clientX, y: e.clientY, yaw, pitch }; return; }
-    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-    if (drift.armed) { ray.setFromCamera(ndc, camera); drift.capture(null, ray.ray.direction); return; }   // "Point to set": click where to go
-    penDown(mousePen);
-  });
-  cv.addEventListener('pointermove', (e) => {
-    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (look) { yaw = look.yaw + (e.clientX - look.x) * 0.004; pitch = THREE.MathUtils.clamp(look.pitch + (e.clientY - look.y) * 0.004, -1.2, 1.56); return; }
-    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  });
-  const end = (e) => { touches.delete(e.pointerId); if (!touches.size) look = null; penUp(mousePen); };
-  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
-  const keys = {}; addEventListener('keydown', (e) => { keys[e.code] = true; }); addEventListener('keyup', (e) => { keys[e.code] = false; });
-  addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-
-  const ld = document.getElementById('loading'); if (ld) ld.style.display = 'none';
   let fadeAcc = 0, fadingBack = false;
-  const frame = (force) => {
-    const dt = force || Math.min(clock.getDelta(), 0.05); now += dt;
-    if (!xr) {
-      if (keys.ArrowLeft) yaw += dt * 1.2; if (keys.ArrowRight) yaw -= dt * 1.2;
-      if (keys.ArrowUp) pitch = Math.min(1.56, pitch + dt * 1.2); if (keys.ArrowDown) pitch = Math.max(-1.2, pitch - dt * 1.2);
-      camera.rotation.set(pitch, yaw, 0, 'YXZ');
-    }
-    // drift: one straight direction at constant speed (frozen by Pause / calm)
-    let v = drift.update(dt, { paused: comfort.paused });
+  app.tick((dt) => {                              // dt is 0 while Paused: strokes stop ageing, the drift is held by the bootstrap
+    now += dt;
     if (dolly.position.y < BOTTOM || dolly.position.y > TOP) {   // reached the ground or the top: fade back to the middle height
-      dolly.position.y = THREE.MathUtils.clamp(dolly.position.y, BOTTOM, TOP); v = 0;
+      dolly.position.y = THREE.MathUtils.clamp(dolly.position.y, BOTTOM, TOP);
       if (!fadingBack) { fadingBack = true; comfort.fade(() => { dolly.position.y = startY(); fadingBack = false; }); }
     }
     // keep the dome, ground texture and motes around you
@@ -227,19 +173,16 @@ async function init() {
     const mp = W.motes.geometry.attributes.position.array;
     for (let i = 0; i < mp.length; i += 3) for (let k = 0; k < 3; k++) { const c = [_wp.x, _wp.y, _wp.z][k]; let d = mp[i + k] - c; if (d > 30) mp[i + k] -= 60; else if (d < -30) mp[i + k] += 60; }
     W.motes.geometry.attributes.position.needsUpdate = true;
-    menu.update();
     // pens
     for (const pen of pens) {
       if (pen.ctrl) {
-        const on = xr && !!pen.ctrl.userData.src; pen.tip.visible = on; pen.tip.material.color.set(P.color === 'rainbow' ? '#ffffff' : P.color);
+        const on = app.xr && !!pen.ctrl.userData.src; pen.tip.visible = on; pen.tip.material.color.set(P.color === 'rainbow' ? '#ffffff' : P.color);
         if (pen.down && pen.ctrl.userData.overMenu) penUp(pen);
         if (pen.down && pen.stroke) { pen.tip.getWorldPosition(_wp); _up.set(0, 1, 0).applyQuaternion(pen.ctrl.getWorldQuaternion(_q)); if (!addPoint(pen.stroke, _wp.clone(), _up)) penUp(pen); }
-      } else if (pen.down && pen.stroke && !xr) { if (!addPoint(pen.stroke, deskPoint(), null)) { penUp(pen); penDown(pen); } }
+      } else if (pen.down && pen.stroke && !app.xr) { if (!addPoint(pen.stroke, deskPoint(), null)) { penUp(pen); penDown(pen); } }
     }
     fadeAcc += dt; if (fadeAcc > 0.08) { fadeAcc = 0; fadeStrokes(); }
-    comfort.update(dt, { moving: v });
-    fx.render();
-  };
-  if (location.hash.includes('debug')) window.__SW = { frame, P, strokes, dolly, drift, menu, THREE, scene };
-  renderer.setAnimationLoop(() => frame());
+  });
+  app.start();
+  if (location.hash.includes('debug')) window.__SW = { frame: app._frame, P, strokes, dolly, drift, menu, THREE, scene, app };
 }

@@ -9,9 +9,9 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, choiceGrid, stepperRow } from '../shared/xrmenu.js?v=20261114h';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow } from '../shared/app.js?v=app2';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfort.js?v=20261114f';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app2';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { createBirds } from '../shared/birds.js?v=20261114f';
 import * as RZ from './realism.js?v=20261114f';
@@ -154,7 +154,7 @@ async function init() {
     onQuality: (q) => { qLevel = q; gulls.group.visible = q < 2; applyQuality(); } });
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('One finger sculpts · two fingers pinch to zoom & orbit · pick a tool below · ☰ Menu for options', h.textContent); }
 
-  menu = createXRMenu({
+  menu = standardChrome({ comfort, scene, comfortRows: false, compactCommon: false,   // the app standard: Pause first, then Recenter / Menu style / Quit (STANDARD.md)
     renderer, camera, dolly, caps,
     title: 'Sand Castle',
     startOpenDesktop: innerWidth > 760,
@@ -186,8 +186,7 @@ async function init() {
     onBeforeEnter: startAudio,
     onSessionStart: () => { dolly.position.copy(VR_HOME); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); endDesktopLens(); },
     onSessionEnd: () => { dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); dolly.scale.setScalar(1); },
-  });
-  comfort.attachMenu(menu);
+  }).menu;
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   registerTools();
   buildToolbar();

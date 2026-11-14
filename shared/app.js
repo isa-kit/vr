@@ -1,7 +1,7 @@
 // ============================ shared/app.js — the ONE bootstrap for every Oortia app ============================
 // The binding conventions are in /STANDARD.md. A new app imports ONLY this file (plus three) — copy /template/.
 //
-//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app1';
+//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app2';
 //   const app = await createOortiaApp({
 //     id: 'myapp', title: 'My App',
 //     capabilities: { locomotion: 'none' | 'walk' | 'drift',            // default 'none'
@@ -33,7 +33,7 @@ import { createComfort, rotateRigAboutHead, stickVector } from './comfort.js?v=2
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';
 
-export { THREE, detectXR, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab, rotateRigAboutHead, stickVector };
+export { THREE, detectXR, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab, createComfort, rotateRigAboutHead, stickVector, createTouch, beautify };
 
 // The numbers of the standard, in one place (STANDARD.md quotes these).
 export const STANDARD = Object.freeze({
@@ -50,41 +50,46 @@ export const STANDARD = Object.freeze({
 // ---------------------------------------------------------------------------------------------------------------
 // standardChrome — menu + comfort + Pause, wired the standard way. Used by createOortiaApp and by the older kits.
 //   o: { renderer, scene, camera, dolly, caps, title, hint, rows, sound, recenter, setBackdrop,
-//        onBeforeEnter, onSessionStart, onSessionEnd, groundHit, onQuality,
+//        onBeforeEnter, onSessionStart, onSessionEnd, groundHit, onQuality,   (+ any other createXRMenu option)
+//        comfort: an existing createComfort() instance (worlds that need comfort before the menu, e.g. for skyrise),
 //        comfortRows: { movement, teleport, header } | false,      // comfort rows are appended after `rows`
 //        pause: { get, set } (an app with its own game pause),  onPause: (paused) => {},
 //        menu: { ...any other createXRMenu option } }
-//   → { menu, comfort, paused (getter), setPaused(v), togglePause(), onPause(fn) }
+//   → { menu, comfort, paused (getter), setPaused(v), togglePause(), onPause(fn) }      (also reachable as menu.chrome)
 // Pause = the comfort "calm" flag (comfort.paused) unless the app supplies its own; it is a session action, so it
 // always starts un-paused (except with prefers-reduced-motion, where calm is the default).
 export function standardChrome(o) {
   const { renderer, scene, camera, dolly, caps } = o;
-  const comfort = createComfort({ renderer, scene, camera, dolly, groundHit: o.groundHit || null, onQuality: o.onQuality || null });
+  const comfort = o.comfort || createComfort({ renderer, scene, camera, dolly, groundHit: o.groundHit || null, onQuality: o.onQuality || null });
   const listeners = o.onPause ? [o.onPause] : [];
   const custom = o.pause && o.pause.get ? o.pause : null;
-  let flag = comfort.reducedMotion ? !!comfort.paused : false;
+  let flag = comfort.reducedMotion ? !!comfort.paused : false, inSet = false;
   let menu = null;
   const fire = () => { for (const f of listeners) { try { f(C.paused); } catch (e) { console.error(e); } } if (menu) menu.refresh(); };
   // the comfort section's own "Pause world motion" row writes comfort.paused directly — route it through the same switch
-  Object.defineProperty(comfort, 'paused', { configurable: true, get: () => flag, set: (v) => { v = !!v; if (v === flag) return; flag = v; if (!custom) fire(); } });
+  Object.defineProperty(comfort, 'paused', { configurable: true, get: () => flag, set: (v) => { v = !!v; if (v === flag) return; flag = v; if (!inSet) fire(); } });
   const C = {
     comfort,
-    get paused() { return custom ? !!custom.get() : flag; },
-    setPaused(v) { v = !!v; if (v === C.paused) return; if (custom) { custom.set(v); fire(); } else comfort.paused = v; },
+    get paused() { return flag || (custom ? !!custom.get() : false); },
+    // an app's own pause is tried first; when it does not apply (e.g. a game sitting on its title screen) the calm flag is used
+    setPaused(v) {
+      v = !!v; if (v === C.paused) return;
+      inSet = true;
+      try { if (custom) { custom.set(v); if (!!custom.get() !== v) comfort.paused = v; else if (!v) comfort.paused = false; } else comfort.paused = v; } finally { inSet = false; }
+      fire();
+    },
     togglePause() { C.setPaused(!C.paused); },
     onPause(f) { listeners.push(f); },
   };
   const rows = o.rows || [];                       // kept BY REFERENCE: callers may push more rows later (then menu.refresh())
   if (o.comfortRows !== false) rows.push(...comfort.rows({ movement: false, ...(o.comfortRows || {}) }));
   menu = createXRMenu({
-    compactCommon: true, quitUrl: '../', ...(o.menu || {}),
-    renderer, camera, dolly, caps, title: o.title || 'Oortia', hint: o.hint, rows,
-    sound: o.sound, fade: comfort.fade, recenter: o.recenter, setBackdrop: o.setBackdrop,
+    compactCommon: true, quitUrl: '../', ...o, ...(o.menu || {}),
+    renderer, camera, dolly, caps, title: o.title || 'Oortia', rows, fade: comfort.fade,
     pause: { text: () => (C.paused ? 'Resume' : 'Pause'), active: () => C.paused, action: () => C.togglePause() },
-    onBeforeEnter: o.onBeforeEnter, onSessionStart: o.onSessionStart, onSessionEnd: o.onSessionEnd,
   });
   comfort.attachMenu(menu);
-  C.menu = menu;
+  C.menu = menu; menu.chrome = C;
   return C;
 }
 
@@ -120,7 +125,7 @@ export async function createOortiaApp(o = {}) {
   renderer.setPixelRatio(touch.pixelRatio(2)); renderer.setSize(innerWidth, innerHeight); renderer.xr.enabled = true;
   try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) { /* older runtime */ }
   document.body.appendChild(renderer.domElement); renderer.domElement.style.touchAction = 'none';
-  const fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: touch.isTouch ? 0.18 : 0.3, radius: 0.45, threshold: 0.96, ...(o.tone || {}) });
+  const fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: touch.isTouch ? 0.18 : 0.3, radius: 0.45, threshold: 0.96, ...((typeof o.tone === 'function' ? o.tone(touch) : o.tone) || {}) });
   const dolly = new THREE.Group(); dolly.add(camera); scene.add(dolly);
   const world = new THREE.Group(); scene.add(world);
   const home = o.home === null ? null : Object.assign({ x: 0, y: 0, z: 0, yaw: 0 }, o.home || {});
@@ -163,9 +168,9 @@ export async function createOortiaApp(o = {}) {
   // your head is back over it). Then apps re-place their content relative to the headset in onRecenter.
   app.recenter = () => {
     if (app.xr) {
-      const f = headFrame(camera);
+      const f = headFrame(camera), to = home || f.eye;                 // no home: the head stays exactly where it is, only the heading resets
       dolly.rotation.y += (home ? home.yaw : 0) - f.yaw; dolly.updateMatrixWorld(true);
-      if (home) { const w = camera.getWorldPosition(new THREE.Vector3()); dolly.position.x += home.x - w.x; dolly.position.z += home.z - w.z; dolly.updateMatrixWorld(true); }
+      const w = camera.getWorldPosition(new THREE.Vector3()); dolly.position.x += to.x - w.x; dolly.position.z += to.z - w.z; dolly.updateMatrixWorld(true);
     } else { flatPose(); applyLook(); }
     const f = headFrame(camera);
     for (const fn of recenters) fn(f, app);
@@ -198,7 +203,7 @@ export async function createOortiaApp(o = {}) {
   let tab = 0;
   const chrome = standardChrome({
     renderer, scene, camera, dolly, caps, title, hint: o.hint, sound: o.sound, groundHit: o.groundHit, onQuality: o.onQuality, onPause: o.onPause, pause: o.pause,
-    comfortRows: false, menu: o.menu,
+    comfortRows: false, ...(o.menu || {}),
     recenter: () => app.recenter(),
     setBackdrop: (v) => { world.visible = v; scene.background = v ? bg : null; },
     onBeforeEnter: o.onBeforeEnter,

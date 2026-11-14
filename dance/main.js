@@ -2,8 +2,8 @@
 // A dancer performs a routine on a stage; you copy it with both controllers. Hand and head positions are compared on every
 // scored beat. Desktop: watch & learn, plus a mouse/keyboard approximation to test the scoring loop. Phone: watch & learn.
 import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, inTab } from '../shared/xrmenu.js?v=20261114h';
-import { createComfort } from '../shared/comfort.js?v=20261114f';
+import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, inTab } from '../shared/app.js?v=app2';
+import { createComfort } from '../shared/app.js?v=app2';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261118b';
@@ -85,7 +85,7 @@ async function init() {
     buzz: (i, v, ms) => buzz(i, v, ms), onExit: () => { schoolOn = false; stopRun(); mode = renderer.xr.isPresenting ? 'xr' : 'watch'; goto(mode === 'xr' ? 'home' : 'title'); },
   });
   comfort = createComfort({ renderer, scene, camera, dolly, onQuality: (q) => { if (renderer.xr.isPresenting) stage.setTier(q >= 1 ? 'light' : 'medium'); } });
-  menu = createXRMenu({
+  menu = standardChrome({ comfort, scene, comfortRows: false, compactCommon: false, pause: { get: () => state === 'paused', set: (v) => { if (v) pause(); else resume(); } },   // the app standard: Pause first, then Recenter / Menu style / Quit (STANDARD.md)
     renderer, camera, dolly, caps, title: 'Dance',
     hint: 'Copy the dancer on every beat. Menu: routine, mirror, speed, practice one move, pause or quit. Desktop play: mouse = hands · Space swap hand · Shift/Alt freeze a hand · wheel = depth · arrows, S, Z, X = poses.',
     rows: [
@@ -110,8 +110,7 @@ async function init() {
     onBeforeEnter: () => music.ensure(),
     onSessionStart: onXRStart, onSessionEnd: onXREnd,
     quitUrl: '../',
-  });
-  comfort.attachMenu(menu);
+  }).menu;
   music.setVolume(S.volume); music.offsetMs(S.offsetMs);
   menu.onSelectStart((c) => { if (mode === 'xr' && ui.visible()) { const p = pickFrom(c); if (p && p.id) { menu.hapticPulse(c); onAction(p.id); } } });
 
