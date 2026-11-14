@@ -274,7 +274,7 @@ export async function createLieGame(opts = {}) {
   K.button({ text: () => (S.mode === 'lying' ? '◒ Lying down' : '◓ Seated'), x: 1.55, y: by, w: 1.5, onPress: () => K.setMode(S.mode === 'lying' ? 'seated' : 'lying') });
 
   // toast
-  const toastM = makeText({ w: 5, h: 0.6, size: 0.6 }); toastM.position.set(0, FH * 0.55, 0.05); toastM.visible = false; field.add(toastM);
+  const toastM = makeText({ w: 5.4, h: 0.6, size: 0.56, bg: 'rgba(12,16,36,0.55)' }); toastM.position.set(0, FH * 0.55, 0.05); toastM.visible = false; field.add(toastM);
   let toastT = 0;
   K.toast = (t, secs = 2.2) => { toastM.set(t); toastM.visible = true; toastT = secs; toastM.material.opacity = 1; };
 

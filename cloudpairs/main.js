@@ -2,7 +2,7 @@
 // Little clouds hang overhead in a grid. Turn two over (trigger / click / tap, or rest your aim on one in Hover mode);
 // if they hide the same sky picture they stay open. Clear the sky in as few turns as you can.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie1';
+import { createLieGame } from '../shared/lie.js?v=lie2';
 
 const SIZES = [[3, 2], [4, 3], [4, 4], [5, 4]];
 const ICONS = ['sun', 'moon', 'star', 'rainbow', 'bird', 'balloon', 'kite', 'drop', 'snow', 'planet'];
