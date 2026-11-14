@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js';
 import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js?v=20261114g';
+import { createSkyRise } from '../shared/skyrise.js?v=rise3';
 import { createComfort } from '../shared/comfort.js';
 import { createTouch } from '../shared/touch.js';
 
@@ -255,7 +256,9 @@ export async function createWorld(o = {}) {
     eye = 1.15, fov = 68, far = 2400, startYaw = 0, startPitch = 0,
     pitchMin = -1.35, pitchMax = 1.35, bg = 0x999999, tone = {}, title = 'World',
     maxPixelRatio = 2, rows = [], loading = false,
+    lie = {},             // Lying down posture: { story: 'trees'|'sky'|'stars', ceiling, step } — world stays upright, you look up
   } = o;
+  const LIE_EYE = 0.3, LIE_PITCH = 1.42;
 
   // ----- device class: phones get touch UI, no VR/AR button (a phone has no controllers, so entering would strand the user)
   const isHeadsetUA = /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent);
@@ -338,14 +341,15 @@ export async function createWorld(o = {}) {
   // ----- recenter / passthrough hooks for the shared menu
   W.recenter = () => {
     if (renderer.xr.isPresenting) recenterRig(rig, camera, new THREE.Vector3(W.home.x, 0, W.home.z), W.startYaw);
-    else { W.yaw = 0; W.pitch = W.startPitch + (innerWidth < innerHeight ? W.portraitTilt : 0); vy = vp = 0; }   // yaw is relative to the seat's facing
+    else { W.yaw = 0; W.pitch = W.lying ? LIE_PITCH : W.startPitch + (innerWidth < innerHeight ? W.portraitTilt : 0); vy = vp = 0; }   // yaw is relative to the seat's facing
   };
   // Move the viewer to a new seat (instant; callers wrap it in comfort.fade so it always goes through black, never a glide).
   // yaw: facing in radians (0 = toward -z, + = turn left).  In VR the head is re-aligned to the seat and facing.
   W.setSeat = ({ x, y, z, yaw = 0, pitch = 0, tilt = 0.12 }) => {   // tilt: extra pitch applied in portrait only
     rig.position.set(x, y, z); W.home.copy(rig.position);
     W.startYaw = yaw; W.startPitch = pitch; W.portraitTilt = tilt; vy = vp = 0;
-    W.yaw = 0; W.pitch = pitch + (innerWidth < innerHeight ? tilt : 0);
+    W.yaw = 0; W.pitch = W.lying ? LIE_PITCH : pitch + (innerWidth < innerHeight ? tilt : 0);
+    if (W.rise) { W.rise.height = 0; W.rise.floating = 0; W.rise.shift.set(0, 0); }
     if (renderer.xr.isPresenting) W.recenter();
   };
   const setBackdrop = (visible) => {          // passthrough ON = hide the whole world so the room shows through
@@ -370,12 +374,15 @@ export async function createWorld(o = {}) {
       if (lv >= 1) direct = true;                                  // skip post-processing (bloom) first
       for (const fn of W.detailFns) fn(DETAIL[Math.min(lv, 3)]);   // then thin foliage
     } });
+    const rise = W.rise = createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu: () => W.menu, parent: W.world, isPaused: () => W.paused, ...lie, home: () => W.home,
+      onLying: (on) => { W.lying = on; W.yaw = 0; vy = vp = 0; W.pitch = on ? LIE_PITCH : W.startPitch; if (o.onLying) o.onLying(on); } });
     W.menu = createXRMenu({
-      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...touch.rows(), ...comfort.rows({ movement: false })], fade: comfort.fade,
+      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...rise.rows(), ...touch.rows(), ...comfort.rows({ movement: false })], fade: comfort.fade,
       sound: { get: () => W.soundOn, set: W.setSound },
       setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(), quitUrl: '../',
     });
     comfort.attachMenu(W.menu);
+    if (W.wantLie) rise.setLying(true);
     renderer.setAnimationLoop(() => {
       const rdt = Math.min(clock.getDelta(), 0.05);
       W.paused = !!W.comfort.paused;                     // "Pause / calm" from the comfort section of the menu
@@ -387,23 +394,24 @@ export async function createWorld(o = {}) {
         if (keys.ArrowLeft || keys.KeyA) W.yaw += kk; if (keys.ArrowRight || keys.KeyD) W.yaw -= kk;
         if (keys.ArrowUp || keys.KeyW) W.pitch += kk; if (keys.ArrowDown || keys.KeyS) W.pitch -= kk;
         if (!dragging && !W.reducedMotion) { W.yaw += vy; W.pitch += vp; vy *= 0.88; vp *= 0.88; } else if (!dragging) { vy = vp = 0; }
-        W.pitch = Math.max(pitchMin, Math.min(pitchMax, W.pitch));
+        W.pitch = Math.max(W.lying ? -0.3 : pitchMin, Math.min(W.lying ? 1.56 : pitchMax, W.pitch));
         if (touch.gyro.on) {
           touch.tick(rdt); _e.setFromQuaternion(touch.gyro.quat, 'YXZ');
           // phone gives pitch + heading; dragging still turns the heading. Roll is dropped so the horizon stays level.
-          camera.rotation.set(Math.max(pitchMin, Math.min(pitchMax, _e.x)), _e.y + W.yaw + W.startYaw, 0, 'YXZ');
+          camera.rotation.set(Math.max(W.lying ? -0.3 : pitchMin, Math.min(W.lying ? 1.56 : pitchMax, _e.x)), _e.y + W.yaw + W.startYaw, 0, 'YXZ');
         } else {
           // camera yaw is +left: drag right lowers yaw (look right); drag down lowers pitch (look down); arrow keys: left/up raise them
           camera.rotation.set(W.pitch, W.yaw + W.startYaw, 0, 'YXZ');   // horizon always level; the camera never moves by itself
         }
-        camera.position.y = eye;
+        camera.position.y = W.lying ? LIE_EYE : eye;
       } else if (!centered) { centered = true; W.recenter(); }  // face the scene on entering VR
       W.menu.update();
       for (const fn of W.frameFns) fn(dt, t);
-      W.comfort.update(rdt, { moving: 0, turning: 0 });   // fades, vignette (idle for seated worlds) and the frame-time governor
+      W.comfort.update(rdt, { moving: rise.update(rdt), turning: 0 });   // fades, vignette (idle for seated worlds) and the frame-time governor
       if (direct && !renderer.xr.isPresenting) renderer.render(scene, camera); else fx.render();
     });
   };
+  W.wantLie = /[?&]lie=1/.test(location.search);   // front-page "Lying down" cards open worlds with ?lie=1
   if (location.hash === '#debug') window.__W = W;   // dev aid: inspect the world from the console
   return W;
 }

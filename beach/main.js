@@ -3,7 +3,7 @@
 // headlands, dune grass and scrub.  The sun slowly sinks from golden hour into dusk.  Quality tier is automatic
 // (desktop / phone / headset) and switchable in the menu.  Wave sounds are cued to the visible wave clock.
 
-import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114x';
+import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114lie3';
 import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
 import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';
@@ -27,6 +27,7 @@ const DETAIL = { high: { sand: [220, 140], water: 128, grass: 5000, shrubs: 170,
 
 let timeMode = 'auto', pCur = 0, curSeat = 'shore', switchTo = () => {};
 const W = await createWorld({
+  lie: { story: 'sky', ceiling: 70, step: 8 },
   eye: 0.95, bg: 0xf0b88a, title: 'Beach — Sunset Shore', startPitch: -0.07, loading: true,
   hint: isCoarse ? 'Drag to look around · Menu → Viewpoint to change seat' : 'Drag to look around · keys 1–3 or Menu → Viewpoint to change seat',
   rows: [sectionRow('Viewpoint'), ...choiceGrid([['Shore', 'shore'], ['Dune top', 'dune'], ['Along the beach', 'along']], () => curSeat, (id) => switchTo(id), 3),

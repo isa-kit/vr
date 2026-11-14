@@ -6,7 +6,7 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, softTexture, fbm, smoothstep, rng, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261114x';
+} from '../seated/common.js?v=20261114lie3';
 import { createBirds } from '../shared/birds.js';
 import { yieldNow } from '../seated/proc.js?v=20261114x';
 import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114x';
@@ -45,6 +45,8 @@ let switchTo = () => {};
 const setQuality = (v) => { try { localStorage.setItem('oortia-quality', v); } catch (e) { /* ignore */ } qPref = v; if (W.comfort) W.comfort.fade(() => location.reload()); else location.reload(); };
 
 const W = await createWorld({
+  lie: { story: 'trees', ceiling: 44, step: 5 },
+  onLying: (on) => { if (on && curId !== 'floor') applyViewpoint('floor'); },   // lie on the forest floor, under the canopy
   eye: 1.15, bg: 0xbccfc4, title: 'Forest — Morning Light', startPitch: 0.1, loading: true,
   hint: (isCoarse ? 'Drag to look around · Menu → Viewpoint to change seat' : 'Drag to look around · keys 1–4 or Menu → Viewpoint to change seat'),
   rows: [sectionRow('Viewpoint'), ...choiceGrid(VPS.map(v => [v.label, v.id]), () => curId, (id) => switchTo(id), 2),

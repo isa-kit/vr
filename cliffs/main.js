@@ -4,7 +4,7 @@
 // scrub, soft sun shadows near the viewer.  You sit well back on a broad, walled ledge (never a sheer drop at your
 // feet).  Three seats, automatic quality tier, afternoon -> golden light.
 
-import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114x';
+import { THREE, createWorld, fbm, vnoise, smoothstep, rng, hash, sectionRow, choiceGrid } from '../seated/common.js?v=20261114lie3';
 import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
 import { createBirds } from '../shared/birds.js';
 import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';
@@ -26,6 +26,7 @@ const DETAIL = { high: { grass: 6000, flowers: 320, pebbles: 120, shrubs: 80, ro
 
 let timeMode = 'auto', pCur = 0, curSeat = 'ledge', switchTo = () => {};
 const W = await createWorld({
+  lie: { story: 'sky', ceiling: 70, step: 8, clouds: true },
   eye: 1.15, bg: 0xe8dfcf, title: 'Cliffs — Edge of the Sea', startPitch: -0.08, startYaw: 0, loading: true,
   hint: isCoarse ? 'Drag to look around · Menu → Viewpoint to change ledge' : 'Drag to look around · keys 1–3 or Menu → Viewpoint to change ledge',
   rows: [sectionRow('Viewpoint'), ...choiceGrid([['Centre ledge', 'ledge'], ['West ledge', 'west'], ['East ledge', 'east']], () => curSeat, (id) => switchTo(id), 3),
