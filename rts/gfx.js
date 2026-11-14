@@ -3,9 +3,9 @@
 // whole army costs a couple of dozen draw calls. A fog-of-war texture darkens every world material via onBeforeCompile.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeNoise, rng } from '../procgen/noise.js?v=rts1';
-import { createRocks } from '../procgen/rocks.js?v=rts1';
-import { UT, BT, N, K, WL } from './sim.js?v=rts1';
+import { makeNoise, rng } from '../procgen/noise.js?v=rts2';
+import { createRocks } from '../procgen/rocks.js?v=rts2';
+import { UT, BT, N, K, WL } from './sim.js?v=rts2';
 
 export const TEAM_COL = [0x2f94ff, 0xff5a2a];
 export const CELL = 3.6 / N;                       // metres per map cell at table scale 1

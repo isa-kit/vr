@@ -2,8 +2,8 @@
 // Left-drag box select · right-click move/attack/gather · WASD/edge pan · Q/E rotate · wheel zoom · 1-9 groups (Ctrl/hold to assign)
 // Touch: tap = select / command, drag = box select, two fingers = pan + pinch zoom + twist, mini map tap = jump.
 import * as THREE from 'three';
-import { N } from './sim.js?v=rts1';
-import { CELL } from './gfx.js?v=rts1';
+import { N } from './sim.js?v=rts2';
+import { CELL } from './gfx.js?v=rts2';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export function createDesk({ canvas, camera, getView, getS, C, hud, mini, isActive, isTouch, onMenu, onPause }) {
@@ -13,7 +13,7 @@ export function createDesk({ canvas, camera, getView, getS, C, hud, mini, isActi
   const _v = new THREE.Vector3(), _o = new THREE.Vector3(), _d = new THREE.Vector3(), ray = new THREE.Raycaster();
 
   D.center = (x, z) => { D.cam.x = clamp(x, 0, N); D.cam.z = clamp(z, 0, N); };
-  D.frame = (team) => { const s = C.hqPos(); const dir = team === 0 ? 1 : -1; D.cam.x = s.x + dir * 3; D.cam.z = s.z - dir * 4; D.cam.yaw = team === 0 ? 0.75 : 0.75 + Math.PI; D.cam.dist = 1.7; };
+  D.frame = (team) => { const s = C.hqPos(); const dir = team === 0 ? 1 : -1; D.cam.x = s.x + dir * 4; D.cam.z = s.z - dir * 3; D.cam.yaw = team === 0 ? 0.6 : 0.6 + Math.PI; D.cam.dist = 1.55; D.cam.pitch = 0.95; };
   D.apply = () => {
     const V = getView(); if (!V) return;
     const c = D.cam, h = getS().map.heightAt(clamp(c.x, 0, N - 0.01), clamp(c.z, 0, N - 0.01));
@@ -65,6 +65,8 @@ export function createDesk({ canvas, camera, getView, getS, C, hud, mini, isActi
   });
   canvas.addEventListener('pointermove', (e) => {
     mx = e.clientX; my = e.clientY; mouseIn = true;
+    if (C.buildType && e.pointerType !== 'touch' && !drag) { const pk = D.pickAt(e.clientX, e.clientY, { units: false }); const V = getView(); if (pk) { const g = pk.kind === 'ground' ? pk : { x: pk.gx ?? pk.x, z: pk.gz ?? pk.z }; const { cx, cz } = C.siteFor(g.x, g.z); V.setGhost(C.buildType, cx, cz, getS().canPlace(C.team, C.buildType, cx, cz)); } }
+    else if (!C.buildType && getView() && e.pointerType !== 'touch') { const pk = (!drag) ? D.pickAt(e.clientX, e.clientY) : null; C.hoverId = pk && pk.ent ? pk.ent.id : 0; }
     const p = ptr.get(e.pointerId);
     if (p) { p.x = e.clientX; p.y = e.clientY; }
     if (e.pointerType === 'touch') {

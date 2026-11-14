@@ -1,7 +1,7 @@
 // ============================ rts/ctrl.js — device-independent player controller ============================
 // Selection, control groups, commands, build/train, stances and formations. Desktop mouse, phone touch and the VR
 // controllers all call into this one object, so every input scheme drives the same rules.
-import { UT, BT, N } from './sim.js?v=rts1';
+import { UT, BT, N } from './sim.js?v=rts2';
 
 export function createCtrl({ G, sfx, team = 0 }) {
   const S = new Proxy({}, { get: (_, k) => G.S[k] }), view = new Proxy({}, { get: (_, k) => G.view[k] });   // G.S / G.view change per match

@@ -7,19 +7,19 @@ import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, 
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { createSim, DT, UT, BT, N } from './sim.js?v=rts1';
-import { createAI } from './ai.js?v=rts1';
-import { createView, CELL } from './gfx.js?v=rts1';
-import { createMini } from './mini.js?v=rts1';
-import { createCtrl } from './ctrl.js?v=rts1';
-import { createHud } from './hud.js?v=rts1';
-import { createDesk } from './desk.js?v=rts1';
-import { createSfx } from './sfx.js?v=rts1';
+import { createSim, DT, UT, BT, N } from './sim.js?v=rts2';
+import { createAI } from './ai.js?v=rts2';
+import { createView, CELL } from './gfx.js?v=rts2';
+import { createMini } from './mini.js?v=rts2';
+import { createCtrl } from './ctrl.js?v=rts2';
+import { createHud } from './hud.js?v=rts2';
+import { createDesk } from './desk.js?v=rts2';
+import { createSfx } from './sfx.js?v=rts2';
 
 const KEY = 'oortia-rts-v1';
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const FEAT = { ai: false, tutorial: false, vr: true };
+const FEAT = { ai: true, tutorial: false, vr: true };
 const SEEDS = [7, 12, 21, 3, 33, 18, 27, 9, 36, 15, 24, 30];
 
 const P = { diff: 'normal', sound: true, selMode: 'box', miniMode: 'send', ...JSON.parse((() => { try { return localStorage.getItem(KEY) || '{}'; } catch (e) { return '{}'; } })()) };
@@ -111,6 +111,7 @@ function newMatch({ idle = false, diff = P.diff, tutorial = false, seed = null }
   desk.frame(0); desk.apply();
   G.phase = idle ? 'title' : 'play';
   if (!idle) hud.screen(null);
+  if (!idle && !tutorial) { const n = S.nearestNode(S.startPos(0).x, S.startPos(0).z); if (n) S.cmd(0, { t: 'gather', ids: S.units(0).map((u) => u.id), node: n.id }); }
   if (G.tutorialHook) G.tutorialHook(tutorial);
   S.updateVision();
 }
