@@ -6,7 +6,7 @@
 
 import {
   THREE, SHADER_TAIL, createWorld, makeNoiseTexture, softTexture, fbm, smoothstep, rng, sectionRow, choiceGrid,
-} from '../seated/common.js?v=20261114lie11';
+} from '../seated/common.js?v=20261114std1';
 import { createBirds } from '../shared/birds.js';
 import { yieldNow } from '../seated/proc.js?v=20261114x';
 import { makeMaterialMaps, makeLeafAtlas, standardMaterial } from '../procgen/textures.js?v=20261114x';

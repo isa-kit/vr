@@ -2,7 +2,7 @@
 // Lie back and catch slow shooting stars as they cross the night sky overhead. Point (controller, head or mouse)
 // and pull the trigger / click / tap — or switch to Hover mode and just rest your aim on a star.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie3';
+import { createLieGame } from '../shared/lie.js?v=lie4';
 
 const ROUND = 90;
 const G = { state: 'title', time: 0, score: 0, combo: 0, caught: 0, spawnIn: 1, hover: false };

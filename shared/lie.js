@@ -18,8 +18,7 @@
 // floating menu along your gaze (the stock placement assumes you look at the horizon).
 // ====================================================================================================================
 import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, choiceGrid, stepperRow } from './xrmenu.js?v=20261114h';
-import { createComfort } from './comfort.js?v=20261114f';
+import { standardChrome, STANDARD, detectXR, sectionRow, choiceGrid, stepperRow } from './app.js?v=app1';   // menu + comfort + Pause come from the app standard
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';
 
@@ -145,6 +144,9 @@ export async function createLieGame(opts = {}) {
   const pal = SKIES[opts.sky || 'night'];
   const caps = await detectXR();
   const S = Object.assign({ mode: 'lying', dist: 1, aim: 'ctrl' }, load());
+  // posture is the site-wide one (STANDARD.md §7): 'lying-up' | 'seated'; ?lie=1 forces Lying up
+  try { const g = localStorage.getItem(STANDARD.POSTURE_KEY); if (g === 'lying-up') S.mode = 'lying'; else if (g === 'seated' || g === 'standing') S.mode = 'seated'; } catch (e) { /* */ }
+  if (/[?&]lie=1/.test(location.search)) S.mode = 'lying';
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* private */ } };
   const FW = opts.FW || 3.6, FH = opts.FH || 2.4;
 
@@ -167,7 +169,7 @@ export async function createLieGame(opts = {}) {
   const sfx = createSfx(); sfx.set(S.sound !== false);
   const K = {
     THREE, scene, camera, renderer, dolly, field, world, FW, FH, sfx, touch, caps,
-    aims: [], xr: false, get mode() { return S.mode; }, get paused() { return comfort.paused; }, settings: S, save,
+    aims: [], xr: false, get mode() { return S.mode; }, get paused() { return chrome.paused; }, settings: S, save,
   };
   const press = [], release = [], ticks = [], buttons = [];
   K.onPress = (f) => press.push(f); K.onRelease = (f) => release.push(f); K.tick = (f) => ticks.push(f);
@@ -198,12 +200,11 @@ export async function createLieGame(opts = {}) {
     field.up.copy(_up); field.lookAt(_eye); field.updateMatrixWorld(true);
     if (K.onRecenter) K.onRecenter();
   };
-  K.setMode = (m) => { S.mode = m; save(); K.recenter(); refreshButtons(); menu && menu.refresh(); };
+  K.setMode = (m) => { S.mode = m; save(); try { localStorage.setItem(STANDARD.POSTURE_KEY, m === 'lying' ? 'lying-up' : 'seated'); } catch (e) { /* */ } K.recenter(); refreshButtons(); menu && menu.refresh(); };
 
   // ---------- comfort + menu ----------
-  const comfort = createComfort({ renderer, scene, camera, dolly });
-  const menu = createXRMenu({
-    renderer, camera, dolly, caps, title: opts.title || 'Oortia', compactCommon: true,
+  const chrome = standardChrome({
+    renderer, scene, camera, dolly, caps, title: opts.title || 'Oortia', onPause: opts.onPause,
     hint: opts.hint || 'Click to play. Drag to look around. Esc for menu.',
     rows: [
       sectionRow('Play position'),
@@ -211,19 +212,16 @@ export async function createLieGame(opts = {}) {
       stepperRow('Distance', () => DIST[S.dist][0], () => { S.dist = Math.max(0, S.dist - 1); save(); K.recenter(); }, () => { S.dist = Math.min(2, S.dist + 1); save(); K.recenter(); }),
       ...choiceGrid([['Aim: controllers', 'ctrl'], ['Aim: head', 'head']], () => S.aim, (a) => { S.aim = a; save(); }, 2),
       ...(opts.rows || []),
-      ...comfort.rows({ movement: false }),
     ],
     sound: { get: () => sfx.get(), set: (v) => { sfx.set(v); S.sound = v; save(); } },
-    fade: comfort.fade,
     recenter: () => K.recenter(),
     setBackdrop: (v) => { world.visible = v; scene.background = v ? new THREE.Color(pal.top) : null; },
     onBeforeEnter: () => sfx.ensure(),
     onSessionStart: () => { K.xr = true; setTimeout(() => K.recenter(), 450); if (opts.onXR) opts.onXR(true); },
     onSessionEnd: () => { K.xr = false; camera.position.set(0, 1.15, 0); K.recenter(); if (opts.onXR) opts.onXR(false); },
-    quitUrl: '../',
   });
-  comfort.attachMenu(menu);
-  K.menu = menu; K.comfort = comfort;
+  const comfort = chrome.comfort, menu = chrome.menu;
+  K.menu = menu; K.comfort = comfort; K.setPaused = chrome.setPaused;
   K.buzz = (aim) => { if (aim && aim.ctrl) menu.hapticPulse(aim.ctrl); };
   K.best = (key, score) => {
     const k = 'oortia-lie-best-' + key; let b = 0; try { b = +localStorage.getItem(k) || 0; } catch (e) { /* */ }
@@ -364,14 +362,14 @@ export async function createLieGame(opts = {}) {
   K.start = () => {
     const ld = document.getElementById('loading'); if (ld) ld.style.display = 'none';
     const frame = (force) => {
-      const dt = force || Math.min(clock.getDelta(), 0.05); t += dt;
+      const rdt = force || Math.min(clock.getDelta(), 0.05), dt = chrome.paused ? 0 : rdt; t += dt;
       menu.update();
       updateAims();
       fixMenu();
-      for (const f of ticks) f(dt, t);
-      if (toastT > 0) { toastT -= dt; toastM.material.opacity = Math.min(1, toastT / 0.6); if (toastT <= 0) toastM.visible = false; }
+      for (const f of ticks) f(dt, t);                    // dt is 0 while Paused (standard Pause: game time stops)
+      if (toastT > 0) { toastT -= rdt; toastM.material.opacity = Math.min(1, toastT / 0.6); if (toastT <= 0) toastM.visible = false; }
       world.position.copy(camera.getWorldPosition(_v)).setY(0);
-      comfort.update(dt, {});
+      comfort.update(rdt, {});
       fx.render();
     };
     K._frame = frame;                                   // #debug: step frames by hand

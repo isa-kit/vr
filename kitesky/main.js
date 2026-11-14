@@ -2,7 +2,7 @@
 // A kite flies overhead and follows wherever you point (controller, head, mouse, or a finger on the screen).
 // Ribbons of rings drift across the sky: fly the kite through them. Nothing ever moves you — only the kite moves.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie3';
+import { createLieGame } from '../shared/lie.js?v=lie4';
 
 const G = { rings: 0, ribbons: 0, spawnIn: 1.5, ribbonId: 0 };
 let K;

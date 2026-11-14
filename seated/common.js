@@ -4,11 +4,10 @@
 // Everything is procedural: no textures or audio files, no build step.
 
 import * as THREE from 'three';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js';
-import { detectXR, createXRMenu, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/xrmenu.js?v=20261114h';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
+import { standardChrome, STANDARD, detectXR, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/app.js?v=app1';   // menu + comfort + Pause: the app standard (STANDARD.md)
 import { createSkyRise } from '../shared/skyrise.js?v=rise11';
-import { createComfort } from '../shared/comfort.js';
-import { createTouch } from '../shared/touch.js';
+import { createTouch } from '../shared/touch.js?v=20261114f';
 
 export { THREE, SHADER_TAIL, sectionRow, toggleRow, choiceGrid };
 
@@ -370,18 +369,22 @@ export async function createWorld(o = {}) {
     W.world = new THREE.Group();
     for (const c of [...scene.children]) if (c !== rig) W.world.add(c);
     scene.add(W.world);
-    const comfort = W.comfort = createComfort({ renderer, scene, camera, dolly: rig, onQuality: (lv) => {   // frame-time governor asks us to cut load
-      if (lv >= 1) direct = true;                                  // skip post-processing (bloom) first
-      for (const fn of W.detailFns) fn(DETAIL[Math.min(lv, 3)]);   // then thin foliage
-    } });
-    const rise = W.rise = createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu: () => W.menu, parent: W.world, isPaused: () => W.paused, ...lie, home: () => W.home,
-      onLying: (on) => { W.lying = on; W.yaw = 0; vy = vp = 0; W.pitch = on ? LIE_PITCH : W.startPitch; if (o.onLying) o.onLying(on); } });
-    W.menu = createXRMenu({
-      renderer, camera, dolly: rig, caps, title, hint, rows: [...rows, ...rise.rows(), ...touch.rows(), ...comfort.rows({ movement: false })], fade: comfort.fade,
+    const menuRows = [...rows];
+    const chrome = W.chrome = standardChrome({
+      renderer, scene, camera, dolly: rig, caps, title, hint, rows: menuRows, comfortRows: false,
+      onQuality: (lv) => {                                           // frame-time governor asks us to cut load
+        if (lv >= 1) direct = true;                                  // skip post-processing (bloom) first
+        for (const fn of W.detailFns) fn(DETAIL[Math.min(lv, 3)]);   // then thin foliage
+      },
       sound: { get: () => W.soundOn, set: W.setSound },
-      setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(), quitUrl: '../',
+      setBackdrop, recenter: W.recenter, onBeforeEnter: () => W.startAudio(),
     });
-    comfort.attachMenu(W.menu);
+    const comfort = W.comfort = chrome.comfort; W.menu = chrome.menu;
+    const rise = W.rise = createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu: () => W.menu, parent: W.world, isPaused: () => W.paused, ...lie, home: () => W.home,
+      onLying: (on) => { W.lying = on; W.yaw = 0; vy = vp = 0; W.pitch = on ? LIE_PITCH : W.startPitch; if (o.onLying) o.onLying(on);
+        try { localStorage.setItem(STANDARD.POSTURE_KEY, on ? 'lying-up' : 'seated'); } catch (e) { /* */ } } });
+    menuRows.push(...rise.rows(), ...touch.rows(), ...comfort.rows({ movement: false }));   // standard order: the world's rows, posture / float, phone look, comfort
+    W.menu.refresh();
     if (W.wantLie) rise.setLying(true);
     renderer.setAnimationLoop(() => {
       const rdt = Math.min(clock.getDelta(), 0.05);
@@ -411,7 +414,7 @@ export async function createWorld(o = {}) {
       if (direct && !renderer.xr.isPresenting) renderer.render(scene, camera); else fx.render();
     });
   };
-  W.wantLie = /[?&]lie=1/.test(location.search);   // front-page "Lying down" cards open worlds with ?lie=1
+  W.wantLie = /[?&]lie=1/.test(location.search);   // front-page "Lying up" cards open worlds with ?lie=1 (the card decides, not the last-used posture)
   if (location.hash === '#debug') window.__W = W;   // dev aid: inspect the world from the console
   return W;
 }
