@@ -81,7 +81,7 @@ export function createScorer(compiled) {
   const S = { score: 0, streak: 0, best: 0, mult: 1, counts: { perfect: 0, good: 0, ok: 0, miss: 0 }, results: [], byMove: new Map(), last: null, finalized: 0 };
   let cursor = 0;                         // first key whose window hasn't closed
   const best = new Map();                 // key index → {err, off, sample}
-  const snap = (p) => ({ L: p.L.slice(), R: p.R.slice(), drop: p.drop, lx: p.lx, lz: p.lz });
+  const snap = (p) => (p.L ? { L: p.L.slice(), R: p.R.slice(), drop: p.drop, lx: p.lx, lz: p.lz } : null);
   S.reset = () => { S.score = S.streak = S.best = S.finalized = 0; S.mult = 1; S.counts = { perfect: 0, good: 0, ok: 0, miss: 0 }; S.results = []; S.byMove = new Map(); S.last = null; cursor = 0; best.clear(); };
   S.rewind = () => { cursor = 0; best.clear(); };          // practice loop: windows start over (results are kept)
   // beat = current routine beat; p = player sample. Returns array of finished events.
@@ -102,7 +102,7 @@ export function createScorer(compiled) {
         continue;
       }
       if (!live) continue;
-      const err = poseError(k, p, k.bodyW), off = beat - k.b;
+      const err = k.errFn ? k.errFn(p) : poseError(k, p, k.bodyW), off = beat - k.b;
       const cost = err + 0.5 * Math.max(0, Math.abs(off) - 0.1);
       const cur = best.get(i);
       if (!cur || cost < cur.cost) best.set(i, { err, off, cost, sample: snap(p) });

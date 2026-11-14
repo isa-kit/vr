@@ -1,0 +1,166 @@
+{
+ "id": "twostep-basic",
+ "style": "twostep",
+ "name": "Country Two-Step basic",
+ "level": "beginner",
+ "tempo": {
+  "min": 120,
+  "max": 170,
+  "default": 140
+ },
+ "meter": "4/4",
+ "beats": 6,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "S"
+  },
+  {
+   "beat": 2,
+   "label": "S"
+  },
+  {
+   "beat": 4,
+   "label": "Q"
+  },
+  {
+   "beat": 5,
+   "label": "Q"
+  }
+ ],
+ "floor": {
+  "kind": "line",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.42,
+   "y": -0.08,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.25,
+    "y": 0.09,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: step forward with the left."
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.5,
+    "y": -0.09,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: step forward with the right."
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.75,
+    "y": 0.09,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: left."
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 1.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: right."
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.67,
+    "y": 0.01,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.92,
+    "y": -0.17,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": 1.17,
+    "y": 0.01,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": 1.42,
+    "y": -0.17,
+    "facing": 180,
+    "label": "Q"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 6,
+   "kind": "on",
+   "role": "lead",
+   "hand": "R",
+   "on": "back"
+  },
+  {
+   "from": 0,
+   "to": 6,
+   "kind": "on",
+   "role": "follow",
+   "hand": "L",
+   "on": "armR"
+  },
+  {
+   "from": 0,
+   "to": 6,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "frame",
+   "offset": [
+    0.34,
+    0
+   ]
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Slow slow quick quick, travelling counter-clockwise around the floor in closed (Western) hold. Travelling pattern: in practice the couple resets each cycle."
+ ],
+ "free": {
+  "lead": "frame",
+  "follow": "frame"
+ },
+ "travels": true,
+ "format": 1,
+ "reviewed": false
+}

@@ -1,0 +1,207 @@
+{
+ "id": "foxtrot-box",
+ "style": "foxtrot",
+ "name": "Foxtrot box step",
+ "level": "beginner",
+ "tempo": {
+  "min": 100,
+  "max": 130,
+  "default": 112
+ },
+ "meter": "4/4",
+ "beats": 8,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "S"
+  },
+  {
+   "beat": 2,
+   "label": "Q"
+  },
+  {
+   "beat": 3,
+   "label": "Q"
+  },
+  {
+   "beat": 4,
+   "label": "S"
+  },
+  {
+   "beat": 6,
+   "label": "Q"
+  },
+  {
+   "beat": 7,
+   "label": "Q"
+  }
+ ],
+ "floor": {
+  "kind": "line",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.42,
+   "y": -0.08,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.35,
+    "y": 0.09,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: forward with the left."
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.35,
+    "y": -0.34,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: side right."
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 0.35,
+    "y": -0.16,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: close left."
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.34,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: back with the right."
+   },
+   {
+    "beat": 6,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.09,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: side left."
+   },
+   {
+    "beat": 7,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: close right."
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.77,
+    "y": 0.01,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.77,
+    "y": -0.42,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": 0.77,
+    "y": -0.24,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.42,
+    "y": -0.42,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 6,
+    "foot": "R",
+    "x": 0.42,
+    "y": 0.01,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 7,
+    "foot": "L",
+    "x": 0.42,
+    "y": -0.17,
+    "facing": 180,
+    "label": "Q"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "lead",
+   "hand": "R",
+   "on": "back"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "follow",
+   "hand": "L",
+   "on": "armR"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "frame",
+   "offset": [
+    0.34,
+    0
+   ]
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Slow-quick-quick box. Slow = 2 beats, quick = 1 beat. Closed hold, smooth."
+ ],
+ "free": {
+  "lead": "frame",
+  "follow": "frame"
+ },
+ "format": 1,
+ "reviewed": false
+}

@@ -1,0 +1,207 @@
+{
+ "id": "rumba-box",
+ "style": "rumba",
+ "name": "Rumba box",
+ "level": "beginner",
+ "tempo": {
+  "min": 96,
+  "max": 120,
+  "default": 104
+ },
+ "meter": "4/4",
+ "beats": 8,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "2"
+  },
+  {
+   "beat": 1,
+   "label": "3"
+  },
+  {
+   "beat": 2,
+   "label": "4-1"
+  },
+  {
+   "beat": 4,
+   "label": "2"
+  },
+  {
+   "beat": 5,
+   "label": "3"
+  },
+  {
+   "beat": 6,
+   "label": "4-1"
+  }
+ ],
+ "floor": {
+  "kind": "line",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.55,
+   "y": -0.05,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.3,
+    "y": 0.09,
+    "facing": 0,
+    "label": "2",
+    "tip": "Forward with the left."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.3,
+    "y": -0.34,
+    "facing": 0,
+    "label": "3",
+    "tip": "Side step right."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.3,
+    "y": -0.16,
+    "facing": 0,
+    "label": "4-1",
+    "tip": "Close left (slow: 2 beats)."
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.34,
+    "facing": 0,
+    "label": "2",
+    "tip": "Back with the right."
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.09,
+    "facing": 0,
+    "label": "3",
+    "tip": "Side step left."
+   },
+   {
+    "beat": 6,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "4-1",
+    "tip": "Close right (slow)."
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.85,
+    "y": 0.04,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": 0.85,
+    "y": -0.39,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.85,
+    "y": -0.21,
+    "facing": 180,
+    "label": "4-1"
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.55,
+    "y": -0.39,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 0.55,
+    "y": 0.04,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 6,
+    "foot": "L",
+    "x": 0.55,
+    "y": -0.14,
+    "facing": 180,
+    "label": "4-1"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "lead",
+   "hand": "R",
+   "on": "back"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "follow",
+   "hand": "L",
+   "on": "armR"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "frame",
+   "offset": [
+    0.34,
+    0
+   ]
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Quick-quick-slow box, counted 2 3 4-1. Cuban motion: let the hips follow each step."
+ ],
+ "free": {
+  "lead": "frame",
+  "follow": "frame"
+ },
+ "format": 1,
+ "reviewed": false
+}

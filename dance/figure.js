@@ -5,7 +5,7 @@
 // Dimensions (metres): height ≈ 1.76, arm 0.30 + 0.34, leg 0.44 + 0.43, shoulders ±0.19, hips ±0.095.
 // ====================================================================================================================
 
-export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic = false } = {}) {
+export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic = false, jacket = 0x5a3fd6, pants = 0x232a4d } = {}) {
   const V3 = THREE.Vector3, Q = THREE.Quaternion;
   const root = new THREE.Group();
   const D = { ankleY: 0.075, thigh: 0.44, shin: 0.43, pelvisY: 0.93, hipHalf: 0.095, spine: 0.46, shoulderHalf: 0.19, upper: 0.3, fore: 0.34, H: 1.76 };
@@ -15,8 +15,8 @@ export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic 
     ? new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(o.glow ? 1.4 : 0.55), toneMapped: false })
     : new THREE.MeshStandardMaterial({ color, roughness: o.rough ?? 0.55, metalness: o.metal ?? 0.05, emissive: o.glow ? color : 0x000000, emissiveIntensity: o.glow ?? 0 });
   const M = {
-    skin: mk(0xd9a07a, { rough: 0.7 }), jacket: mk(0x5a3fd6, { rough: 0.5 }), jacketDark: mk(0x3a2a9a, { rough: 0.55 }), shirt: mk(0xf2eefc, { rough: 0.6 }),
-    pants: mk(0x232a4d, { rough: 0.6 }), shoe: mk(0xf6f6fb, { rough: 0.4 }), hair: mk(0x20152e, { rough: 0.45 }), hairHi: mk(0xff5aa5, { rough: 0.5, glow: 0.6 }),
+    skin: mk(0xd9a07a, { rough: 0.7 }), jacket: mk(jacket, { rough: 0.5 }), jacketDark: mk(0x3a2a9a, { rough: 0.55 }), shirt: mk(0xf2eefc, { rough: 0.6 }),
+    pants: mk(pants, { rough: 0.6 }), shoe: mk(0xf6f6fb, { rough: 0.4 }), hair: mk(0x20152e, { rough: 0.45 }), hairHi: mk(0xff5aa5, { rough: 0.5, glow: 0.6 }),
     dark: mk(0x1a1424, { rough: 0.8 }), white: mk(0xffffff, { rough: 0.3 }), mouth: mk(0xb8404f, { rough: 0.6 }),
     glowL: mk(tintL, { glow: 2.2, rough: 0.3 }), glowR: mk(tintR, { glow: 2.2, rough: 0.3 }), sole: mk(0x66e0ff, { glow: 1.6 }), stripe: mk(0xffd24a, { glow: 1.2 }),
   };
@@ -159,6 +159,43 @@ export function createFigure(THREE, { tintL = 0x3fd8ff, tintR = 0xff6fb0, basic 
       lg.shoe.rotation.set(toe, w * 0.16, 0);
     }
   }
-  const api = { root, update, dims: D, parts: { torso, head }, handPoints: () => P.hand, shoulderPoints: () => P.sh, headWorld: () => head.getWorldPosition(new V3()), joints: P };
+
+  // ---------- world-space update (couple dancing): figure root stays at the origin, everything is given in world coordinates ----------
+  // o = { px, pz, py (pelvis height), yaw (body forward = (sin yaw, cos yaw)), pitch, roll, feet:[R,L] each {x,z,lift,yaw}, hands:[R,L] world [x,y,z] (or null → relaxed) }
+  // Local slot 0 (−x when yaw = 0) is the figure's anatomical RIGHT, slot 1 the LEFT.
+  const _Y = new V3(0, 1, 0), _lat = new V3(), _fw = new V3();
+  function updateWorld(o) {
+    E.set(o.pitch || 0, o.yaw, o.roll || 0); state.torsoQ.setFromEuler(E);
+    P.pel.set(o.px, o.py, o.pz); torso.position.copy(P.pel); torso.quaternion.copy(state.torsoQ);
+    head.quaternion.setFromEuler(E.set(-(o.pitch || 0) * 0.5, 0, -(o.roll || 0) * 0.6, 'YXZ'));
+    _lat.set(Math.cos(o.yaw), 0, -Math.sin(o.yaw)); _fw.set(Math.sin(o.yaw), 0, Math.cos(o.yaw));
+    for (let i = 0; i < 2; i++) {
+      const w = i === 0 ? -1 : 1, arm = i === 0 ? arms.L : arms.R;
+      P.sh[i].set(w * D.shoulderHalf, D.spine, 0).applyQuaternion(state.torsoQ).add(P.pel);
+      const h = o.hands && o.hands[i];
+      if (h) _h.set(h[0], h[1], h[2]); else _h.copy(P.sh[i]).addScaledVector(_lat, w * 0.2).addScaledVector(_fw, 0.18).y -= 0.42;
+      _c.copy(_h).sub(P.pel); _qi.copy(state.torsoQ).invert(); _c.applyQuaternion(_qi);
+      if (Math.abs(_c.z) < 0.17 && _c.y > -0.12 && _c.y < 0.6 && Math.abs(_c.x) < 0.27 && !h) { _c.x = w * 0.27; _c.applyQuaternion(state.torsoQ).add(P.pel); _h.copy(_c); }
+      const dy = _h.y - P.sh[i].y;
+      _pole.set(w * (0.5 + (dy < -0.2 ? 0.5 : 0)), -0.85, -0.45).normalize().applyAxisAngle(_Y, o.yaw);
+      if (dy > 0.25) _pole.set(w * 0.4, -0.9, -0.2).normalize().applyAxisAngle(_Y, o.yaw);
+      ik(P.sh[i], _h, D.upper, D.fore, _pole, P.el[i], P.hand[i]);
+      place(arm.upper, P.sh[i], P.el[i]); place(arm.fore, P.el[i], P.hand[i]);
+      arm.elbow.position.copy(P.el[i]); arm.hand.position.copy(P.hand[i]);
+      _e.subVectors(P.hand[i], P.el[i]).normalize(); arm.palm.position.copy(P.hand[i]).addScaledVector(_e, 0.045);
+      _b.copy(P.hand[i]).addScaledVector(_e, -0.07); place(arm.cuff, _b, _c.copy(_b).addScaledVector(_e, 0.032));
+    }
+    for (let i = 0; i < 2; i++) {
+      const w = i === 0 ? -1 : 1, f = o.feet[i], lg = legs[i];
+      P.hip[i].set(o.px, o.py, o.pz).addScaledVector(_lat, w * D.hipHalf).y -= 0.03;
+      P.ank[i].set(f.x, D.ankleY + f.lift, f.z);
+      _pole.set(0, 0.15, 0).addScaledVector(new V3(Math.sin(f.yaw), 0, Math.cos(f.yaw)), 1).addScaledVector(_lat, w * 0.25).normalize();
+      ik(P.hip[i], P.ank[i], D.thigh, D.shin, _pole, P.knee[i], _c);
+      place(lg.thigh, P.hip[i], P.knee[i]); place(lg.shin, P.knee[i], _c);
+      lg.knee.position.copy(P.knee[i]); lg.shoe.position.copy(_c);
+      lg.shoe.rotation.order = 'YXZ'; lg.shoe.rotation.set(Math.min(0.9, f.lift * 7) * (f.lift > 0.1 ? 0.5 : 1), f.yaw + w * 0.12, 0);
+    }
+  }
+  const api = { root, update, updateWorld, dims: D, parts: { torso, head }, handPoints: () => P.hand, shoulderPoints: () => P.sh, headWorld: () => head.getWorldPosition(new V3()), joints: P };
   return api;
 }

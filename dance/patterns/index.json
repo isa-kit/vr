@@ -1,0 +1,165 @@
+{
+ "format": 1,
+ "note": "Add a pattern: drop a JSON file in this folder and list its id under a style here.",
+ "styles": [
+  {
+   "id": "wcs",
+   "name": "West Coast Swing",
+   "meter": "4/4",
+   "feel": "swing",
+   "bpm": [
+    84,
+    120
+   ],
+   "blurb": "Slot dance: the follow travels down the slot; smooth, elastic connection.",
+   "patterns": [
+    "wcs-sugar-push",
+    "wcs-left-side-pass",
+    "wcs-right-side-pass",
+    "wcs-sugar-tuck",
+    "wcs-basic-whip"
+   ]
+  },
+  {
+   "id": "ecs",
+   "name": "East Coast Swing",
+   "meter": "4/4",
+   "feel": "swing",
+   "bpm": [
+    120,
+    170
+   ],
+   "blurb": "Bouncy triple-step swing.",
+   "patterns": [
+    "ecs-basic"
+   ]
+  },
+  {
+   "id": "salsa",
+   "name": "Salsa",
+   "meter": "4/4",
+   "feel": "salsa",
+   "bpm": [
+    160,
+    200
+   ],
+   "blurb": "Latin on-1 basic.",
+   "patterns": [
+    "salsa-basic"
+   ]
+  },
+  {
+   "id": "bachata",
+   "name": "Bachata",
+   "meter": "4/4",
+   "feel": "bachata",
+   "bpm": [
+    110,
+    140
+   ],
+   "blurb": "Side-to-side with a tap and hip.",
+   "patterns": [
+    "bachata-basic"
+   ]
+  },
+  {
+   "id": "hustle",
+   "name": "Hustle",
+   "meter": "4/4",
+   "feel": "hustle",
+   "bpm": [
+    100,
+    125
+   ],
+   "blurb": "Disco-era partner dance.",
+   "patterns": [
+    "hustle-basic"
+   ]
+  },
+  {
+   "id": "twostep",
+   "name": "Country Two-Step",
+   "meter": "4/4",
+   "feel": "twostep",
+   "bpm": [
+    120,
+    170
+   ],
+   "blurb": "Quick-quick-slow-slow around the floor.",
+   "patterns": [
+    "twostep-basic"
+   ]
+  },
+  {
+   "id": "waltz",
+   "name": "Waltz",
+   "meter": "3/4",
+   "feel": "waltz",
+   "bpm": [
+    84,
+    138
+   ],
+   "blurb": "Rise and fall in three.",
+   "patterns": [
+    "waltz-box",
+    "waltz-progressive"
+   ]
+  },
+  {
+   "id": "foxtrot",
+   "name": "Foxtrot",
+   "meter": "4/4",
+   "feel": "foxtrot",
+   "bpm": [
+    100,
+    130
+   ],
+   "blurb": "Smooth slow-quick-quick.",
+   "patterns": [
+    "foxtrot-box"
+   ]
+  },
+  {
+   "id": "chacha",
+   "name": "Cha-cha",
+   "meter": "4/4",
+   "feel": "chacha",
+   "bpm": [
+    112,
+    128
+   ],
+   "blurb": "Latin with a chasse.",
+   "patterns": [
+    "chacha-basic"
+   ]
+  },
+  {
+   "id": "rumba",
+   "name": "Rumba",
+   "meter": "4/4",
+   "feel": "rumba",
+   "bpm": [
+    96,
+    120
+   ],
+   "blurb": "Slow Latin, Cuban motion.",
+   "patterns": [
+    "rumba-box"
+   ]
+  },
+  {
+   "id": "tango",
+   "name": "Tango",
+   "meter": "4/4",
+   "feel": "tango",
+   "bpm": [
+    120,
+    132
+   ],
+   "blurb": "Staccato walks in close embrace.",
+   "patterns": [
+    "tango-basic"
+   ]
+  }
+ ]
+}

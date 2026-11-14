@@ -1,0 +1,240 @@
+{
+ "id": "wcs-left-side-pass",
+ "style": "wcs",
+ "name": "Left Side Pass",
+ "level": "beginner",
+ "tempo": {
+  "min": 84,
+  "max": 120,
+  "default": 96
+ },
+ "meter": "4/4",
+ "beats": 6,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "1"
+  },
+  {
+   "beat": 1,
+   "label": "2"
+  },
+  {
+   "beat": 2,
+   "label": "3"
+  },
+  {
+   "beat": 2.5,
+   "label": "&"
+  },
+  {
+   "beat": 3,
+   "label": "4"
+  },
+  {
+   "beat": 4,
+   "label": "5"
+  },
+  {
+   "beat": 4.5,
+   "label": "&"
+  },
+  {
+   "beat": 5,
+   "label": "6"
+  }
+ ],
+ "floor": {
+  "kind": "slot",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 0.9
+ },
+ "start": {
+  "lead": {
+   "x": -0.55,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.55,
+   "y": 0,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": -0.3,
+    "y": -0.06,
+    "facing": 0,
+    "label": "1",
+    "tip": "Walk forward, slightly off the slot."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.29,
+    "facing": 0,
+    "label": "2",
+    "tip": "Walk forward; the follow passes on your left."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.06,
+    "y": -0.2,
+    "facing": 90,
+    "label": "3",
+    "tip": "Triple: start turning to face your partner\u2026"
+   },
+   {
+    "beat": 2.5,
+    "foot": "R",
+    "x": 0.334,
+    "y": -0.086,
+    "facing": 135,
+    "label": "&"
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 0.38,
+    "y": -0.19,
+    "facing": 180,
+    "label": "4",
+    "tip": "\u2026facing back down the slot."
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": 0.46,
+    "y": 0.04,
+    "facing": 180,
+    "label": "5",
+    "tip": "Anchor in place."
+   },
+   {
+    "beat": 4.5,
+    "foot": "L",
+    "x": 0.52,
+    "y": -0.09,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 0.55,
+    "y": 0.09,
+    "facing": 180,
+    "label": "6"
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.3,
+    "y": 0.19,
+    "facing": 180,
+    "label": "1",
+    "tip": "Walk forward\u2026"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": -0.0,
+    "y": 0.11,
+    "facing": 180,
+    "label": "2",
+    "tip": "\u2026past the lead on his left side."
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": -0.2,
+    "y": 0.29,
+    "facing": 180,
+    "label": "3",
+    "tip": "Triple down the slot."
+   },
+   {
+    "beat": 2.5,
+    "foot": "L",
+    "x": -0.32,
+    "y": 0.11,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": -0.33,
+    "y": 0.15,
+    "facing": 90,
+    "label": "4",
+    "tip": "Turn to face the lead."
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": -0.5,
+    "y": 0.19,
+    "facing": 0,
+    "label": "5",
+    "tip": "Anchor."
+   },
+   {
+    "beat": 4.5,
+    "foot": "R",
+    "x": -0.55,
+    "y": -0.04,
+    "facing": 0,
+    "label": "&"
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": -0.55,
+    "y": 0.09,
+    "facing": 0,
+    "label": "6"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 3,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "mid"
+  },
+  {
+   "from": 5,
+   "to": 6.5,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "mid"
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review (positions, which hand releases, where the lead turns).",
+  "Six-count. Follow travels down the slot past the lead; lead and follow end in each other's starting places.",
+  "Hold: lead left / follow right, released on 4, re-connected on 6."
+ ],
+ "free": {
+  "lead": "relaxed",
+  "follow": "relaxed"
+ },
+ "format": 1,
+ "reviewed": false
+}

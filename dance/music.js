@@ -148,12 +148,93 @@ export function createMusic() {
     const R = run, horizon = ctx.currentTime + 0.25;
     while (R.nextT < horizon) {
       const s = R.step, t = Math.max(R.nextT, ctx.currentTime + 0.005);
-      if (s < 0) { if (s % 4 === 0) click(t, s === -R.countIn * 4); }
-      else if (!R.loop && R.totalBeats && s > R.totalBeats * 4) { /* finished */ }
+      if (s < 0) { const per = R.style ? 12 : 4; if (s % per === 0) click(t, s === -R.countIn * per || (R.style && (-s / 12) % R.meter === 0)); }
+      else if (R.style) playFeel(R, s, t);
+      else if (!R.style && !R.loop && R.totalBeats && s > R.totalBeats * 4) { /* finished */ }
       else playStep(R, mapStep(R, s), t);
       R.step++; R.nextT += R.stepDur;
     }
   }
+
+
+  // ---------- style loops for the dance school (12 ticks per beat; feel templates) ----------
+  function perc(t, f, v = 1, d = 0.05, type = 'square') { const g = ctx.createGain(); g.connect(bus); env(g, t, 0.001, 0.12 * v, d); osc(type, f, t, d + 0.02, g); }
+  const PROG = {
+    swing: [[45, 'min'], [45, 'min'], [50, 'min'], [45, 'min']], ecs: [[48, 'maj'], [48, 'maj'], [53, 'maj'], [55, 'maj']],
+    salsa: [[50, 'min'], [43, 'maj'], [48, 'maj'], [45, 'maj']], bachata: [[45, 'min'], [41, 'maj'], [48, 'maj'], [43, 'maj']],
+    hustle: [[45, 'min'], [50, 'min'], [43, 'maj'], [48, 'maj']], twostep: [[43, 'maj'], [43, 'maj'], [48, 'maj'], [50, 'maj']],
+    waltz: [[48, 'maj'], [43, 'maj'], [45, 'min'], [50, 'maj']], foxtrot: [[46, 'maj'], [51, 'maj'], [46, 'maj'], [53, 'maj']],
+    chacha: [[45, 'min'], [50, 'min'], [52, 'maj'], [45, 'min']], rumba: [[45, 'min'], [41, 'maj'], [43, 'maj'], [45, 'min']], tango: [[45, 'min'], [45, 'min'], [52, 'maj'], [45, 'min']],
+  };
+  const CLAVE = [0, 3, 6, 10, 12];                                 // son clave 3-2 on an 8th-note grid over two bars
+  function playFeel(R, s, t) {
+    const f = R.feel, tpb = 12, beat = Math.floor(s / tpb), tk = s % tpb, M3 = R.meter === 3, bib = beat % R.meter, bar = Math.floor(beat / R.meter);
+    const [root, kind] = (PROG[f] || PROG.swing)[bar % 4], tri = kind === 'min' ? [0, 3, 7] : [0, 4, 7], bd = 60 / R.bpm, e8 = tk % 6 === 0, idx8 = (beat * 2 + (tk >= 6 ? 1 : 0)) % 16;
+    const V = R.vol;
+    if (R.click) { if (tk === 0) click(t, bib === 0); if (R.countOnly) return; }
+    if (f === 'swing' || f === 'ecs' || f === 'foxtrot') {
+      const sw = tk === 8 ? 1 : 0;
+      if (tk === 0 || sw) hat(t, bib % 2 ? 0.8 : 1, false);
+      if (tk === 0 && !M3 && (bib === 0 || bib === 2) && f !== 'foxtrot') kick(t, 0.8);
+      if (tk === 0 && !M3 && (bib === 1 || bib === 3)) { if (f === 'foxtrot') hat(t, 1.2, true); else snare(t, 0.7); }
+      if (tk === 0) { const walk = [0, 4, 7, 9][bib % 4]; bass(t, root - 12 + (kind === 'min' && walk === 4 ? 3 : walk), bd * 0.9, 1); }
+      if (tk === 8 && (bib === 1 || bib === 3)) chord(t, tri.map((x) => root + 12 + x), bd * 0.4, 'swing', 0.7);
+      return;
+    }
+    if (f === 'salsa' || f === 'chacha' || f === 'rumba') {
+      const CL = f === 'rumba' ? [0, 3, 7, 10, 12] : CLAVE;
+      if (e8 && CL.includes(idx8)) perc(t, 1900, 1, 0.05);
+      if (e8) hat(t, 0.6);
+      if (tk === 0 && (bib === 0 || bib === 2) && f !== 'rumba') kick(t, 0.6);
+      if (tk === 6 && bib === 1 || tk === 0 && bib === 3) bass(t, root - 12 + (bib === 3 ? 7 : 0), bd * 0.8, 1);
+      if (e8 && (idx8 % 8 === 1 || idx8 % 8 === 4 || idx8 % 8 === 7)) pluck(t, root + 12 + tri[(idx8 + bar) % 3], 1);
+      if (f === 'chacha' && ((bib === 3 && (tk === 0 || tk === 6)) || (bib === 0 && tk === 0))) perc(t, 900, 1.3, 0.06, 'triangle');
+      return;
+    }
+    if (f === 'bachata') {
+      if (e8) { hat(t, 0.6); pluck(t, root + 12 + tri[(beat * 2 + (tk >= 6 ? 1 : 0)) % 3] + 12 * ((idx8 % 4) > 1 ? 1 : 0), 1); }
+      if (tk === 0 && (bib === 0 || bib === 2)) bass(t, root - 12, bd * 0.7, 1);
+      if (tk === 0 && bib === 3) perc(t, 1500, 1, 0.04);
+      if (tk === 0 && (bib === 1 || bib === 3)) perc(t, 500, 1, 0.07, 'triangle');
+      return;
+    }
+    if (f === 'hustle') {
+      if (tk === 0) kick(t, 1); if (tk === 6) hat(t, 1, true);
+      if (tk === 0 && (bib === 1 || bib === 3)) clap(t, 0.8);
+      if (e8) bass(t, root - 12 + (tk === 6 ? 12 : 0), bd * 0.45, 0.9);
+      if (tk === 6 && (bib === 1 || bib === 3)) chord(t, tri.map((x) => root + 12 + x), bd * 0.3, 'hard', 0.8);
+      return;
+    }
+    if (f === 'twostep') {
+      if (tk === 0 && (bib === 0 || bib === 2)) bass(t, root - 12 + (bib === 2 ? 7 : 0), bd * 0.8, 1);
+      if (tk === 0 && (bib === 1 || bib === 3)) { snare(t, 0.5); chord(t, tri.map((x) => root + 12 + x), bd * 0.3, 'twang', 0.8); }
+      if (tk === 6) hat(t, 0.5);
+      return;
+    }
+    if (f === 'waltz') {
+      if (tk === 0 && bib === 0) { bass(t, root - 12, bd * 1.6, 1); kick(t, 0.35); }
+      if (tk === 0 && bib > 0) chord(t, tri.map((x) => root + 12 + x), bd * 0.7, 'waltz', 0.9);
+      if (tk === 6 && bib === 2) pluck(t, root + 24 + tri[bar % 3], 1);
+      return;
+    }
+    if (f === 'tango') {
+      if (tk === 0) { chord(t, tri.map((x) => root + 12 + x), bd * (bib % 2 ? 0.3 : 0.6), 'hard', 0.9); bass(t, root - 12 + (bib % 2 ? 7 : 0), bd * 0.5, 1); }
+      if (tk === 0 && bib === 0) kick(t, 0.5);
+      if (tk === 6 && bib === 3) pluck(t, root + 24 + tri[bar % 3], 1);
+      if (tk === 0 && bib === 2) snare(t, 0.5);
+      return;
+    }
+  }
+  // style loop: M.startStyle({ feel, bpm, meter, beats, countIn, click, countOnly, speed })  → beat() is pattern-relative, looping every `beats`
+  M.startStyle = function startStyle({ feel = 'swing', bpm = 100, meter = 4, beats = 6, countIn = 4, click = false, countOnly = false, repeats = 1 } = {}) {
+    M.stop();
+    const ok = !M.forceFallback && M.ensure() && ctx.state === 'running'; useCtx = !!ok;
+    const sd = 60 / bpm / 12, lead = 0.25;
+    run = { style: true, feel, meter, bpm, stepDur: sd, countIn, step: -countIn * 12, loop: { start: 0, len: beats * repeats }, totalBeats: 0, click, countOnly, vol: 1, t0: 0, nextT: 0, id: feel };
+    if (useCtx) { run.nextT = ctx.currentTime + lead; run.t0 = run.nextT + countIn * 60 / bpm; } else { fb = -lead; run.t0 = countIn * 60 / bpm; }
+    paused = false; if (useCtx) { schedule(); timer = setInterval(schedule, 40); }
+    return run;
+  };
 
   M.start = function start({ track = 'easy', bpm = 100, speed = 1, countIn = 4, loop = null, totalBeats = 0 } = {}) {
     M.stop();
@@ -168,7 +249,7 @@ export function createMusic() {
     if (useCtx) { schedule(); timer = setInterval(schedule, 40); }
     return run;
   };
-  M.stop = function stop() { if (timer) { clearInterval(timer); timer = null; } run = null; paused = false; if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); };
+  M.stop = function stop() { M._virtual = 0; if (timer) { clearInterval(timer); timer = null; } run = null; paused = false; if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {}); };
   M.pause = function pause() { if (!run || paused) return; paused = true; if (useCtx && ctx) ctx.suspend().catch(() => {}); };
   M.resume = function resume() { if (!run || !paused) return; paused = false; if (useCtx && ctx) ctx.resume().then(schedule).catch(() => {}); };
   M.paused = () => paused;

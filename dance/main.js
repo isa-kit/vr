@@ -2,16 +2,17 @@
 // A dancer performs a routine on a stage; you copy it with both controllers. Hand and head positions are compared on every
 // scored beat. Desktop: watch & learn, plus a mouse/keyboard approximation to test the scoring loop. Phone: watch & learn.
 import * as THREE from 'three';
-import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid } from '../shared/xrmenu.js?v=20261114f';
+import { detectXR, createXRMenu, sectionRow, toggleRow, stepperRow, choiceGrid, inTab } from '../shared/xrmenu.js?v=20261114f';
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261116g';
-import * as G from './game.js?v=20261116g';
-import { createMusic } from './music.js?v=20261116g';
-import { createFigure } from './figure.js?v=20261116g';
-import { createStage, createSparkles } from './stage.js?v=20261116g';
-import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261116g';
+import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261117c';
+import * as G from './game.js?v=20261117c';
+import { createMusic } from './music.js?v=20261117c';
+import { createFigure } from './figure.js?v=20261117c';
+import { createStage, createSparkles } from './stage.js?v=20261117c';
+import { createUI, createWallHud, createNextStrip } from './ui.js?v=20261117c';
+import { createSchool } from './school.js?v=20261117c';
 
 const KEY = 'oortia-dance-v1';
 const TINT = { L: 0x3fd8ff, R: 0xff6fb0 };
@@ -29,7 +30,7 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ routine: S
 
 // ---------- globals ----------
 let renderer, scene, camera, dolly, fx, menu, comfort, touch, caps, music, stage, ui, wallHud, strip, sparkles;
-let fig, figM;
+let fig, figM, school, schoolOn = false;
 let mode = 'watch';                 // 'watch' | 'play' | 'xr'
 let state = 'title';                // title safety calibrate select countdown dance paused resuming results
 let calib = G.defaultCalib();
@@ -73,6 +74,13 @@ async function init() {
   strip = createNextStrip(THREE); scene.add(strip.mesh); strip.mesh.visible = false;
   sparkles = createSparkles(THREE); scene.add(sparkles.points);
 
+  school = createSchool({
+    THREE, scene, camera, dolly, music, ui, stage, isXR: () => !!window.__fakeXR || renderer.xr.isPresenting, menu: () => menu,
+    show: (spec) => { ui.show(spec); }, hideScreen: () => ui.hide(),
+    hands: () => { const out = [null, null]; for (let i = 0; i < 2; i++) { const h = menu.controllers[i].userData.hand; if (!menu.controllers[i].userData.src) continue; menu.grips[i].getWorldPosition(_w); const p = [_w.x, _w.y, _w.z]; if (h === 'right') out[0] = p; else if (h === 'left') out[1] = p; } return out; },
+    handController: (pi) => { for (let i = 0; i < 2; i++) { const h = menu.controllers[i].userData.hand; if ((pi === 0 && h === 'right') || (pi === 1 && h === 'left')) return i; } return 0; },
+    buzz: (i, v, ms) => buzz(i, v, ms), onExit: () => { schoolOn = false; stopRun(); mode = renderer.xr.isPresenting ? 'xr' : 'watch'; goto(mode === 'xr' ? 'home' : 'title'); },
+  });
   comfort = createComfort({ renderer, scene, camera, dolly, onQuality: (q) => { if (renderer.xr.isPresenting) stage.setTier(q >= 1 ? 'light' : 'medium'); } });
   menu = createXRMenu({
     renderer, camera, dolly, caps, title: 'Dance',
@@ -87,6 +95,7 @@ async function init() {
       stepperRow('Timing', () => (S.offsetMs > 0 ? '+' : '') + S.offsetMs + ' ms', () => { S.offsetMs -= 10; music.offsetMs(S.offsetMs); save(); }, () => { S.offsetMs += 10; music.offsetMs(S.offsetMs); save(); }, { repeat: true }),
       stepperRow('View', () => S.view.toFixed(1) + ' m', () => { S.view = clamp(S.view - 0.4, 1.8, 9); orbit.dist = S.view; }, () => { S.view = clamp(S.view + 0.4, 1.8, 9); orbit.dist = S.view; }, { repeat: true }),
       { cells: [{ text: () => (state === 'paused' ? 'Resume' : 'Pause'), action: togglePause, tone: 'accent' }, { text: 'Restart', action: () => startRun() }, { text: 'Routines', action: () => { stopRun(); goto('select'); } }] },
+      ...school.rows(inTab, choiceGrid, toggleRow),
       ...comfort.rows({ movement: false }),
     ],
     sound: { get: () => S.sound, set: (v) => { S.sound = v; music.setSound(v); } },
@@ -176,6 +185,7 @@ function onXRStart() {
   goto('safety');
 }
 function onXREnd() {
+  school.close(); schoolOn = false;
   ui.setXR(false); dolly.position.set(0, 0, 0); dolly.rotation.set(0, 0, 0); applyTier(); strip.mesh.visible = false;
   stopRun(); mode = 'watch'; calib = G.defaultCalib(); for (const r of menu.rays) r.group.visible = true;
   goto('title');
@@ -206,8 +216,9 @@ function screenSpec(name) {
   const xr = mode === 'xr', phone = touch.isTouch;
   switch (name) {
     case 'title': return phone
-      ? { title: 'Dance', sub: 'Follow the moves', lines: ['A dancer performs routines to generated music. Watch and learn the moves here, then put on a VR headset to dance along with both controllers.'], buttons: [{ id: 'watch', label: 'Watch & learn', tone: 'accent' }, { id: 'home', label: 'Back' }], note: 'Drag to orbit · ☰ Menu for options' }
-      : { title: 'Dance', sub: 'Follow the moves', lines: ['A dancer performs routines to generated music; copy the moves on every beat. In a headset you hold two controllers and are scored on hands, head and body.'], buttons: [{ id: 'watch', label: 'Watch & learn', tone: 'accent' }, { id: 'play', label: 'Play with mouse' }, { id: 'home', label: 'Back' }], note: 'VR headset? Use the Enter VR button at the bottom.' };
+      ? { title: 'Dance', sub: 'Follow the moves', lines: ['A dancer performs routines to generated music. Watch and learn the moves here, then put on a VR headset to dance along with both controllers.'], buttons: [{ id: 'watch', label: 'Watch & learn', tone: 'accent' }, { id: 'school', label: 'Dance school' }, { id: 'home', label: 'Back' }], note: 'Drag to orbit · ☰ Menu for options' }
+      : { title: 'Dance', sub: 'Follow the moves', lines: ['A dancer performs routines to generated music; copy the moves on every beat. In a headset you hold two controllers and are scored on hands, head and body.'], buttons: [{ id: 'watch', label: 'Watch & learn', tone: 'accent' }, { id: 'play', label: 'Play with mouse' }, { id: 'school', label: 'Dance school' }, { id: 'home', label: 'Back' }], note: 'VR headset? Use the Enter VR button at the bottom.' };
+    case 'home': return { title: 'Dance', sub: 'What would you like to do?', lines: ['Follow a solo routine, or learn partner dancing in the school (West Coast Swing first).'], buttons: [{ id: 'solo', label: 'Solo routines', tone: 'accent' }, { id: 'school', label: 'Dance school' }, { id: 'quit', label: 'Leave' }] };
     case 'safety': return { title: 'Clear your space', sub: 'You stand in one spot', lines: ['Make sure about 2 m × 2 m around you is free, with nothing near your hands. You never move: you only swing your arms and bend your knees.', 'Pause any time with the menu button (Y or X).'], buttons: [{ id: 'ready', label: 'My space is clear', tone: 'accent' }, { id: 'quit', label: 'Leave' }] };
     case 'calibrate': return { title: 'Calibration', sub: 'Stand tall, arms straight out to the sides', lines: [calibState.why || 'Hold still for a moment…'], bars: [{ label: 'Hold the pose', value: calibState.prog, text: Math.round(calibState.prog * 100) + ' %' }], buttons: [{ id: 'capture', label: 'Capture now' }, { id: 'skip', label: 'Use defaults' }], note: 'This sets your height and arm span so targets fit you.' };
     case 'select': return {
@@ -236,8 +247,11 @@ function refreshScreen() { const s = screenSpec(state); if (s && ui && ui.visibl
 
 function onAction(id) {
   music.ensure();
+  if (id.startsWith('sc:')) { school.action(id); return; }
   if (id.startsWith('r:')) { setRoutine(id.slice(2)); return; }
   switch (id) {
+    case 'solo': goto('select'); break;
+    case 'school': schoolOn = true; state = 'school'; ui.hide(); school.open(); break;
     case 'watch': mode = 'watch'; goto('select'); break;
     case 'play': mode = 'play'; goto('select'); break;
     case 'home': location.href = '../'; break;
@@ -250,7 +264,7 @@ function onAction(id) {
     case 'practice': cyclePractice(1); break;
     case 'start': case 'retry': case 'restart': startRun(); break;
     case 'select': stopRun(); goto('select'); break;
-    case 'back': stopRun(); if (mode === 'xr') goto('calibrate'); else { mode = 'watch'; goto('title'); } break;
+    case 'back': stopRun(); if (mode === 'xr') goto('home'); else { mode = 'watch'; goto('title'); } break;
     case 'resume': resume(); break;
   }
 }
@@ -282,7 +296,7 @@ function captureCalibration() {
   if (!c.ok) { calibState.why = c.why; calibState.prog = 0; refreshScreen(); return; }
   calib = c; finishCalibration();
 }
-function finishCalibration() { calibState = { prog: 0, why: '', ema: null }; state = 'select'; ui.hide(); comfort.fade(() => { alignRig(); goto('select'); }, 0.25, 0.4); }
+function finishCalibration() { calibState = { prog: 0, why: '', ema: null }; state = 'home'; ui.hide(); comfort.fade(() => { alignRig(); goto('home'); }, 0.25, 0.4); }
 
 // ---------- run control ----------
 async function startRun() {
@@ -371,6 +385,15 @@ function animate(dtIn, noRender) {
   menu.update();
   const xr = renderer.xr.isPresenting;
   if (xr) mode = 'xr';
+  if (schoolOn) {
+    fig.root.visible = false; figM.root.visible = false; wallHud.mesh.visible = false; strip.mesh.visible = false; hideGuides();
+    if (xr) driveBoard();
+    school.update(dt, xr);
+    stage.update(dt, t, 0, 0.8, comfort.paused); sparkles.update(dt);
+    if (!xr) { updateCamera(); }
+    comfort.update(dt, { moving: 0, turning: 0 }); if (!noRender) fx.render(); return;
+  }
+  fig.root.visible = true; figM.root.visible = true; wallHud.mesh.visible = true;
   const running = state === 'countdown' || state === 'dance';
   if (running && menu.isOpen()) { pause(); pausedByMenu = true; }
   else if (pausedByMenu && !menu.isOpen() && state === 'paused') { pausedByMenu = false; resume(); }
@@ -411,6 +434,7 @@ function animate(dtIn, noRender) {
 }
 
 function updateCamera() {
+  if (schoolOn && school.applyCamera(camera, orbit)) return;
   const play = mode === 'play' && state !== 'title' && state !== 'select';
   if (play) { camera.position.set(0, 2.05, 1.25); camera.lookAt(0, 1.3, -1.4); }
   else {
@@ -503,7 +527,7 @@ function driveBoard() {
 // ---------- debug / test hook (#debug) ----------
 function exposeDebug() {
   window.__dance = {
-    G, ROUTINES, COMP, S, THREE, scene, camera, music, stage, fig, calib: () => calib, setCalib: (c) => { calib = c; },
+    school, G, ROUTINES, COMP, S, THREE, scene, camera, music, stage, fig, calib: () => calib, setCalib: (c) => { calib = c; },
     state: () => state, mode: () => mode, beat: () => music.beat(), scorer: () => scorer, orbit, onAction, goto, setMode: (m) => { mode = m; },
     setSampler: (f) => { sampler = f; }, target: () => samplePose(compiled, music.beat()), seek: (b) => music.setBeat(b),
     advance: (dt, n = 1) => { for (let i = 0; i < n; i++) animate(dt, i < n - 1); }, usingAudio: () => music.usingAudio(), pop: () => hudPop, sample: () => sample, dolly, ui, menu,

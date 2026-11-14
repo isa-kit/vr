@@ -1,0 +1,251 @@
+{
+ "id": "bachata-basic",
+ "style": "bachata",
+ "name": "Bachata basic",
+ "level": "beginner",
+ "tempo": {
+  "min": 110,
+  "max": 140,
+  "default": 125
+ },
+ "meter": "4/4",
+ "beats": 8,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "1"
+  },
+  {
+   "beat": 1,
+   "label": "2"
+  },
+  {
+   "beat": 2,
+   "label": "3"
+  },
+  {
+   "beat": 3,
+   "label": "4"
+  },
+  {
+   "beat": 4,
+   "label": "5"
+  },
+  {
+   "beat": 5,
+   "label": "6"
+  },
+  {
+   "beat": 6,
+   "label": "7"
+  },
+  {
+   "beat": 7,
+   "label": "8"
+  }
+ ],
+ "floor": {
+  "kind": "box",
+  "x0": -1,
+  "x1": 1,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.5,
+   "y": -0.05,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.39,
+    "facing": 0,
+    "label": "1",
+    "tip": "Side step left."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.0,
+    "y": 0.21,
+    "facing": 0,
+    "label": "2",
+    "tip": "Close right."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.69,
+    "facing": 0,
+    "label": "3",
+    "tip": "Side step left."
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": 0.0,
+    "y": 0.48000000000000004,
+    "facing": 0,
+    "label": "4",
+    "tip": "Tap right, add a hip.",
+    "weight": false
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": 0.0,
+    "y": 0.21,
+    "facing": 0,
+    "label": "5",
+    "tip": "Side step right."
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.39,
+    "facing": 0,
+    "label": "6",
+    "tip": "Close left."
+   },
+   {
+    "beat": 6,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "7",
+    "tip": "Side step right."
+   },
+   {
+    "beat": 7,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.16,
+    "facing": 0,
+    "label": "8",
+    "tip": "Tap left, add a hip.",
+    "weight": false
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.5,
+    "y": 0.34,
+    "facing": 180,
+    "label": "1"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": 0.5,
+    "y": 0.16,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.5,
+    "y": 0.64,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 0.5,
+    "y": 0.43,
+    "facing": 180,
+    "label": "4"
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.5,
+    "y": 0.16,
+    "facing": 180,
+    "label": "5"
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 0.5,
+    "y": 0.34,
+    "facing": 180,
+    "label": "6"
+   },
+   {
+    "beat": 6,
+    "foot": "L",
+    "x": 0.5,
+    "y": -0.14,
+    "facing": 180,
+    "label": "7"
+   },
+   {
+    "beat": 7,
+    "foot": "R",
+    "x": 0.5,
+    "y": 0.11,
+    "facing": 180,
+    "label": "8"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "lead",
+   "hand": "R",
+   "on": "back"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "on",
+   "role": "follow",
+   "hand": "L",
+   "on": "armR"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "frame",
+   "offset": [
+    0.34,
+    0
+   ]
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Eight counts: three steps and a tap with hip, then back. Side-to-side in a loose closed hold."
+ ],
+ "free": {
+  "lead": "frame",
+  "follow": "frame"
+ },
+ "format": 1,
+ "reviewed": false
+}

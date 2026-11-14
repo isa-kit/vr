@@ -1,0 +1,279 @@
+{
+ "id": "chacha-basic",
+ "style": "chacha",
+ "name": "Cha-cha basic",
+ "level": "beginner",
+ "tempo": {
+  "min": 112,
+  "max": 128,
+  "default": 120
+ },
+ "meter": "4/4",
+ "beats": 8,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "2"
+  },
+  {
+   "beat": 1,
+   "label": "3"
+  },
+  {
+   "beat": 2,
+   "label": "4"
+  },
+  {
+   "beat": 2.5,
+   "label": "&"
+  },
+  {
+   "beat": 3,
+   "label": "1"
+  },
+  {
+   "beat": 4,
+   "label": "2"
+  },
+  {
+   "beat": 5,
+   "label": "3"
+  },
+  {
+   "beat": 6,
+   "label": "4"
+  },
+  {
+   "beat": 6.5,
+   "label": "&"
+  },
+  {
+   "beat": 7,
+   "label": "1"
+  }
+ ],
+ "floor": {
+  "kind": "line",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.7,
+   "y": -0.05,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.3,
+    "y": 0.09,
+    "facing": 0,
+    "label": "2",
+    "tip": "Forward with the left (count 2)."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "3",
+    "tip": "Replace on the right."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": -0.1,
+    "y": 0.09,
+    "facing": 0,
+    "label": "4",
+    "tip": "Cha-cha-cha: left\u2026"
+   },
+   {
+    "beat": 2.5,
+    "foot": "R",
+    "x": -0.05,
+    "y": -0.09,
+    "facing": 0,
+    "label": "&",
+    "tip": "\u2026right\u2026"
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.09,
+    "facing": 0,
+    "label": "1",
+    "tip": "\u2026left."
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": -0.3,
+    "y": -0.09,
+    "facing": 0,
+    "label": "2",
+    "tip": "Back with the right."
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.09,
+    "facing": 0,
+    "label": "3",
+    "tip": "Replace on the left."
+   },
+   {
+    "beat": 6,
+    "foot": "R",
+    "x": 0.1,
+    "y": -0.09,
+    "facing": 0,
+    "label": "4",
+    "tip": "Cha-cha-cha: right\u2026"
+   },
+   {
+    "beat": 6.5,
+    "foot": "L",
+    "x": 0.05,
+    "y": 0.09,
+    "facing": 0,
+    "label": "&",
+    "tip": "\u2026left\u2026"
+   },
+   {
+    "beat": 7,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "1",
+    "tip": "\u2026right."
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 1.0,
+    "y": 0.04,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": 0.7,
+    "y": -0.14,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.6,
+    "y": 0.04,
+    "facing": 180,
+    "label": "4"
+   },
+   {
+    "beat": 2.5,
+    "foot": "L",
+    "x": 0.65,
+    "y": -0.14,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": 0.7,
+    "y": 0.04,
+    "facing": 180,
+    "label": "1"
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.4,
+    "y": -0.14,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 0.7,
+    "y": 0.04,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 6,
+    "foot": "L",
+    "x": 0.8,
+    "y": -0.14,
+    "facing": 180,
+    "label": "4"
+   },
+   {
+    "beat": 6.5,
+    "foot": "R",
+    "x": 0.75,
+    "y": 0.04,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 7,
+    "foot": "L",
+    "x": 0.7,
+    "y": -0.14,
+    "facing": 180,
+    "label": "1"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "mid"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "R",
+   "follow": "L",
+   "height": "mid"
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Counted 2 3 4&1: rock forward, replace, chasse; then back. Two-hand or closed hold varies by teacher."
+ ],
+ "free": {
+  "lead": "relaxed",
+  "follow": "relaxed"
+ },
+ "format": 1,
+ "reviewed": false
+}

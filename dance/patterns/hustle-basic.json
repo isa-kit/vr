@@ -1,0 +1,275 @@
+{
+ "id": "hustle-basic",
+ "style": "hustle",
+ "name": "Hustle basic",
+ "level": "beginner",
+ "tempo": {
+  "min": 100,
+  "max": 125,
+  "default": 112
+ },
+ "meter": "4/4",
+ "beats": 8,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "1"
+  },
+  {
+   "beat": 1,
+   "label": "2"
+  },
+  {
+   "beat": 2,
+   "label": "3"
+  },
+  {
+   "beat": 2.5,
+   "label": "&"
+  },
+  {
+   "beat": 3,
+   "label": "4"
+  },
+  {
+   "beat": 4,
+   "label": "5"
+  },
+  {
+   "beat": 5,
+   "label": "6"
+  },
+  {
+   "beat": 6,
+   "label": "7"
+  },
+  {
+   "beat": 6.5,
+   "label": "&"
+  },
+  {
+   "beat": 7,
+   "label": "8"
+  }
+ ],
+ "floor": {
+  "kind": "box",
+  "x0": -1,
+  "x1": 1,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.6,
+   "y": -0.05,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": -0.25,
+    "y": 0.09,
+    "facing": 0,
+    "label": "1",
+    "tip": "Rock back with the left."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "2",
+    "tip": "Replace on the right."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.19,
+    "facing": 0,
+    "label": "3",
+    "tip": "Triple to the left\u2026"
+   },
+   {
+    "beat": 2.5,
+    "foot": "R",
+    "x": 0.0,
+    "y": 0.11,
+    "facing": 0,
+    "label": "&"
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.39,
+    "facing": 0,
+    "label": "4"
+   },
+   {
+    "beat": 4,
+    "foot": "R",
+    "x": -0.25,
+    "y": 0.21,
+    "facing": 0,
+    "label": "5",
+    "tip": "Rock back with the right."
+   },
+   {
+    "beat": 5,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.39,
+    "facing": 0,
+    "label": "6",
+    "tip": "Replace on the left."
+   },
+   {
+    "beat": 6,
+    "foot": "R",
+    "x": 0.0,
+    "y": 0.11,
+    "facing": 0,
+    "label": "7",
+    "tip": "Triple back to the right\u2026"
+   },
+   {
+    "beat": 6.5,
+    "foot": "L",
+    "x": 0.0,
+    "y": 0.19,
+    "facing": 0,
+    "label": "&"
+   },
+   {
+    "beat": 7,
+    "foot": "R",
+    "x": 0.0,
+    "y": -0.09,
+    "facing": 0,
+    "label": "8"
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.35,
+    "y": 0.04,
+    "facing": 180,
+    "label": "1"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": 0.6,
+    "y": -0.14,
+    "facing": 180,
+    "label": "2"
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 0.6,
+    "y": 0.14,
+    "facing": 180,
+    "label": "3"
+   },
+   {
+    "beat": 2.5,
+    "foot": "L",
+    "x": 0.6,
+    "y": 0.06,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": 0.6,
+    "y": 0.34,
+    "facing": 180,
+    "label": "4"
+   },
+   {
+    "beat": 4,
+    "foot": "L",
+    "x": 0.35,
+    "y": 0.16,
+    "facing": 180,
+    "label": "5"
+   },
+   {
+    "beat": 5,
+    "foot": "R",
+    "x": 0.6,
+    "y": 0.34,
+    "facing": 180,
+    "label": "6"
+   },
+   {
+    "beat": 6,
+    "foot": "L",
+    "x": 0.6,
+    "y": 0.06,
+    "facing": 180,
+    "label": "7"
+   },
+   {
+    "beat": 6.5,
+    "foot": "R",
+    "x": 0.6,
+    "y": 0.14,
+    "facing": 180,
+    "label": "&"
+   },
+   {
+    "beat": 7,
+    "foot": "L",
+    "x": 0.6,
+    "y": -0.14,
+    "facing": 180,
+    "label": "8"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "mid"
+  },
+  {
+   "from": 0,
+   "to": 8,
+   "kind": "join",
+   "lead": "R",
+   "follow": "L",
+   "height": "mid"
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Least certain basic: please check the count structure (rock step + triples). Open/closed hold varies by teacher."
+ ],
+ "free": {
+  "lead": "relaxed",
+  "follow": "relaxed"
+ },
+ "format": 1,
+ "reviewed": false
+}

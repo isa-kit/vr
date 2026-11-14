@@ -1,0 +1,188 @@
+{
+ "id": "tango-basic",
+ "style": "tango",
+ "name": "Tango basic (walk and close)",
+ "level": "beginner",
+ "tempo": {
+  "min": 120,
+  "max": 132,
+  "default": 126
+ },
+ "meter": "4/4",
+ "beats": 4,
+ "counts": [
+  {
+   "beat": 0,
+   "label": "S"
+  },
+  {
+   "beat": 1,
+   "label": "S"
+  },
+  {
+   "beat": 2,
+   "label": "Q"
+  },
+  {
+   "beat": 2.5,
+   "label": "Q"
+  },
+  {
+   "beat": 3,
+   "label": "S"
+  }
+ ],
+ "floor": {
+  "kind": "line",
+  "x0": -1.5,
+  "x1": 1.5,
+  "width": 1.2
+ },
+ "start": {
+  "lead": {
+   "x": 0,
+   "y": 0,
+   "facing": 0,
+   "weight": "R"
+  },
+  "follow": {
+   "x": 0.36,
+   "y": -0.04,
+   "facing": 180,
+   "weight": "L"
+  }
+ },
+ "steps": {
+  "lead": [
+   {
+    "beat": 0,
+    "foot": "L",
+    "x": 0.35,
+    "y": 0.09,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: walk forward, left."
+   },
+   {
+    "beat": 1,
+    "foot": "R",
+    "x": 0.7,
+    "y": -0.09,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: walk forward, right."
+   },
+   {
+    "beat": 2,
+    "foot": "L",
+    "x": 1.0,
+    "y": 0.19,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: left, curving."
+   },
+   {
+    "beat": 2.5,
+    "foot": "R",
+    "x": 1.2,
+    "y": -0.19,
+    "facing": 0,
+    "label": "Q",
+    "tip": "Quick: right."
+   },
+   {
+    "beat": 3,
+    "foot": "L",
+    "x": 1.2,
+    "y": -0.01,
+    "facing": 0,
+    "label": "S",
+    "tip": "Slow: close left.",
+    "weight": true
+   }
+  ],
+  "follow": [
+   {
+    "beat": 0,
+    "foot": "R",
+    "x": 0.71,
+    "y": 0.05,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 1,
+    "foot": "L",
+    "x": 1.06,
+    "y": -0.13,
+    "facing": 180,
+    "label": "S"
+   },
+   {
+    "beat": 2,
+    "foot": "R",
+    "x": 1.36,
+    "y": 0.15,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 2.5,
+    "foot": "L",
+    "x": 1.56,
+    "y": -0.23,
+    "facing": 180,
+    "label": "Q"
+   },
+   {
+    "beat": 3,
+    "foot": "R",
+    "x": 1.56,
+    "y": -0.05,
+    "facing": 180,
+    "label": "S"
+   }
+  ]
+ },
+ "holds": [
+  {
+   "from": 0,
+   "to": 4,
+   "kind": "on",
+   "role": "lead",
+   "hand": "R",
+   "on": "back"
+  },
+  {
+   "from": 0,
+   "to": 4,
+   "kind": "on",
+   "role": "follow",
+   "hand": "L",
+   "on": "armR"
+  },
+  {
+   "from": 0,
+   "to": 4,
+   "kind": "join",
+   "lead": "L",
+   "follow": "R",
+   "height": "frame",
+   "offset": [
+    0.34,
+    0
+   ]
+  }
+ ],
+ "notes": [
+  "DRAFT choreography \u2014 please review.",
+  "Slow slow quick quick slow, in close embrace: compact staccato steps. Travelling pattern: couple resets each cycle."
+ ],
+ "free": {
+  "lead": "frame",
+  "follow": "frame"
+ },
+ "travels": true,
+ "format": 1,
+ "reviewed": false
+}
