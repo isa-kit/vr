@@ -1,0 +1,15 @@
+{
+  "id": "kitesky",
+  "name": "Kite Ribbons",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "kitesky",
+  "blurb": "Fly a kite overhead just by pointing, and steer it through ribbons of drifting rings. Only the kite moves — never you. Play lying down or seated.",
+  "locomotion": {
+    "type": "lying"
+  },
+  "controls": {
+    "panel": []
+  }
+}
