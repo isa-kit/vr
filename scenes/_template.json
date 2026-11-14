@@ -1,0 +1,17 @@
+{
+  "id": "template",
+  "name": "Template",
+  "kind": "game",
+  "category": "games",
+  "status": "template",
+  "path": "template",
+  "blurb": "One plain sentence shown on the front-page card.",
+  "locomotion": {
+    "type": "drift"
+  },
+  "posture": ["seated", "lying-up"],
+  "standard": "app1",
+  "controls": {
+    "panel": []
+  }
+}
