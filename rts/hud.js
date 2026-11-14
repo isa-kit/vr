@@ -1,5 +1,5 @@
 // ============================ rts/hud.js — DOM heads-up display for desktop and phone (hidden while in VR) ============================
-import { UT, BT } from './sim.js?v=rts3';
+import { UT, BT } from './sim.js?v=rts4';
 
 const CSS = `
 #rts-hud{position:fixed;inset:0;pointer-events:none;z-index:8;font:600 13px/1.25 system-ui,sans-serif;color:#eaf2ff;-webkit-user-select:none;user-select:none}
@@ -12,6 +12,7 @@ const CSS = `
 #rts-toast{position:absolute;top:calc(env(safe-area-inset-top,0px) + 92px);left:50%;transform:translateX(-50%);padding:8px 14px;border-radius:999px;background:rgba(10,16,28,.82);opacity:0;transition:opacity .25s;max-width:92vw;text-align:center}
 #rts-toast.bad{background:rgba(120,20,16,.88)} #rts-toast.warn{background:rgba(110,80,10,.88)}
 #rts-obj{position:absolute;top:calc(env(safe-area-inset-top,0px) + 50px);left:calc(env(safe-area-inset-left,0px) + 8px);max-width:min(420px,calc(100vw - 118px));padding:8px 12px;display:none}
+#rts-skip{margin-top:6px;font:600 11px system-ui,sans-serif;color:#cfe0ff;background:rgba(40,60,100,.8);border:1px solid rgba(160,190,255,.3);border-radius:7px;padding:4px 8px;cursor:pointer}
 #rts-obj h4{margin:0 0 3px;font-size:12px;color:#7fe8ff;letter-spacing:.06em;text-transform:uppercase} #rts-obj p{margin:0;font-weight:500}
 #rts-dock{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:flex-end;gap:8px;padding:8px calc(env(safe-area-inset-right,0px) + 8px) calc(env(safe-area-inset-bottom,0px) + 8px) calc(env(safe-area-inset-left,0px) + 8px)}
 #rts-mini{pointer-events:auto;width:172px;height:172px;border-radius:8px;border:2px solid rgba(160,190,255,.45);background:#0a0e14;touch-action:none;flex:none}
@@ -32,6 +33,7 @@ const CSS = `
 #rts-screen button.big{font-size:15px;padding:12px 16px;min-height:46px} #rts-screen button.on{background:#2b78d6}
 #rts-screen ul{margin:6px 0 6px 18px;padding:0;font-weight:500;opacity:.9} #rts-screen li{margin:3px 0}
 @media (pointer:coarse),(max-width:520px){
+  #rts-obj{top:calc(env(safe-area-inset-top,0px) + 92px)} #rts-toast{top:calc(env(safe-area-inset-top,0px) + 150px)}
   #rts-mini{width:112px;height:112px} #rts-card{max-height:150px} #rts-card button{min-height:40px;padding:6px 8px}
   #rts-top .pill{padding:6px 8px;font-size:12px} #rts-card .sum{font-size:12px}
 }
@@ -52,7 +54,7 @@ export function createHud({ S: S0, C, mini, getS, onAction, touchDevice }) {
 
   H.showBox = (x0, y0, x1, y1) => { if (x0 == null) { boxEl.style.display = 'none'; return; } Object.assign(boxEl.style, { display: 'block', left: Math.min(x0, x1) + 'px', top: Math.min(y0, y1) + 'px', width: Math.abs(x1 - x0) + 'px', height: Math.abs(y1 - y0) + 'px' }); };
   H.toast = (text, kind = 'info') => { toast.textContent = text; toast.className = kind; toast.style.opacity = 1; toastT = performance.now() + 2600; };
-  H.objective = (title, text) => { if (!title) { obj.style.display = 'none'; return; } obj.style.display = 'block'; obj.innerHTML = `<h4>${title}</h4><p>${text}</p>`; };
+  H.objective = (title, text) => { if (!title) { obj.style.display = 'none'; return; } obj.style.display = 'block'; obj.innerHTML = `<h4>${title}</h4><p>${text}</p><button id="rts-skip">Skip step ▸</button>`; obj.querySelector('#rts-skip').addEventListener('click', () => onAction('skipStep')); };
   H.setVR = (on) => { document.body.classList.toggle('rts-vr', on); };
   H.screen = (spec) => {
     if (!spec) { screen.style.display = 'none'; screen.innerHTML = ''; return; }
@@ -89,6 +91,7 @@ export function createHud({ S: S0, C, mini, getS, onAction, touchDevice }) {
       r1.appendChild(btn('Attack-move', 'X', () => C.armAttackMove(!C.amoveArmed), { on: C.amoveArmed }));
       for (const [id, nm] of [['aggro', 'Aggressive'], ['defend', 'Guard'], ['hold', 'Hold']]) r1.appendChild(btn(nm, '', () => C.setStance(id), { on: C.stance === id }));
       const r2 = row();
+      r2.appendChild(btn(C.miniMode === 'send' ? 'Map: send' : 'Map: look', '', () => { C.miniMode = C.miniMode === 'send' ? 'view' : 'send'; }));
       for (const [id, nm] of [['box', 'Box'], ['line', 'Line'], ['wedge', 'Wedge']]) r2.appendChild(btn(nm, '', () => C.setFormation(id), { on: C.formation === id }));
       if (us.some((u) => u.type === 'worker')) for (const type of ['depot', 'barracks']) r2.appendChild(btn('Build ' + BT[type].name, `${BT[type].cost} ore`, () => C.beginBuild(type), { on: C.buildType === type, disabled: ore < BT[type].cost }));
       return;

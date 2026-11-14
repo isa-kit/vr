@@ -8,8 +8,8 @@
 //    panel (X/Y are the shared Oortia menu buttons). Nothing here ever moves the player; table changes are faded steps.
 // All interaction maths is plain 3D (ray vs plane / sphere / terrain), so it is exercised headlessly in the #debug test hooks.
 import * as THREE from 'three';
-import { UT, BT, N } from './sim.js?v=rts3';
-import { CELL } from './gfx.js?v=rts3';
+import { UT, BT, N } from './sim.js?v=rts4';
+import { CELL } from './gfx.js?v=rts4';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const PW = 512, PH = 760, PANEL_W = 0.2, PANEL_H = PANEL_W * PH / PW;
@@ -223,7 +223,7 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
     const V = getView(), S = getS(), tg = VR.pointAt(i), dur = performance.now() - p.t0;
     getView().setDragShape(null);
     if (p.mapStart) {                                                     // mini map: drag = box select, click = send / jump
-      const dg = miniDrag; miniDrag = null; VR.dirty = true;
+      const dg = miniDrag; miniDrag = null; VR.dirty = true; C.miniUsed = (C.miniUsed || 0) + 1;
       if (dg && dg.on) { C.selectRect(dg.x0, dg.z0, dg.x1, dg.z1, false); menu.hapticPulse(menu.controllers[i]); return; }
       const cell = p.mapStart, x = clamp(cell.x, 0.8, N - 0.8), z = clamp(cell.z, 0.8, N - 0.8);
       if (C.miniMode === 'view' || (!C.units().length && !C.buildType)) { VR.jumpTo(x, z); menu.hapticPulse(menu.controllers[i]); return; }

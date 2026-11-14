@@ -3,9 +3,9 @@
 // whole army costs a couple of dozen draw calls. A fog-of-war texture darkens every world material via onBeforeCompile.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeNoise, rng } from '../procgen/noise.js?v=rts3';
-import { createRocks } from '../procgen/rocks.js?v=rts3';
-import { UT, BT, N, K, WL } from './sim.js?v=rts3';
+import { makeNoise, rng } from '../procgen/noise.js?v=rts4';
+import { createRocks } from '../procgen/rocks.js?v=rts4';
+import { UT, BT, N, K, WL } from './sim.js?v=rts4';
 
 export const TEAM_COL = [0x2f94ff, 0xff5a2a];
 export const CELL = 3.6 / N;                       // metres per map cell at table scale 1
@@ -104,7 +104,7 @@ export function createView({ scene, S, renderer, quality = 'high' }) {
   // ---------------- lights
   const hemi = new THREE.HemisphereLight(0xdfeaff, 0x6b5a46, 1.05); scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.2); sun.position.set(2.2, 4, 1.6);
-  sun.castShadow = quality !== 'low'; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.004;
+  sun.castShadow = quality !== 'low'; sun.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.004;
   const sc = sun.shadow.camera; sc.left = -3; sc.right = 3; sc.top = 3; sc.bottom = -3; sc.near = 0.5; sc.far = 14;
   scene.add(sun, sun.target); V.sun = sun;
 

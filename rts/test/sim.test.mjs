@@ -53,4 +53,8 @@ for (const diff of ['normal', 'hard']) {
 { // easy AI loses to a competent player script? at least runs without error
   const S = createSim({ seed: 4 }); createAI(S, 1, 'easy'); run(S, 400); ok(!S.over || S.winner >= 0, 'easy AI alone runs 400 s clean; pop ' + S.pop(1));
 }
+// 7. difficulty ladder: a Hard-style player beats Easy on several maps (and the match always resolves)
+{ let w = 0, n = 0, unresolved = 0;
+  for (const seed of [11, 12, 21, 3]) { const S = createSim({ seed: seed * 13 + 1, mapSeed: seed }); createAI(S, 0, 'hard'); createAI(S, 1, 'easy'); for (let i = 0; i < 1800 / DT && !S.over; i++) { S.step(); S.ev.length = 0; } n++; if (S.winner === 0) w++; if (!S.over) unresolved++; }
+  ok(w >= 3 && unresolved === 0, `Hard beats Easy on ${w}/${n} maps, ${unresolved} unresolved`); }
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED'); process.exit(fails ? 1 : 0);

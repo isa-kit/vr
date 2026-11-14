@@ -1,7 +1,7 @@
 // ============================ rts/ai.js — scripted opponent (gathers, expands, builds an army, attacks in waves) ============================
 // Plays through exactly the same command API as the player (S.cmd), once per "think" interval of simulation time.
 // It does not read fog of war except for knowing where the enemy base started (like most RTS skirmish AIs).
-import { UT, BT, DIFF } from './sim.js?v=rts3';
+import { UT, BT, DIFF } from './sim.js?v=rts4';
 
 export function createAI(S, team, diff = 'normal') {
   const D = DIFF[diff] || DIFF.normal, me = S.team[team], foe = 1 - team;
@@ -69,7 +69,7 @@ export function createAI(S, team, diff = 'normal') {
         return;
       }
       // waves
-      const need = D.wave0 + st.wave * D.waveGrow;
+      const need = Math.max(3, D.wave0 + st.wave * D.waveGrow - Math.floor(Math.max(0, S.time - 420) / 45));   // late game: smaller waves so the match always resolves
       if (!st.attacking) {
         const home = { x: hq.x + (team === 0 ? 5 : -5), z: hq.z + (team === 0 ? -5 : 5) };
         const idle = army.filter((u) => u.order.t === 'idle');

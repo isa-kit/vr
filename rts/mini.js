@@ -1,7 +1,7 @@
 // ============================ rts/mini.js — 2D mini map (desktop corner, phone corner, and the VR controller panel) ============================
 // draw(ctx, x, y, w, h, opts) paints terrain, fog, buildings, unit dots, resource nodes, the view footprint and a drag box.
 // toCell(px, py, rect, rot) is the inverse mapping. rot rotates the map so "up" matches the table in front of the player.
-import { N, K, WL } from './sim.js?v=rts3';
+import { N, K, WL } from './sim.js?v=rts4';
 
 export function createMini(S) {
   const map = S.map, SZ = 4, base = document.createElement('canvas'); base.width = base.height = N * SZ;
