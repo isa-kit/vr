@@ -17,6 +17,7 @@ import { createTerrain } from '../procgen/terrain.js?v=20261115a';
 import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261115a';
 import { createRocks } from '../procgen/rocks.js?v=20261115a';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
+import { createSkyRise } from '../shared/skyrise.js?v=rise4';
 
 let fx;
 const windU = { value: 0 };   // shared wind clock for swaying foliage
@@ -47,6 +48,7 @@ const WALK = 5.5, RUN = 2.3;
 
 let scene, camera, renderer, dolly, world, menu, caps, horizonColor, kit, spy;
 let soundOn = true, comfort, touch, wt = 0, fenceBuilt = false;
+let rise = null, lieSpot = { x: 0, y: 0, z: 20 };   // Lying down: you lie where you stand and look up; the world stays upright
 const VR_WALK = 1.6;          // m/s in a headset / on a phone: slow, constant, no ramps
 const EDGE_Z = -34;           // hard stop well back from the cliff; speed eases off over the last 8 m
 let ocean, sky, terrain, treeLib, treeField, hemiL, flockBirds, clouds = [], sheepMesh, treeLodK = 1, lastLayout = { x: 1e9, z: 1e9 };
@@ -119,7 +121,7 @@ async function init() {
   document.body.appendChild(renderer.domElement);
   touch = createTouch({ canvas: renderer.domElement, look: true, stick: true,
     buttons: [{ id: 'zoom', label: '🔭' }],
-    onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.2, Math.min(1.2, pitch - dy * 0.004)); } });
+    onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.2, Math.min(rise && rise.lying ? 1.56 : 1.2, pitch - dy * 0.004)); } });
   renderer.setPixelRatio(touch.pixelRatio(2));
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('Drag to look · thumb-stick walks · hold 🔭 for binoculars · ☰ Menu for options', h.textContent); }
   fx = beautify(renderer, scene, camera, { tone: 'neutral', exposure: 1.0, bloom: 0.12, radius: 0.4, threshold: 2.2 });
@@ -200,6 +202,8 @@ async function init() {
   comfort = createComfort({ renderer, scene, camera, dolly, groundHit,
     onQuality: (q) => { treeLodK = [1, 0.75, 0.55, 0.4][q]; lastLayout.x = 1e9; flockBirds.group.visible = q < 1; } });
 
+  rise = createSkyRise({ THREE, renderer, camera, rig: dolly, comfort, getMenu: () => menu, story: 'trees', ceiling: 50, step: 6, home: () => lieSpot, clouds: true, parent: world, isPaused: () => comfort.paused,
+    onLying: (on) => { if (on) lieSpot = { x: dolly.position.x, y: terrainH(dolly.position.x, dolly.position.z), z: dolly.position.z }; pitch = on ? 1.42 : 0; } });
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Nature — Glade & Cliffs',
@@ -207,6 +211,7 @@ async function init() {
     rows: [
       { label: 'Quality', cells: [['Auto', 'auto'], ['High', 'high'], ['Med', 'medium'], ['Light', 'light']].map(([t, id]) => ({ text: t, active: () => qpref === id, action: () => { try { localStorage.setItem('oortia-nature-quality', id); } catch (e) { /* ignore */ } location.reload(); } })) },
       { cells: [{ text: () => 'Tier: ' + pickTier() + ' (change reloads)' }] },
+      ...rise.rows(),
       ...comfort.rows({ movement: true, teleport: true }),
       ...touch.rows(),
     ],
@@ -219,6 +224,7 @@ async function init() {
   });
 
   comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
+  if (/[?&]lie=1/.test(location.search)) rise.setLying(true);   // front-page "Lying down" cards
   // spyglass: a hand-held lens (render-to-texture, ×6) floating at your left hip; grip to grab, look through it
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   spy = createLens({ renderer, scene, camera, menu, radius: 0.085, zoom: 6, ring: 0xc9a24a });
@@ -564,7 +570,7 @@ function chirp() {
 function onMouseMove(e) {
   if (!pointerLocked || renderer.xr.isPresenting) return;
   yaw -= e.movementX * 0.0025; pitch -= e.movementY * 0.0025;
-  pitch = Math.max(-1.2, Math.min(1.2, pitch));
+  pitch = Math.max(-1.2, Math.min(rise && rise.lying ? 1.56 : 1.2, pitch));
 }
 
 // where a pointing ray meets walkable ground (for teleport); null if it lands somewhere we don't let you stand
@@ -606,6 +612,10 @@ const _wp = new THREE.Vector3();
 // Returns {moving, turning} for the comfort vignette.
 function handleMovement(dt) {
   const pres = renderer.xr.isPresenting;
+  if (rise && rise.lying) {                                             // lying down: no walking; optional float up / back down
+    if (!pres) { camera.rotation.set(pitch, yaw, 0, 'YXZ'); camera.position.y = 0.3; } else camera.position.y = 0;
+    return { moving: rise.update(dt), turning: 0 };
+  }
   let mx = 0, mz = 0, turning = 0, deskRun = false;
   if (!pres) {
     if (touch.gyro.on) camera.quaternion.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ')).multiply(touch.gyro.quat);

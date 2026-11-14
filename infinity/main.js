@@ -9,6 +9,7 @@ import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfor
 import { createTouch } from '../shared/touch.js?v=20261113h';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113h';
+import { createSkyRise } from '../shared/skyrise.js?v=rise4';
 
 let fx, nebula;   // post-processing + nebula backdrop
 
@@ -94,6 +95,7 @@ let speedIdx = 2;
 
 // ---------- state ----------
 let scene, camera, renderer, dolly, points, geometry, lightMat, menu, caps, kit, wand, gridCount = 0;
+let rise = null, lieSpot = { x: 0, y: 0, z: 0 };   // Lying down: lie on the floor and look up into the lights
 let comfort, touch, platform, stillMode = false, qualityScale = 1, worldTime = 0, tab = 0;
 const drift = new THREE.Vector3();
 let basePositions;                 // Float32Array, length MAX_LIGHTS*3
@@ -143,7 +145,7 @@ function init() {
   scene.add(dolly);
 
   touch = createTouch({ canvas: renderer.domElement, look: true, stick: true, buttons: [{ id: 'up', label: '▲' }, { id: 'down', label: '▼' }],
-    onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.4, Math.min(1.4, pitch - dy * 0.004)); } });
+    onLook: (dx, dy) => { yaw -= dx * 0.004; pitch = Math.max(-1.4, Math.min(rise && rise.lying ? 1.56 : 1.4, pitch - dy * 0.004)); } });
   { const h = document.getElementById('help'); if (h) h.textContent = touch.helpText('Drag to look · thumb-stick flies · ▲▼ rise & sink · ☰ Menu for options', h.textContent); }
   comfort = createComfort({ renderer, scene, camera, dolly,
     onQuality: (q) => { govLevel = q; qualityScale = [1, 0.8, 0.6, 0.45][q]; applyDraw(); applyTier(); } });
@@ -156,6 +158,8 @@ function init() {
   const step = (key, d, lo, hi, dec = 2, after) => () => { params[key] = +clamp(params[key] + d, lo, hi).toFixed(dec); if (after) after(); saveSettings(); };
   const regen = () => generatePattern();
   const driftCap = () => 1.0 * [1, 1.6, 2.5][comfort.settings.speed] * (comfort.reducedMotion ? 0.5 : 1);
+  rise = createSkyRise({ THREE, renderer, camera, rig: dolly, comfort, getMenu: () => menu, story: 'stars', ceiling: 60, step: 8, home: () => lieSpot,
+    onLying: (on) => { if (on) lieSpot = { x: dolly.position.x, y: dolly.position.y, z: dolly.position.z }; pitch = on ? 1.42 : 0; yaw = 0; } });
   menu = createXRMenu({
     renderer, camera, dolly, caps,
     title: 'Infinity Lights',
@@ -198,7 +202,7 @@ function init() {
           () => { params.hue = (params.hue + 10) % 360; if (params.theme === 'custom') applyTheme(); saveSettings(); }, rep10), visible: () => params.theme === 'custom' },
       ], () => tab === 3),
       // ---- Comfort
-      ...inTab([...comfort.rows({ movement: true, teleport: false, header: false }), ...touch.rows()], () => tab === 4),
+      ...inTab([...rise.rows(), ...comfort.rows({ movement: true, teleport: false, header: false }), ...touch.rows()], () => tab === 4),
     ],
     fade: comfort.fade,
     sound: { get: () => soundOn, set: setSound },
@@ -208,6 +212,7 @@ function init() {
   });
 
   comfort.attachMenu(menu); touch.onChange = () => menu.refresh();
+  if (/[?&]lie=1/.test(location.search)) rise.setLying(true);   // front-page "Lying down" cards
   kit = createToolkit({ renderer, scene, dolly, camera, menu });
   buildWand();
   buildPlatform();
@@ -726,6 +731,8 @@ function applyLook() {
 const _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _sv = new THREE.Vector3();
 function handleMovement(dt) {
   const xr = renderer.xr.isPresenting;
+  camera.position.y = rise && rise.lying && !xr ? -1.3 : 0;            // lying: eye just above the floor (desktop floor is 1.6 below)
+  if (rise && rise.lying) return { moving: rise.update(dt), turning: 0 };   // no flying while lying; optional float up / back down
   const move = new THREE.Vector3();
   camera.getWorldDirection(_fwd); _fwd.y = 0;
   if (_fwd.lengthSq() < 1e-4) _fwd.set(0, 0, -1);
@@ -780,7 +787,7 @@ function onMouseMove(e) {
   if (!pointerLocked) return;
   yaw -= e.movementX * LOOK_SPEED;
   pitch -= e.movementY * LOOK_SPEED;
-  pitch = Math.max(-1.4, Math.min(1.4, pitch));
+  pitch = Math.max(-1.4, Math.min(rise && rise.lying ? 1.56 : 1.4, pitch));
   applyLook();
 }
 

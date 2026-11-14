@@ -57,7 +57,7 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
     rig.position.set(h.x + R.shift.x, h.y + R.height, h.z + R.shift.y);
   }
   R.setLying = (on) => {
-    const go = () => { R.lying = on; R.height = 0; R.floating = 0; R.shift.set(0, 0); place(); if (sky) sky.grp.visible = on; if (onLying) onLying(on); refresh(); };
+    const go = () => { R.lying = on; R.height = 0; R.floating = 0; R.shift.set(0, 0); if (onLying) onLying(on); place(); if (sky) sky.grp.visible = on; refresh(); };
     if (comfort && on !== R.lying) comfort.fade(go); else go();
   };
   R.toGround = () => { R.floating = 0; const go = () => { R.height = 0; R.shift.set(0, 0); place(); refresh(); }; comfort ? comfort.fade(go, 0.5, 0.6) : go(); };
