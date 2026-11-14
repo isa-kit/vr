@@ -9,7 +9,7 @@ import { createComfort, rotateRigAboutHead, stickVector } from '../shared/comfor
 import { createTouch } from '../shared/touch.js?v=20261113h';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113h';
-import { createSkyRise } from '../shared/skyrise.js?v=rise6';
+import { createSkyRise } from '../shared/skyrise.js?v=rise8';
 
 let fx, nebula;   // post-processing + nebula backdrop
 

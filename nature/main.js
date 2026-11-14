@@ -17,7 +17,7 @@ import { createTerrain } from '../procgen/terrain.js?v=20261115a';
 import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261115a';
 import { createRocks } from '../procgen/rocks.js?v=20261115a';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
-import { createSkyRise } from '../shared/skyrise.js?v=rise6';
+import { createSkyRise } from '../shared/skyrise.js?v=rise8';
 
 let fx;
 const windU = { value: 0 };   // shared wind clock for swaying foliage

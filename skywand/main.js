@@ -8,21 +8,20 @@ import { detectXR, createXRMenu, sectionRow, choiceGrid, swatchGrid } from '../s
 import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
+import { createDrift } from '../shared/drift.js?v=drift2';
 
 const KEY = 'oortia-skywand-v2';
 const COLORS = [['Gold', '#ffd27a'], ['Rose', '#ff8fb0'], ['Sky', '#8fd3ff'], ['Mint', '#8ff0c0'], ['Violet', '#b9a0ff'], ['White', '#ffffff'], ['Ember', '#ff9a5a'], ['Rainbow', 'rainbow']];
 const BRUSHES = [['Line', 'line'], ['Ribbon', 'ribbon'], ['Dots', 'dots'], ['Sparkles', 'sparkle']];
-const DRIFTS = [['Stationary', 'still'], ['Forward', 'forward'], ['Rise', 'rise'], ['Float down', 'down']];   // straight lines only, never curves
-const SPEEDS = [['Very slow', 0.15], ['Slow', 0.25], ['Gentle', 0.4]];   // slow is key for comfort
-const MAX_SPEED = 0.45;                 // hard cap (m/s), whatever the comfort speed setting says
+const MAX_SPEED = 0.45;                 // hard cap (m/s) for the straight drift — slow is key for comfort
 const FADES = [['Never', 0], ['10 s', 10], ['30 s', 30], ['1 min', 60]];
 const SIZES = [['Fine', 0.6], ['Medium', 1], ['Bold', 1.8]];
 const TOP = 160, BOTTOM = 2.5;
-const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', drift: 'still', speed: 0, fade: 30, size: 1, posture: 'seated' },
+const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', fade: 30, size: 1, posture: 'seated' },
   (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* */ } };
 
-let renderer, scene, camera, dolly, menu, comfort, touch, fx, caps, xr = false;
+let renderer, scene, camera, dolly, menu, comfort, touch, fx, caps, drift, xr = false;
 const strokes = [], clock = new THREE.Clock();
 let now = 0, yaw = 0, pitch = 0;
 
@@ -149,11 +148,12 @@ async function init() {
   camera.position.y = 1.15;
   scene.add(new THREE.HemisphereLight(0xbfc8ff, 0x202030, 0.9));
   const W = buildWorld();
-  const startY = () => (P.drift === 'down' ? TOP * 0.6 : P.drift === 'rise' ? BOTTOM + 2 : 40);
+  const startY = () => 40;
   dolly.position.set(0, startY(), 0);
   setPosture(P.posture);
 
   comfort = createComfort({ renderer, scene, camera, dolly });
+  drift = createDrift({ THREE, scene, camera, rig: dolly, comfort, getMenu: () => menu, start: 'still', cap: MAX_SPEED });
   const rows = [
     sectionRow('Brush'),
     ...choiceGrid(BRUSHES, () => P.brush, (v) => { P.brush = v; save(); }, 4),
@@ -161,9 +161,7 @@ async function init() {
     { label: 'Size', cells: SIZES.map(([t, v]) => ({ text: t, action: () => { P.size = v; save(); }, active: () => P.size === v })) },
     { label: 'Fade', cells: FADES.map(([t, v]) => ({ text: t, action: () => { P.fade = v; save(); }, active: () => P.fade === v })) },
     { cells: [{ text: 'Clear the sky', action: clearAll, tone: 'danger' }] },
-    sectionRow('Motion: stationary, or a slow straight drift'),
-    ...choiceGrid(DRIFTS, () => P.drift, (v) => setDrift(v), 4),
-    { label: 'Speed', visible: () => P.drift !== 'still', cells: SPEEDS.map(([t], i) => ({ text: t, action: () => { P.speed = i; save(); }, active: () => P.speed === i })) },
+    ...drift.rows(),
     { label: 'Posture', cells: [{ text: 'Sitting', action: () => setPosture('seated'), active: () => P.posture === 'seated' }, { text: 'Lying up', action: () => setPosture('lying'), active: () => P.posture === 'lying' }] },
     ...comfort.rows({ movement: false }),
   ];
@@ -180,10 +178,9 @@ async function init() {
   comfort.attachMenu(menu);
   menu.controllers.forEach((c) => makePen(c));
   const mousePen = makePen(null); mousePen.tip.visible = false;
-  menu.onSelectStart((c, hand, i) => penDown(pens[i]));
+  menu.onSelectStart((c, hand, i) => { if (drift.captureController(c)) return; penDown(pens[i]); });
   menu.onSelectEnd((c, hand, i) => penUp(pens[i]));
 
-  function setDrift(v) { const go = () => { P.drift = v; save(); dolly.position.y = startY(); }; comfort.fade(go); menu.refresh(); }
   function setPosture(v) { P.posture = v; save(); pitch = v === 'lying' ? 1.4 : 0; yaw = 0; }
 
   // flat-screen drawing + look
@@ -194,7 +191,9 @@ async function init() {
   cv.addEventListener('pointerdown', (e) => {
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch (er) { /* */ }
     if (e.button === 2 || touches.size >= 2) { penUp(mousePen); look = { x: e.clientX, y: e.clientY, yaw, pitch }; return; }
-    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); penDown(mousePen);
+    ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    if (drift.armed) { ray.setFromCamera(ndc, camera); drift.capture(null, ray.ray.direction); return; }   // "Point to set": click where to go
+    penDown(mousePen);
   });
   cv.addEventListener('pointermove', (e) => {
     if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -207,7 +206,7 @@ async function init() {
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
   const ld = document.getElementById('loading'); if (ld) ld.style.display = 'none';
-  let fadeAcc = 0;
+  let fadeAcc = 0, fadingBack = false;
   const frame = (force) => {
     const dt = force || Math.min(clock.getDelta(), 0.05); now += dt;
     if (!xr) {
@@ -216,13 +215,10 @@ async function init() {
       camera.rotation.set(pitch, yaw, 0, 'YXZ');
     }
     // drift: one straight direction at constant speed (frozen by Pause / calm)
-    let v = 0;
-    if (P.drift !== 'still' && !comfort.paused) {
-      v = Math.min(MAX_SPEED, comfort.speed ? comfort.speed(SPEEDS[P.speed][1]) : SPEEDS[P.speed][1]);
-      if (P.drift === 'forward') dolly.position.z -= v * dt;
-      else if (P.drift === 'rise') dolly.position.y += v * dt;
-      else dolly.position.y -= v * dt;
-      if (dolly.position.y < BOTTOM || dolly.position.y > TOP) { const y = startY(); v = 0; comfort.fade(() => { dolly.position.y = y; }); dolly.position.y = THREE.MathUtils.clamp(dolly.position.y, BOTTOM, TOP); }
+    let v = drift.update(dt, { paused: comfort.paused });
+    if (dolly.position.y < BOTTOM || dolly.position.y > TOP) {   // reached the ground or the top: fade back to the middle height
+      dolly.position.y = THREE.MathUtils.clamp(dolly.position.y, BOTTOM, TOP); v = 0;
+      if (!fadingBack) { fadingBack = true; comfort.fade(() => { dolly.position.y = startY(); fadingBack = false; }); }
     }
     // keep the dome, ground texture and motes around you
     camera.getWorldPosition(_wp);
@@ -244,6 +240,6 @@ async function init() {
     comfort.update(dt, { moving: v });
     fx.render();
   };
-  if (location.hash.includes('debug')) window.__SW = { frame, P, strokes, dolly };
+  if (location.hash.includes('debug')) window.__SW = { frame, P, strokes, dolly, drift };
   renderer.setAnimationLoop(() => frame());
 }

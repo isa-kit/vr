@@ -17,6 +17,8 @@
 //   • Drift where I look — a slow dreamlike dissolve to a point along your gaze (upward only, stays near home).
 //   • Back to the ground — fade home.
 // =====================================================================================================================
+import { createDrift } from './drift.js?v=drift2';
+
 const WORDS = {
   trees: { float: 'Float up', level: 'Next branch', drift: 'Drift where I look' },
   sky:   { float: 'Float up', level: 'Rise higher', drift: 'Drift where I look' },
@@ -52,6 +54,16 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
   const spd = () => Math.min(MAX, comfort && comfort.speed ? comfort.speed(base) : base);
   const refresh = () => { const m = getMenu(); if (m) m.refresh(); };
   const sky = clouds && parent ? makeClouds(THREE, parent, 22, clouds === true ? 0xffffff : clouds) : null;
+  // the float direction is user-definable (straight up by default): "Where I look" or "Point to set" (controller / click)
+  const D = R.dirPicker = createDrift({ THREE, scene: parent || rig.parent, camera, rig, comfort, getMenu, start: 'rise', cap: MAX, move: false, isMoving: () => R.floating !== 0 });
+  D.speedIdx = 1;
+  const _v = new THREE.Vector3();
+  let hooked = false;
+  renderer.domElement.addEventListener('pointerdown', (e) => {          // flat screens: "Point to set" takes the next click
+    if (!D.armed || renderer.xr.isPresenting) return;
+    const rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+    D.capture(null, rc.ray.direction);
+  }, true);
 
   function place() {
     const h = home();
@@ -90,13 +102,17 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
       { text: 'Sitting', action: () => R.setLying(false), active: () => !R.lying },
       { text: 'Lying up', action: () => R.setLying(true), active: () => R.lying },
     ] },
-    { label: 'Go up', visible: () => R.lying, cells: [
-      { text: () => (R.floating === 1 ? '■ Stop' : '▲ ' + w.float), action: () => R.toggleFloat(1), active: () => R.floating === 1, w: 1.4 },
+    { label: 'Float', visible: () => R.lying, cells: [
+      { text: () => (R.floating === 1 ? '■ Stop' : (D.mode === 'custom' ? '▶ Float my way' : '▲ ' + w.float)), action: () => R.toggleFloat(1), active: () => R.floating === 1, w: 1.3 },
+      { text: () => (R.floating === -1 ? '■ Stop' : '▼ Float down'), action: () => R.toggleFloat(-1), active: () => R.floating === -1, visible: () => R.height > 0.05 },
       { text: w.level, action: () => R.level() },
     ] },
-    { label: 'Come down', visible: () => R.lying && R.height > 0.05, cells: [
-      { text: () => (R.floating === -1 ? '■ Stop' : '▼ Float down gently'), action: () => R.toggleFloat(-1), active: () => R.floating === -1, w: 1.4 },
+    { label: 'Direction', visible: () => R.lying, cells: [
+      { text: 'Straight up', action: () => D.setPreset('rise'), active: () => D.mode === 'rise' },
+      { text: 'Where I look', action: () => D.fromGaze(), active: () => D.mode === 'custom' && !D.armed },
+      { text: () => (D.armed ? 'Point + trigger…' : 'Point to set'), action: () => D.arm(), active: () => D.armed },
     ] },
+    { label: 'Speed', visible: () => R.lying && R.floating !== 0, cells: [['Very slow', 0], ['Slow', 1], ['Gentle', 2]].map(([t, i]) => ({ text: t, action: () => { D.speedIdx = i; refresh(); }, active: () => D.speedIdx === i })) },
     { label: () => (R.height > 0.3 ? `Up ${Math.round(R.height)} m` : 'On the ground'), visible: () => R.lying, cells: [
       { text: w.drift, action: () => R.drift(), w: 1.4 },
       { text: 'Back to the ground', action: () => R.toGround(), visible: () => R.height > 0.05 || R.shift.lengthSq() > 0, tone: 'accent' },
@@ -109,6 +125,8 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
   addEventListener('keyup', (e) => { keys[e.code] = false; });
 
   R.update = (dt) => {
+    if (!hooked && getMenu() && getMenu().onSelectStart) { hooked = true; getMenu().onSelectStart((c) => { if (R.lying) D.captureController(c); }); }
+    D.update(dt);
     if (!R.lying) return 0;
     if (sky && !isPaused()) { const h = home(); sky.update(dt, h); }
     let dir = R.floating;
@@ -122,9 +140,12 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
       }
     }
     if (!dir) return 0;
-    const v = spd(), before = R.height;
-    R.height = Math.max(0, Math.min(ceiling, R.height + dir * v * dt));
-    if (R.height === before) { if (R.floating) { R.floating = 0; refresh(); } return 0; }
+    if (dir > 0) _v.copy(D.dir); else _v.set(0, -1, 0);               // one straight line: along your direction, or straight down
+    const v = D.velocity(), before = R.height, bx = R.shift.x, bz = R.shift.y;
+    R.height = Math.max(0, Math.min(ceiling, R.height + _v.y * v * dt));
+    R.shift.x += _v.x * v * dt; R.shift.y += _v.z * v * dt;
+    const L = R.shift.length(); if (L > 25) R.shift.multiplyScalar(25 / L);   // stay near your spot
+    if (Math.abs(R.height - before) + Math.abs(R.shift.x - bx) + Math.abs(R.shift.y - bz) < 1e-5) { if (R.floating) { R.floating = 0; refresh(); } return 0; }
     place();
     if (Math.floor(before) !== Math.floor(R.height)) refresh();
     return v;
