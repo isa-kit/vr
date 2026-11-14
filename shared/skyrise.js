@@ -44,11 +44,12 @@ function makeClouds(THREE, parent, count = 14, tint = 0xffffff) {
   return { grp, update(dt, at) { grp.position.set(at.x, 0, at.z); for (const m of list) { m.position.x += 1.6 * dt; if (m.position.x > 280) m.position.x = -280; } } };
 }
 
-export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu = () => null, story = 'sky', ceiling = 60, step = 5, home, onLying = null, base = 0.45, clouds = false, parent = null, isPaused = () => false }) {
+export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu = () => null, story = 'sky', ceiling = 60, step = 5, home, onLying = null, base = 0.3, clouds = false, parent = null, isPaused = () => false }) {
   const w = WORDS[story] || WORDS.sky;
   const R = { lying: false, height: 0, floating: 0, shift: new THREE.Vector2() };
   const _d = new THREE.Vector3(), _p = new THREE.Vector3();
-  const spd = () => (comfort && comfort.speed ? comfort.speed(base) : base);
+  const MAX = 0.45;                                     // hard cap (m/s): slow straight vertical drift only
+  const spd = () => Math.min(MAX, comfort && comfort.speed ? comfort.speed(base) : base);
   const refresh = () => { const m = getMenu(); if (m) m.refresh(); };
   const sky = clouds && parent ? makeClouds(THREE, parent, 22, clouds === true ? 0xffffff : clouds) : null;
 

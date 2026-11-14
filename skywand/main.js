@@ -9,15 +9,16 @@ import { createComfort } from '../shared/comfort.js?v=20261114f';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 
-const KEY = 'oortia-skywand-v1';
+const KEY = 'oortia-skywand-v2';
 const COLORS = [['Gold', '#ffd27a'], ['Rose', '#ff8fb0'], ['Sky', '#8fd3ff'], ['Mint', '#8ff0c0'], ['Violet', '#b9a0ff'], ['White', '#ffffff'], ['Ember', '#ff9a5a'], ['Rainbow', 'rainbow']];
 const BRUSHES = [['Line', 'line'], ['Ribbon', 'ribbon'], ['Dots', 'dots'], ['Sparkles', 'sparkle']];
-const DRIFTS = [['Still', 'still'], ['Forward', 'forward'], ['Rise', 'rise'], ['Float down', 'down']];
-const SPEEDS = [['Slow', 0.35], ['Gentle', 0.7], ['Brisk', 1.2]];
+const DRIFTS = [['Stationary', 'still'], ['Forward', 'forward'], ['Rise', 'rise'], ['Float down', 'down']];   // straight lines only, never curves
+const SPEEDS = [['Very slow', 0.15], ['Slow', 0.25], ['Gentle', 0.4]];   // slow is key for comfort
+const MAX_SPEED = 0.45;                 // hard cap (m/s), whatever the comfort speed setting says
 const FADES = [['Never', 0], ['10 s', 10], ['30 s', 30], ['1 min', 60]];
 const SIZES = [['Fine', 0.6], ['Medium', 1], ['Bold', 1.8]];
 const TOP = 160, BOTTOM = 2.5;
-const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', drift: 'forward', speed: 0, fade: 30, size: 1, posture: 'seated' },
+const P = Object.assign({ brush: 'ribbon', color: '#8fd3ff', drift: 'still', speed: 0, fade: 30, size: 1, posture: 'seated' },
   (() => { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } })());
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) { /* */ } };
 
@@ -160,9 +161,9 @@ async function init() {
     { label: 'Size', cells: SIZES.map(([t, v]) => ({ text: t, action: () => { P.size = v; save(); }, active: () => P.size === v })) },
     { label: 'Fade', cells: FADES.map(([t, v]) => ({ text: t, action: () => { P.fade = v; save(); }, active: () => P.fade === v })) },
     { cells: [{ text: 'Clear the sky', action: clearAll, tone: 'danger' }] },
-    sectionRow('Drift (one straight direction)'),
+    sectionRow('Motion: stationary, or a slow straight drift'),
     ...choiceGrid(DRIFTS, () => P.drift, (v) => setDrift(v), 4),
-    { label: 'Speed', cells: SPEEDS.map(([t], i) => ({ text: t, action: () => { P.speed = i; save(); }, active: () => P.speed === i })) },
+    { label: 'Speed', visible: () => P.drift !== 'still', cells: SPEEDS.map(([t], i) => ({ text: t, action: () => { P.speed = i; save(); }, active: () => P.speed === i })) },
     { label: 'Posture', cells: [{ text: 'Sitting', action: () => setPosture('seated'), active: () => P.posture === 'seated' }, { text: 'Lying up', action: () => setPosture('lying'), active: () => P.posture === 'lying' }] },
     ...comfort.rows({ movement: false }),
   ];
@@ -217,7 +218,7 @@ async function init() {
     // drift: one straight direction at constant speed (frozen by Pause / calm)
     let v = 0;
     if (P.drift !== 'still' && !comfort.paused) {
-      v = comfort.speed ? comfort.speed(SPEEDS[P.speed][1]) : SPEEDS[P.speed][1];
+      v = Math.min(MAX_SPEED, comfort.speed ? comfort.speed(SPEEDS[P.speed][1]) : SPEEDS[P.speed][1]);
       if (P.drift === 'forward') dolly.position.z -= v * dt;
       else if (P.drift === 'rise') dolly.position.y += v * dt;
       else dolly.position.y -= v * dt;
