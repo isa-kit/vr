@@ -1,0 +1,17 @@
+{
+  "id": "chimes",
+  "name": "Sky Chimes",
+  "kind": "game",
+  "category": "lying",
+  "status": "live",
+  "path": "chimes",
+  "blurb": "Seven chimes hang in the dusk sky. Rings of light close in on them in a slow tune — ring each chime as its ring arrives, or just play them freely. Nothing to lose; lie back and listen.",
+  "locomotion": {
+    "type": "lying"
+  },
+  "posture": ["lying-up", "seated"],
+  "standard": "app2",
+  "controls": {
+    "panel": []
+  }
+}
