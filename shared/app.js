@@ -1,7 +1,7 @@
 // ============================ shared/app.js — the ONE bootstrap for every Oortia app ============================
 // The binding conventions are in /STANDARD.md. A new app imports ONLY this file (plus three) — copy /template/.
 //
-//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app3';
+//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app4';
 //   const app = await createOortiaApp({
 //     id: 'myapp', title: 'My App',
 //     capabilities: { locomotion: 'none' | 'walk' | 'drift',            // default 'none'
@@ -28,7 +28,7 @@
 // Quit to Worlds, then the app's tabs) and the standard Pause exist everywhere by construction.
 // =================================================================================================================
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab } from './xrmenu.js?v=20261115a';
+import { detectXR, createXRMenu, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab } from './xrmenu.js?v=20261115b';
 import { createComfort, rotateRigAboutHead, stickVector } from './comfort.js?v=20261114f';
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';
@@ -43,6 +43,8 @@ export const STANDARD = Object.freeze({
   EYE: Object.freeze({ standing: 1.6, seated: 1.15, 'lying-up': 0.3 }),   // flat-screen eye heights (a headset reports the real one)
   LIE_PITCH: 1.42,                 // flat-screen look-up angle for Lying up (rad)
   POSTURE_NAMES: Object.freeze({ standing: 'Standing', seated: 'Seated', 'lying-up': 'Lying up' }),
+  LIE_ENTER_DEG: 50, LIE_EXIT_DEG: 35,   // Recenter while looking up past 50 deg = Lying up; below 35 deg = upright; in between keeps the posture
+  RECENTER_HOLD_MS: 600,                 // hold the RIGHT thumbstick click this long = Recenter (reserved, every world)
   POSTURE_KEY: 'oortia-posture',   // global: the posture you last chose, used by every app that supports it
   RECENTER_ON_ENTER_MS: 450,
 });
@@ -80,12 +82,25 @@ export function standardChrome(o) {
     },
     togglePause() { C.setPaused(!C.paused); },
     onPause(f) { listeners.push(f); },
+    // what the headset says about posture right now: { pitch (radians, + = up), lying: true | false | null (in between) }
+    poseHint() {
+      camera.updateWorldMatrix(true, false);
+      const p = Math.asin(THREE.MathUtils.clamp(camera.getWorldDirection(new THREE.Vector3()).y, -1, 1)), d = THREE.MathUtils.radToDeg(p);
+      return { pitch: p, lying: !renderer.xr.isPresenting ? null : d > STANDARD.LIE_ENTER_DEG ? true : d < STANDARD.LIE_EXIT_DEG ? false : null };
+    },
   };
+  // Recenter is THE posture tool: the menu tile and the right-stick hold both call the world's recenter with the pose hint,
+  // so a world re-places its content for how you are sitting or lying NOW. Entering VR recenters once (posture untouched).
+  const recenter = o.recenter ? () => o.recenter(C.poseHint()) : undefined;
   const rows = o.rows || [];                       // kept BY REFERENCE: callers may push more rows later (then menu.refresh())
   if (o.comfortRows !== false) rows.push(...comfort.rows({ movement: false, ...(o.comfortRows || {}) }));
   menu = createXRMenu({
     compactCommon: true, quitUrl: '../', ...o, ...(o.menu || {}),
-    renderer, camera, dolly, caps, title: o.title || 'Oortia', rows, fade: comfort.fade,
+    renderer, camera, dolly, caps, title: o.title || 'Oortia', rows, fade: comfort.fade, recenter,
+    onSessionStart: () => {
+      if (o.onSessionStart) o.onSessionStart();
+      if (o.autoRecenter !== false && o.recenter) setTimeout(() => { if (renderer.xr.isPresenting) o.recenter({ ...C.poseHint(), lying: null, auto: true }); }, STANDARD.RECENTER_ON_ENTER_MS);
+    },
     pause: { text: () => (C.paused ? 'Resume' : 'Pause'), active: () => C.paused, action: () => C.togglePause() },
   });
   comfort.attachMenu(menu);
@@ -166,7 +181,16 @@ export async function createOortiaApp(o = {}) {
 
   // Recenter: the WORLD stays upright; the rig turns so that your level "ahead" is the home heading (and, with a home,
   // your head is back over it). Then apps re-place their content relative to the headset in onRecenter.
-  app.recenter = () => {
+  let upright = postures.find((p) => p !== 'lying-up') || null;
+  app.recenter = (hint) => {
+    if (posture !== 'lying-up') upright = posture;
+    if (app.xr && hint && hint.lying != null) {                          // the posture follows how you hold your head when you recenter
+      const want = hint.lying ? 'lying-up' : upright;
+      if (want && want !== posture && postures.includes(want)) {
+        posture = want; try { localStorage.setItem(STANDARD.POSTURE_KEY, want); } catch (e) { /* */ }
+        if (o.onPosture) o.onPosture(want); if (app.menu) app.menu.refresh();
+      }
+    }
     if (app.xr) {
       const f = headFrame(camera), to = home || f.eye;                 // no home: the head stays exactly where it is, only the heading resets
       dolly.rotation.y += (home ? home.yaw : 0) - f.yaw; dolly.updateMatrixWorld(true);
@@ -198,13 +222,13 @@ export async function createOortiaApp(o = {}) {
   const tabs = appTabs.map((t) => ({ name: t.name, rows: t.rows || [] }));
   if (drift) tabs.push({ name: 'Motion', rows: drift.rows() });
   const comfortTab = { name: 'Comfort', rows: [] }; tabs.push(comfortTab);
-  if (postures.length > 1) comfortTab.rows.push({ label: 'Posture', cells: postures.map((p) => ({ text: STANDARD.POSTURE_NAMES[p], action: () => app.setPosture(p), active: () => posture === p })) });
+  if (postures.length > 1) comfortTab.rows.push({ label: 'Posture', visible: () => !app.xr, cells: postures.map((p) => ({ text: STANDARD.POSTURE_NAMES[p], action: () => app.setPosture(p), active: () => posture === p })) });
   comfortTab.rows.push(...touch.rows());
   let tab = 0;
   const chrome = standardChrome({
     renderer, scene, camera, dolly, caps, title, hint: o.hint, sound: o.sound, groundHit: o.groundHit, onQuality: o.onQuality, onPause: o.onPause, pause: o.pause,
     comfortRows: false, ...(o.menu || {}),
-    recenter: () => app.recenter(),
+    recenter: (hint) => app.recenter(hint), autoRecenter: false,
     setBackdrop: (v) => { world.visible = v; scene.background = v ? bg : null; },
     onBeforeEnter: o.onBeforeEnter,
     onSessionStart: () => { app.xr = true; camera.position.set(0, 0, 0); setTimeout(() => app.recenter(), STANDARD.RECENTER_ON_ENTER_MS); if (o.onXR) o.onXR(true); },

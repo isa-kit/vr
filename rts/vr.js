@@ -8,7 +8,7 @@
 //    panel (X/Y are the shared Oortia menu buttons). Nothing here ever moves the player; table changes are faded steps.
 // All interaction maths is plain 3D (ray vs plane / sphere / terrain), so it is exercised headlessly in the #debug test hooks.
 import * as THREE from 'three';
-import { headFrame } from '../shared/app.js?v=app3';
+import { headFrame } from '../shared/app.js?v=app4';
 import { UT, BT, N } from './sim.js?v=rts6';
 import { CELL } from './gfx.js?v=rts6';
 
@@ -277,7 +277,7 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
       if (src.handedness === 'right') {                                          // thumbstick-click held 0.6 s = re-place the table to my pose
         const p = !!(gp.buttons[3] && gp.buttons[3].pressed), s = btn.t;
         if (p && !s.down) { s.down = now; s.held = false; }
-        else if (p && !s.held && now - s.down > 600) { s.held = true; comfort.fade(() => { if (placeTable) placeTable(); }); const c = menu.controllers.find((q) => q.userData.hand === 'right'); if (c) menu.hapticPulse(c); }
+        else if (p && !s.held && now - s.down > 600) { s.held = true; }   // the re-place itself is the site-wide Recenter gesture now (shared/xrmenu.js -> the menu's recenter = placeFromHead)
         else if (!p) s.down = 0;
       }
       if (src.handedness === 'right') for (const [k, idx, g] of [['a', 4, 1], ['b', 5, 2]]) {

@@ -4,10 +4,10 @@
 // WebXR (VR) + flat desktop.  All the hard stuff is cheated to stay light.
 
 import * as THREE from 'three';
-import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/app.js?v=app3';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/app.js?v=app4';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app3';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app4';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { createBirds } from '../shared/birds.js?v=20261114f';
 import { createSky } from '../procgen/sky.js?v=20261115a';
@@ -17,7 +17,7 @@ import { createTerrain } from '../procgen/terrain.js?v=20261115a';
 import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261115a';
 import { createRocks } from '../procgen/rocks.js?v=20261115a';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
-import { createSkyRise } from '../shared/skyrise.js?v=rise11';
+import { createSkyRise } from '../shared/skyrise.js?v=rise12';
 
 let fx;
 const windU = { value: 0 };   // shared wind clock for swaying foliage

@@ -4,7 +4,7 @@
 // behind you as you drift; they can fade away over time. Constant speed, no turning, vignette from shared/comfort.js.
 // Desktop: drag to draw, right-drag / arrow keys to look. Phone: one finger draws, two fingers look.
 // Built on the app standard (shared/app.js, STANDARD.md): menu, Pause, comfort, posture, drift + compass all come from there.
-import { THREE, createOortiaApp, sectionRow, choiceGrid, swatchGrid } from '../shared/app.js?v=app3';
+import { THREE, createOortiaApp, sectionRow, choiceGrid, swatchGrid } from '../shared/app.js?v=app4';
 
 const KEY = 'oortia-skywand-v2';
 const COLORS = [['Gold', '#ffd27a'], ['Rose', '#ff8fb0'], ['Sky', '#8fd3ff'], ['Mint', '#8ff0c0'], ['Violet', '#b9a0ff'], ['White', '#ffffff'], ['Ember', '#ff9a5a'], ['Rainbow', 'rainbow']];

@@ -9,9 +9,9 @@
 // to a high overview, plus a loupe (L).
 
 import * as THREE from 'three';
-import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow } from '../shared/app.js?v=app3';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow } from '../shared/app.js?v=app4';
 import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app3';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app4';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { createBirds } from '../shared/birds.js?v=20261114f';
 import * as RZ from './realism.js?v=20261114f';

@@ -70,9 +70,9 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
     const h = home();
     rig.position.set(h.x + R.shift.x, h.y + R.height, h.z + R.shift.y);
   }
-  R.setLying = (on) => {
+  R.setLying = (on, instant) => {                     // instant: the caller is already inside a fade (Recenter)
     const go = () => { R.lying = on; R.height = 0; R.floating = 0; R.shift.set(0, 0); if (onLying) onLying(on); place(); if (sky) sky.grp.visible = on; refresh(); };
-    if (comfort && on !== R.lying) comfort.fade(go); else go();
+    if (comfort && on !== R.lying && !instant) comfort.fade(go); else go();
   };
   R.toGround = () => { R.floating = 0; const go = () => { R.height = 0; R.shift.set(0, 0); place(); refresh(); }; comfort ? comfort.fade(go, 0.5, 0.6) : go(); };
   R.level = () => {
@@ -98,8 +98,8 @@ export function createSkyRise({ THREE, renderer, camera, rig, comfort, getMenu =
   R.toggleFloat = (dir = 1) => { R.floating = R.floating === dir ? 0 : dir; refresh(); };
 
   R.rows = () => [
-    { section: 'Posture' },
-    { label: 'Posture', cells: [
+    { section: 'Posture', visible: () => !renderer.xr.isPresenting },   // in a headset, Recenter sets the posture
+    { label: 'Posture', visible: () => !renderer.xr.isPresenting, cells: [
       { text: 'Sitting', action: () => R.setLying(false), active: () => !R.lying },
       { text: 'Lying up', action: () => R.setLying(true), active: () => R.lying },
     ] },

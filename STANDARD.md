@@ -16,7 +16,7 @@ Start a new app by copying `template/` (see §9).
 ## 1. One bootstrap
 
 ```js
-import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app3';
+import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app4';
 
 const app = await createOortiaApp({
   id: 'myapp', title: 'My App',
@@ -56,17 +56,18 @@ Two levels of conformance, used in the table in §10:
 
 | Control | Standard meaning | May an app change it? |
 |---|---|---|
-| **X or Y** (left hand), tap | Open / close the menu panel | No |
+| **X or Y** (left hand), tap | Open / close the menu panel (Wrist style: pin the watch on / off) | No |
 | **X or Y**, hold | Radial wheel: point or push the stick, release to choose | No |
 | **Trigger** | Select: click the menu, or the app's main action (`app.onPress`) | Action only — never rebind menu clicking |
-| **Grip** | Grab: carry the menu panel, pick up a tool or object | Only for grabbing things |
+| **Grip** | Grab: carry the menu panel and twist / tilt it like a tablet, pick up a tool or object | Only for grabbing things |
 | **Grip, both hands on the panel** | Pull apart / push together to resize it | No |
 | **Thumbstick on the panel** | Grow / shrink the panel | No |
 | **Right stick, left / right** | Turn: 30° snap (default) or slow smooth, the user's choice | No (walking apps only) |
 | **Left stick** | Walk at one constant speed (walking apps only) | No |
 | **A**, hold (right hand) | Drift apps: aim the compass, release to set the direction | Free in apps without drift |
 | **B** (right hand) | Drift apps: go / stop | Free in apps without drift |
-| **Thumbstick click** | Drift apps: cycle exact directions while holding A | Free otherwise |
+| **Right thumbstick click, hold 0.6 s** | **Recenter** — fade, then the app re-places itself for how you sit or lie now (§6, §7) | **No — reserved in every app** |
+| **Thumbstick click**, short | Drift apps: cycle exact directions while holding A | Free otherwise (short presses only on the right stick) |
 
 Apps may claim **A, B and thumbstick click** (when the app has no drift) and the
 **trigger while not pointing at the menu**. Everything else is reserved. An app
@@ -82,6 +83,23 @@ One menu, one style for the whole site. The user picks **Wheel**, **Dashboard**
 (floating panel) or **Wrist** once; the choice (`oortia-menu-style`), the panel's
 place relative to the head and its size (`oortia-menu-pose`) are remembered
 across every app.
+
+The three styles:
+
+- **Dashboard** — a floating panel. Grip it (anywhere on it or its handle, with
+  5 cm of slack around the edge, or simply with your hand at it) to carry it;
+  it turns with your hand and **keeps** that position and orientation, also
+  the next time it opens. Two hands resize it.
+- **Wrist** — a watch. A small panel (17 cm) lying flat on the back of the left
+  forearm just behind the controller. It is only there when you turn that wrist
+  toward your face (fades in under about 40°); it never floats or turns to
+  follow you. X / Y pins it on.
+- **Wheel** — hold X / Y, point or push the stick, release.
+
+Every panel starts with the **style switch** — `Wheel · Dashboard · Wrist`, the
+current one lit; one click changes style, and a 2-second note says how to open
+the new one. On the wheel, the Menu style wedge opens the same three as wedges
+(point, then trigger or X).
 
 Top level — always this order, as big tiles (160 px tall on the 800 px panel,
 two per row; ordinary rows are 80 px):
@@ -160,7 +178,12 @@ word has one fixed meaning:
   (and puts you back over the home spot if the app has one), then lets the app
   re-place its content along your gaze (`onRecenter`, `app.placeAlongGaze`).
   Content placed this way stays where it was put.
-- Recenter runs by itself 0.45 s after entering VR and on every posture change.
+- Recenter is one gesture everywhere: **hold the right thumbstick click 0.6 s**
+  (or the Recenter tile, always first-row in the menu). The screen fades, then
+  the app's `recenter(hint)` runs; `hint = { pitch, lying }` comes from
+  `chrome.poseHint()`.
+- Recenter runs by itself 0.45 s after entering VR (posture left as it is) and
+  on every posture change.
 
 `app.headFrame()` returns `{ eye, forward, up, flat, yaw }` so apps never work
 this out themselves.
@@ -171,6 +194,14 @@ Three postures, same names everywhere: **Standing**, **Seated**, **Lying up**
 (on your back, looking up). An app lists the ones it supports; the first is its
 default. The user's last choice is global (`oortia-posture`) and is used by
 every app that supports it. `?lie=1` opens an app in Lying up.
+
+**In a headset, Recenter sets the posture** — there is no posture switch to
+find. Recenter while looking up past 50° and an app that supports Lying up
+arranges itself overhead; recenter looking below 35° and it goes back to the
+upright placement; in between, the posture stays as it was. The Lying up cards
+on the front page are shortcuts that start an app in that posture. Posture
+buttons remain only on flat screens (and as a toggle inside the Lying up play
+field).
 
 - Switching posture never moves or tilts the world; it recenters.
 - In Lying up, panels and play fields are placed along the gaze, with their
@@ -240,6 +271,14 @@ Site-wide gaps still open:
   tracking and tool input can only be re-verified in a headset, and a rewrite
   onto `createOortiaApp` would risk regressions for no visible gain. New apps
   must be Full.
+- Checked with simulated controllers (no headset), 2026-11-15 second pass: the
+  watch is hidden with the wrist turned away, shown when it faces the eyes,
+  gone again 70° off, pinned by X; style changes by one click from each style
+  and through the wheel's Menu style wedge, each with its note; the Dashboard
+  follows a hand twist, keeps the orientation after release and on reopening,
+  grabs 4 cm outside its edge and by touch, and still resizes with two hands;
+  the right-stick hold recenters (a short press does not) and sets Lying up /
+  upright from head pitch in a Full app, the Lying up kit and the seated kit.
 - Checked with simulated controllers (no headset): every menu style switch from
   every style, ray clicks on the big tiles, the wheel by ray pointing, Back,
   Reset position, Size − / +, and the Pause tile in a Full app, the Lying up

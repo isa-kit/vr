@@ -3,8 +3,8 @@
 // mini map held on your controller. On desktop it is a classic RTS (box select, right-click orders); on phones it is touch.
 // Simulation: rts/sim.js (fixed 20 Hz, deterministic, headless-testable). Rendering: rts/gfx.js. Controller: rts/ctrl.js.
 import * as THREE from 'three';
-import { detectXR, headFrame, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app3';
-import { createComfort } from '../shared/app.js?v=app3';
+import { detectXR, headFrame, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app4';
+import { createComfort } from '../shared/app.js?v=app4';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 import { createSim, DT, UT, BT, N } from './sim.js?v=rts6';
@@ -15,7 +15,7 @@ import { createCtrl } from './ctrl.js?v=rts6';
 import { createHud } from './hud.js?v=rts6';
 import { createDesk } from './desk.js?v=rts6';
 import { createSfx } from './sfx.js?v=rts6';
-import { createVR } from './vr.js?v=rts6';
+import { createVR } from './vr.js?v=rts7';
 import { createTutorial } from './tutorial.js?v=rts6';
 
 const KEY = 'oortia-rts-v1';
@@ -64,7 +64,7 @@ async function init() {
     hint: 'Desktop: drag to box-select, right-click to command, WASD pan, wheel zoom. Phone: tap to select, drag to box-select, two fingers pan & zoom.',
     rows: menuRows(),
     sound: { get: () => P.sound, set: (v) => { P.sound = v; sfx.set(v); saveP(); } },
-    fade: comfort.fade, recenter: () => { if (xr) placeFromHead(); },
+    fade: comfort.fade, recenter: () => { if (xr) placeFromHead(); }, autoRecenter: false,
     setBackdrop: (v) => { floor.visible = v && !(xr && T.scale >= 4); scene.background = v ? new THREE.Color(0x8fb2d8) : null; },
     onBeforeEnter: () => sfx.ensure(),
     onSessionStart: () => { xr = true; hud.setVR(true); document.body.classList.add('rts-vr'); onXRStart(); },

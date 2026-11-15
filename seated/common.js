@@ -5,8 +5,8 @@
 
 import * as THREE from 'three';
 import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
-import { standardChrome, STANDARD, detectXR, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/app.js?v=app3';   // menu + comfort + Pause: the app standard (STANDARD.md)
-import { createSkyRise } from '../shared/skyrise.js?v=rise11';
+import { standardChrome, STANDARD, detectXR, recenterRig, sectionRow, toggleRow, choiceGrid } from '../shared/app.js?v=app4';   // menu + comfort + Pause: the app standard (STANDARD.md)
+import { createSkyRise } from '../shared/skyrise.js?v=rise12';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 
 export { THREE, SHADER_TAIL, sectionRow, toggleRow, choiceGrid };
@@ -338,7 +338,8 @@ export async function createWorld(o = {}) {
   if (enter) enter.addEventListener('click', () => { if (W.loading) return; W.startAudio(); enter.style.opacity = '0'; setTimeout(() => enter.remove(), 600); if (W.menu) W.menu.close(); });
 
   // ----- recenter / passthrough hooks for the shared menu
-  W.recenter = () => {
+  W.recenter = (hint) => {
+    if (renderer.xr.isPresenting && hint && hint.lying != null && W.rise && hint.lying !== !!W.rise.lying) W.rise.setLying(hint.lying, true);   // Recenter decides the posture from how you hold your head
     if (renderer.xr.isPresenting) recenterRig(rig, camera, new THREE.Vector3(W.home.x, 0, W.home.z), W.startYaw);
     else { W.yaw = 0; W.pitch = W.lying ? LIE_PITCH : W.startPitch + (innerWidth < innerHeight ? W.portraitTilt : 0); vy = vp = 0; }   // yaw is relative to the seat's facing
   };

@@ -18,7 +18,7 @@
 // floating menu along your gaze (the stock placement assumes you look at the horizon).
 // ====================================================================================================================
 import * as THREE from 'three';
-import { standardChrome, STANDARD, detectXR, sectionRow, choiceGrid, stepperRow } from './app.js?v=app3';   // menu + comfort + Pause come from the app standard
+import { standardChrome, STANDARD, detectXR, sectionRow, choiceGrid, stepperRow } from './app.js?v=app4';   // menu + comfort + Pause come from the app standard
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';
 
@@ -185,7 +185,12 @@ export async function createLieGame(opts = {}) {
     const hw = camera.aspect < 0.85 ? Math.max(FW * 0.72, 2.6) : FW + 0.35;   // portrait phones: crop the field's edges a little
     return Math.max((FH + 1.0) / vt, hw / (vt * camera.aspect));
   }
-  K.recenter = () => {
+  K.recenter = (hint) => {
+    if (K.xr && hint && hint.lying != null && (hint.lying ? 'lying' : 'seated') !== S.mode) {   // Recenter decides the posture from how you hold your head
+      S.mode = hint.lying ? 'lying' : 'seated'; save();
+      try { localStorage.setItem(STANDARD.POSTURE_KEY, hint.lying ? 'lying-up' : 'seated'); } catch (e) { /* */ }
+      refreshButtons(); if (menu) menu.refresh();
+    }
     if (!K.xr) deskPose();
     camera.updateMatrixWorld(true); camera.getWorldPosition(_eye); camera.getWorldDirection(_dir);
     const minEl = THREE.MathUtils.degToRad(S.mode === 'lying' ? 30 : 22);
@@ -208,13 +213,13 @@ export async function createLieGame(opts = {}) {
     hint: opts.hint || 'Click to play. Drag to look around. Esc for menu.',
     rows: [
       sectionRow('Play position'),
-      ...choiceGrid([['Lying up', 'lying'], ['Seated', 'seated']], () => S.mode, (m) => K.setMode(m), 2),
+      ...choiceGrid([['Lying up', 'lying'], ['Seated', 'seated']], () => S.mode, (m) => K.setMode(m), 2).map((r) => ({ ...r, visible: () => !K.xr })),   // in a headset, Recenter sets this
       stepperRow('Distance', () => DIST[S.dist][0], () => { S.dist = Math.max(0, S.dist - 1); save(); K.recenter(); }, () => { S.dist = Math.min(2, S.dist + 1); save(); K.recenter(); }),
       ...choiceGrid([['Aim: controllers', 'ctrl'], ['Aim: head', 'head']], () => S.aim, (a) => { S.aim = a; save(); }, 2),
       ...(opts.rows || []),
     ],
     sound: { get: () => sfx.get(), set: (v) => { sfx.set(v); S.sound = v; save(); } },
-    recenter: () => K.recenter(),
+    recenter: (hint) => K.recenter(hint), autoRecenter: false,
     setBackdrop: (v) => { world.visible = v; scene.background = v ? new THREE.Color(pal.top) : null; },
     onBeforeEnter: () => sfx.ensure(),
     onSessionStart: () => { K.xr = true; setTimeout(() => K.recenter(), 450); if (opts.onXR) opts.onXR(true); },
@@ -268,7 +273,7 @@ export async function createLieGame(opts = {}) {
   K.refreshButtons = refreshButtons;
   const by = -FH - 0.55;
   K.button({ text: '☰ Menu', x: -1.45, y: by, w: 1.2, onPress: () => menu.open() });
-  K.button({ text: '⟳ Recenter', x: -0.05, y: by, w: 1.4, onPress: () => (K.xr ? comfort.fade(() => K.recenter()) : K.recenter()) });
+  K.button({ text: '⟳ Recenter', x: -0.05, y: by, w: 1.4, onPress: () => (K.xr ? comfort.fade(() => K.recenter(chrome.poseHint())) : K.recenter()) });
   K.button({ text: () => (S.mode === 'lying' ? '◒ Lying up' : '◓ Seated'), x: 1.55, y: by, w: 1.5, onPress: () => K.setMode(S.mode === 'lying' ? 'seated' : 'lying') });
 
   // toast
