@@ -4,19 +4,19 @@
 // WebXR (VR) + flat desktop.  All the hard stuff is cheated to stay light.
 
 import * as THREE from 'three';
-import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/app.js?v=app2';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, toggleRow, sectionRow } from '../shared/app.js?v=app3';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createToolkit, createLens } from '../shared/xrtools.js?v=20261113c';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app2';
-import { createTouch } from '../shared/touch.js?v=20261113c';
-import { createBirds } from '../shared/birds.js?v=20261113c';
+import { createToolkit, createLens } from '../shared/xrtools.js?v=20261114f';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app3';
+import { createTouch } from '../shared/touch.js?v=20261114f';
+import { createBirds } from '../shared/birds.js?v=20261114f';
 import { createSky } from '../procgen/sky.js?v=20261115a';
 import { createWater } from '../procgen/water.js?v=20261115a';
 import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261115a';
 import { createTerrain } from '../procgen/terrain.js?v=20261115a';
 import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261115a';
 import { createRocks } from '../procgen/rocks.js?v=20261115a';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113c';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 import { createSkyRise } from '../shared/skyrise.js?v=rise11';
 
 let fx;

@@ -6,6 +6,8 @@ Opens flat in any browser, **Enter VR** on a Quest, **Start AR** on Android.
 - `index.html` — the entry menu (data-driven from `scenes/`).
 - `infinity/` — the Infinity Lights world (live).
 - `scenes/` — engine-agnostic world configs + `SCHEMA.md` (the contract).
+- `STANDARD.md` — the binding app standard (menu, buttons, Pause, motion, posture, frames of reference).
+- `shared/app.js` — the one bootstrap every app is built on; `template/` — copy it to start a new app.
 
 Each world is described by JSON in `scenes/`; a renderer draws it. The same
 config can drive a future high-end (Unity) renderer — so the engine stays

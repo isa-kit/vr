@@ -339,6 +339,7 @@ export function createXRMenu(opts) {
   ];
   const compact = !!opts.compactCommon;                // Passthrough / Sound / Recenter / Quit on ONE row (saves height in tall menus)
   const commonRows = compact ? [{ cells: [
+    { text: () => (opts.pause && val(opts.pause.text)) || 'Pause', active: () => !!(opts.pause && opts.pause.active && val(opts.pause.active)), action: () => opts.pause.action(), visible: () => !!opts.pause },   // the standard Pause, on flat screens too
     { text: () => 'Passthrough ' + (passthrough ? 'On' : 'Off'), active: () => passthrough, action: () => setPassthrough(!passthrough), visible: () => caps.ar && renderer.xr.isPresenting && inAR() },
     { text: () => 'Sound ' + (opts.sound && opts.sound.get() ? 'On' : 'Off'), active: () => !!(opts.sound && opts.sound.get()), action: () => opts.sound.set(!opts.sound.get()), visible: () => !!opts.sound },
     { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
@@ -356,6 +357,7 @@ export function createXRMenu(opts) {
     },
     {
       cells: [
+        { text: () => (opts.pause && val(opts.pause.text)) || 'Pause', active: () => !!(opts.pause && opts.pause.active && val(opts.pause.active)), action: () => opts.pause.action(), visible: () => !!opts.pause },   // the standard Pause, on flat screens too
         { text: 'Recenter', action: () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); } },
         quitCell,
       ],

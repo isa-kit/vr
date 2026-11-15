@@ -4,7 +4,7 @@
 // chime you miss still sounds, quietly, so the tune carries on. Free play lets you simply play the chimes.
 // Built on the app standard: shared/lie.js (the Lying up kit) → shared/app.js (menu, Pause, comfort). STANDARD.md.
 import * as THREE from 'three';
-import { createLieGame } from '../shared/lie.js?v=lie5';
+import { createLieGame } from '../shared/lie.js?v=lie6';
 
 const TINT = [0xffb86b, 0xff8fa8, 0xd59bff, 0x8fb4ff, 0x7fe0d4, 0xa8e88a, 0xffe07a];
 const TEMPI = [['Slow', 46], ['Calm', 60], ['Lively', 78]];

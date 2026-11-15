@@ -10,7 +10,7 @@
     "type": "lying"
   },
   "posture": ["lying-up", "seated"],
-  "standard": "app2",
+  "standard": "app3",
   "controls": {
     "panel": []
   }

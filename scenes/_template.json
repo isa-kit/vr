@@ -10,7 +10,7 @@
     "type": "drift"
   },
   "posture": ["seated", "lying-up"],
-  "standard": "app1",
+  "standard": "app3",
   "controls": {
     "panel": []
   }

@@ -1,7 +1,7 @@
 // ============================ shared/app.js — the ONE bootstrap for every Oortia app ============================
 // The binding conventions are in /STANDARD.md. A new app imports ONLY this file (plus three) — copy /template/.
 //
-//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app2';
+//   import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app3';
 //   const app = await createOortiaApp({
 //     id: 'myapp', title: 'My App',
 //     capabilities: { locomotion: 'none' | 'walk' | 'drift',            // default 'none'
@@ -28,7 +28,7 @@
 // Quit to Worlds, then the app's tabs) and the standard Pause exist everywhere by construction.
 // =================================================================================================================
 import * as THREE from 'three';
-import { detectXR, createXRMenu, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab } from './xrmenu.js?v=20261114h';
+import { detectXR, createXRMenu, recenterRig, sectionRow, buttonRow, toggleRow, stepperRow, choiceGrid, swatchGrid, tabRow, inTab } from './xrmenu.js?v=20261115a';
 import { createComfort, rotateRigAboutHead, stickVector } from './comfort.js?v=20261114f';
 import { createTouch } from './touch.js?v=20261114f';
 import { beautify } from './beauty.js?v=20261114f';

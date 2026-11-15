@@ -3,8 +3,8 @@
 // mini map held on your controller. On desktop it is a classic RTS (box select, right-click orders); on phones it is touch.
 // Simulation: rts/sim.js (fixed 20 Hz, deterministic, headless-testable). Rendering: rts/gfx.js. Controller: rts/ctrl.js.
 import * as THREE from 'three';
-import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app2';
-import { createComfort } from '../shared/app.js?v=app2';
+import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app3';
+import { createComfort } from '../shared/app.js?v=app3';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 import { createSim, DT, UT, BT, N } from './sim.js?v=rts4';

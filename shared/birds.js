@@ -1,6 +1,6 @@
 // ============================ shared/birds.js — calm, believable distant birds ============================
 //
-//   import { createBirds } from '../shared/birds.js';
+//   import { createBirds } from '../shared/birds.js?v=20261114f';
 //
 //   const birds = createBirds({
 //     parent: scene,                       // Object3D to add the flock group to

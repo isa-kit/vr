@@ -3,12 +3,12 @@
 // in the options menu). Options menu: left-controller wrist menu in VR, overlay on desktop.
 
 import * as THREE from 'three';
-import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/app.js?v=app2';
-import { createToolkit } from '../shared/xrtools.js?v=20261113h';
-import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app2';
-import { createTouch } from '../shared/touch.js?v=20261113h';
+import { detectXR, standardChrome, recenterRig, choiceGrid, stepperRow, buttonRow, sectionRow, tabRow, inTab, swatchGrid } from '../shared/app.js?v=app3';
+import { createToolkit } from '../shared/xrtools.js?v=20261114f';
+import { createComfort, rotateRigAboutHead, stickVector } from '../shared/app.js?v=app3';
+import { createTouch } from '../shared/touch.js?v=20261114f';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261113h';
+import { beautify, SHADER_TAIL } from '../shared/beauty.js?v=20261114f';
 import { createSkyRise } from '../shared/skyrise.js?v=rise11';
 
 let fx, nebula;   // post-processing + nebula backdrop

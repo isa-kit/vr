@@ -16,7 +16,7 @@ Start a new app by copying `template/` (see §9).
 ## 1. One bootstrap
 
 ```js
-import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app2';
+import { THREE, createOortiaApp, sectionRow, choiceGrid } from '../shared/app.js?v=app3';
 
 const app = await createOortiaApp({
   id: 'myapp', title: 'My App',
@@ -222,7 +222,7 @@ module URL with a different `?v=` is a different module.
 |---|---|---|---|
 | `template/` | Full | Everything | — |
 | Sky Wand | Full | Everything: menu tabs, Pause, posture, drift + compass, press / release | — |
-| Star Catcher, Lantern Glow, Star Stories, Kite Ribbons, Cloud Pairs | Chrome (kit) | Menu, Pause (game time stops), comfort, site-wide posture, no locomotion | `shared/lie.js` keeps its own renderer, loop and overhead-field placement (it predates the bootstrap and is its model for Lying up); its flat settings list shows as one "Settings" tile instead of tabs. |
+| Star Catcher, Lantern Glow, Star Stories, Kite Ribbons, Cloud Pairs, Sky Chimes | Chrome (kit) | Menu, Pause (game time stops), comfort, site-wide posture, no locomotion | `shared/lie.js` keeps its own renderer, loop and overhead-field placement (it predates the bootstrap and is its model for Lying up); its flat settings list shows as one "Settings" tile instead of tabs. |
 | Forest, Cliffs, Beach | Chrome (kit) | Menu, Pause, comfort, Lying up via `?lie=1` | `seated/common.js` keeps its own loop, drag-look with inertia and seat system. The front-page card decides the posture, not the last-used one, because each world has a separate Lying up card. |
 | Infinity Lights | Chrome | Menu (tabbed), Pause, comfort, snap turn | Own flying movement at the comfort speed setting — faster than the 0.45 m/s drift cap, steered by the stick. Predates §5; needs a design decision before changing. |
 | Nature — Glade & Cliffs | Chrome | Menu, Pause, comfort, snap turn, teleport | Own walking (with run on desktop), terrain following, binoculars. Walking speed follows the comfort setting but was not re-checked against the 1.6 m/s cap. |
@@ -232,12 +232,19 @@ module URL with a different `?v=` is a different module.
 
 Site-wide gaps still open:
 
-- The desktop / phone overlay menu lists rows directly; the standard top-level
-  tiles (and so the Pause tile) are the VR views. On flat screens Pause is the
-  "Pause world motion" row under Comfort, or the game's own button.
+- The desktop / phone overlay menu lists rows directly instead of the big tiles;
+  it carries the same standard Pause as a button beside Sound / Recenter / Quit.
 - `shared/lie.js` still nudges the floating menu into view itself when lying;
   this belongs in `xrmenu.js`.
-- None of the migrations has been checked in a headset yet.
+- The five Chrome-level worlds stay at that level on purpose: their movement,
+  tracking and tool input can only be re-verified in a headset, and a rewrite
+  onto `createOortiaApp` would risk regressions for no visible gain. New apps
+  must be Full.
+- Checked with simulated controllers (no headset): every menu style switch from
+  every style, ray clicks on the big tiles, the wheel by ray pointing, Back,
+  Reset position, Size − / +, and the Pause tile in a Full app, the Lying up
+  kit, the seated kit and a game with its own pause. Not yet confirmed in a
+  real headset.
 
 ## 11. Godot
 

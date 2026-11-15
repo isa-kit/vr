@@ -3,9 +3,9 @@
 // headlands, dune grass and scrub.  The sun slowly sinks from golden hour into dusk.  Quality tier is automatic
 // (desktop / phone / headset) and switchable in the menu.  Wave sounds are cued to the visible wave clock.
 
-import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261114std2';
+import { THREE, createWorld, fbm, smoothstep, rng, sectionRow, choiceGrid } from '../seated/common.js?v=20261115std3';
 import { pickQuality, createLoader, makeSunRig, aimSun } from '../seated/proc.js?v=20261114x';
-import { createBirds } from '../shared/birds.js';
+import { createBirds } from '../shared/birds.js?v=20261114f';
 import { makeMaterialMaps, standardMaterial } from '../procgen/textures.js?v=20261114x';
 import { QUALITY, createTreeLibrary, createTreeField } from '../procgen/trees.js?v=20261114x';
 import { createGrass, createFlowers, createLogs } from '../procgen/terrain.js?v=20261114x';

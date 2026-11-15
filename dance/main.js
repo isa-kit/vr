@@ -2,8 +2,8 @@
 // A dancer performs a routine on a stage; you copy it with both controllers. Hand and head positions are compared on every
 // scored beat. Desktop: watch & learn, plus a mouse/keyboard approximation to test the scoring loop. Phone: watch & learn.
 import * as THREE from 'three';
-import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, inTab } from '../shared/app.js?v=app2';
-import { createComfort } from '../shared/app.js?v=app2';
+import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, inTab } from '../shared/app.js?v=app3';
+import { createComfort } from '../shared/app.js?v=app3';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
 import { ROUTINES, compileRoutine, samplePose, nextScoredIndex } from './routines.js?v=20261118b';
