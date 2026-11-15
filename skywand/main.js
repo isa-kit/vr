@@ -39,12 +39,27 @@ function buildWorld() {
   const sp = []; for (let i = 0; i < 1400; i++) { const u = Math.random() * 0.95 + 0.05, th = Math.random() * 6.283, s = Math.sqrt(1 - u * u); sp.push(Math.cos(th) * s * 380, u * 380, Math.sin(th) * s * 380); }
   const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
   dome.add(new THREE.Points(sg, new THREE.PointsMaterial({ size: 1.4, color: 0xdfe6ff, transparent: true, opacity: 0.8, depthWrite: false, fog: false })));
-  // ground far below (a soft patterned plain so floating down has somewhere to arrive)
-  const gc = document.createElement('canvas'); gc.width = gc.height = 256; const gg = gc.getContext('2d');
-  gg.fillStyle = '#1d2b3a'; gg.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 260; i++) { gg.fillStyle = `rgba(${90 + Math.random() * 60},${120 + Math.random() * 60},${150 + Math.random() * 60},${0.05 + Math.random() * 0.12})`; gg.beginPath(); gg.arc(Math.random() * 256, Math.random() * 256, 4 + Math.random() * 18, 0, 6.283); gg.fill(); }
-  const gt = new THREE.CanvasTexture(gc); gt.wrapS = gt.wrapT = THREE.RepeatWrapping; gt.repeat.set(60, 60); gt.colorSpace = THREE.SRGBColorSpace;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshBasicMaterial({ map: gt }));
+  // far below: a soft dusk cloud deck drawn from world-space noise, so it never repeats and slides past as you drift
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.ShaderMaterial({
+    uniforms: { uEye: { value: new THREE.Vector3() } }, fog: false,
+    vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `varying vec3 vW; uniform vec3 uEye;
+      float h(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int k = 0; k < 5; k++) { s += a * n(p); p = p * 2.03 + 17.7; a *= 0.5; } return s; }
+      void main(){
+        vec2 p = vW.xz;
+        float c = fbm(p * 0.012 + fbm(p * 0.004) * 2.0);            // billows, warped by a larger slow pattern
+        float d = fbm(p * 0.05 + 40.0);                              // fine detail, only visible close to the deck
+        float dist = length(vW - uEye);
+        c = smoothstep(0.28, 0.78, c + (d - 0.5) * 0.22 * smoothstep(260.0, 30.0, dist));
+        vec3 col = mix(vec3(0.055, 0.075, 0.16), vec3(0.42, 0.33, 0.44), c);      // deep blue gaps → mauve cloud tops
+        col += vec3(0.50, 0.26, 0.16) * pow(c, 3.0) * 0.55;                       // last warm light on the highest billows
+        col = mix(col, vec3(0.40, 0.30, 0.34), smoothstep(250.0, 1400.0, dist));    // far away: dusk haze, so the horizon is soft
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  }));
   ground.rotation.x = -Math.PI / 2; world.add(ground);
   // drifting motes around you: they give the straight motion a calm sense of speed (wrap around the rig)
   const N = 500, mp = new Float32Array(N * 3); for (let i = 0; i < N * 3; i++) mp[i] = (Math.random() * 2 - 1) * 30;
@@ -166,10 +181,10 @@ async function init() {
       dolly.position.y = THREE.MathUtils.clamp(dolly.position.y, BOTTOM, TOP);
       if (!fadingBack) { fadingBack = true; comfort.fade(() => { dolly.position.y = startY(); fadingBack = false; }); }
     }
-    // keep the dome, ground texture and motes around you
+    // keep the dome, cloud deck and motes around you (the deck's pattern is in world space, so it still slides past)
     camera.getWorldPosition(_wp);
     W.dome.position.copy(_wp);
-    W.ground.position.x = Math.round(_wp.x / 50) * 50; W.ground.position.z = Math.round(_wp.z / 50) * 50;
+    W.ground.position.x = _wp.x; W.ground.position.z = _wp.z; W.ground.material.uniforms.uEye.value.copy(_wp);
     const mp = W.motes.geometry.attributes.position.array;
     for (let i = 0; i < mp.length; i += 3) for (let k = 0; k < 3; k++) { const c = [_wp.x, _wp.y, _wp.z][k]; let d = mp[i + k] - c; if (d > 30) mp[i + k] -= 60; else if (d < -30) mp[i + k] += 60; }
     W.motes.geometry.attributes.position.needsUpdate = true;
