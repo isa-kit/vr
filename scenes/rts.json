@@ -1,0 +1,15 @@
+{
+  "id": "rts",
+  "name": "Tabletop Command",
+  "kind": "game",
+  "category": "game",
+  "status": "live",
+  "path": "rts",
+  "blurb": "A real-time strategy match on a living tabletop diorama — reach out to select your units and send them off, or command through the mini map on your controller. Classic controls on desktop, touch on phones.",
+  "locomotion": {
+    "type": "seated"
+  },
+  "controls": {
+    "panel": []
+  }
+}
