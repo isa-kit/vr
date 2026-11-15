@@ -3,20 +3,20 @@
 // mini map held on your controller. On desktop it is a classic RTS (box select, right-click orders); on phones it is touch.
 // Simulation: rts/sim.js (fixed 20 Hz, deterministic, headless-testable). Rendering: rts/gfx.js. Controller: rts/ctrl.js.
 import * as THREE from 'three';
-import { detectXR, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app3';
+import { detectXR, headFrame, standardChrome, sectionRow, toggleRow, stepperRow, choiceGrid, buttonRow, tabRow, inTab } from '../shared/app.js?v=app3';
 import { createComfort } from '../shared/app.js?v=app3';
 import { createTouch } from '../shared/touch.js?v=20261114f';
 import { beautify } from '../shared/beauty.js?v=20261114f';
-import { createSim, DT, UT, BT, N } from './sim.js?v=rts4';
-import { createAI } from './ai.js?v=rts4';
-import { createView, CELL } from './gfx.js?v=rts4';
-import { createMini } from './mini.js?v=rts4';
-import { createCtrl } from './ctrl.js?v=rts4';
-import { createHud } from './hud.js?v=rts4';
-import { createDesk } from './desk.js?v=rts4';
-import { createSfx } from './sfx.js?v=rts4';
-import { createVR } from './vr.js?v=rts5';
-import { createTutorial } from './tutorial.js?v=rts4';
+import { createSim, DT, UT, BT, N } from './sim.js?v=rts6';
+import { createAI } from './ai.js?v=rts6';
+import { createView, CELL } from './gfx.js?v=rts6';
+import { createMini } from './mini.js?v=rts6';
+import { createCtrl } from './ctrl.js?v=rts6';
+import { createHud } from './hud.js?v=rts6';
+import { createDesk } from './desk.js?v=rts6';
+import { createSfx } from './sfx.js?v=rts6';
+import { createVR } from './vr.js?v=rts6';
+import { createTutorial } from './tutorial.js?v=rts6';
 
 const KEY = 'oortia-rts-v1';
 const $ = (id) => document.getElementById(id);
@@ -29,8 +29,9 @@ const saveP = () => { try { localStorage.setItem(KEY, JSON.stringify({ diff: P.d
 
 const G = { S: null, view: null, mini: null, ai: null, phase: 'title', paused: false, tutorial: null, seed: 7, acc: 0, over: false };
 let renderer, scene, camera, dolly, fx, menu, comfort, touch, caps, sfx, C, hud, desk, vr, tut, floor, stand, clock = new THREE.Clock(), xr = false;
-const T = { x: 0, y: 0.85, z: -2.1, yaw: 0, scale: 1 };          // table placement (world metres); scale steps are faded, never smooth
-const SCALE_STEPS = [0.5, 1, 1.6, 2.5, 4, 8];
+const T = { x: 0, y: 0.85, z: -2.1, yaw: 0, scale: 1, q: null, A: new THREE.Vector3(0, 0.85, -1.2), base: null, mode: 'level', off: { dist: 0, h: 0 } };          // table placement (world metres); scale steps are faded, never smooth
+const SCALE_STEPS = [0.25, 0.5, 1, 1.6, 2.5, 4, 8];
+try { Object.assign(T.off, JSON.parse(localStorage.getItem('oortia-rts-table') || '{}')); } catch (e) { /* private mode */ }
 
 Promise.resolve().then(async () => { caps = await detectXR(); await init(); }).catch((e) => { console.error(e); const s = $('status'); if (s) s.textContent = 'Could not start: ' + e.message; });
 
@@ -63,14 +64,14 @@ async function init() {
     hint: 'Desktop: drag to box-select, right-click to command, WASD pan, wheel zoom. Phone: tap to select, drag to box-select, two fingers pan & zoom.',
     rows: menuRows(),
     sound: { get: () => P.sound, set: (v) => { P.sound = v; sfx.set(v); saveP(); } },
-    fade: comfort.fade,
+    fade: comfort.fade, recenter: () => { if (xr) placeFromHead(); },
     setBackdrop: (v) => { floor.visible = v && !(xr && T.scale >= 4); scene.background = v ? new THREE.Color(0x8fb2d8) : null; },
     onBeforeEnter: () => sfx.ensure(),
     onSessionStart: () => { xr = true; hud.setVR(true); document.body.classList.add('rts-vr'); onXRStart(); },
     onSessionEnd: () => { xr = false; hud.setVR(false); document.body.classList.remove('rts-vr'); onXREnd(); },
     quitUrl: '../',
   }).menu;
-  vr = createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView: () => G.view, getS: () => G.S, getMini: () => G.mini, T, SCALE_STEPS, placeBoard, isXR: () => xr, G, onReady: () => { menu.refresh(); if (G.screenSpec) showScreen(G.screenSpec); } });
+  vr = createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView: () => G.view, getS: () => G.S, getMini: () => G.mini, T, SCALE_STEPS, placeBoard, placeTable: () => placeFromHead(), isXR: () => xr, G, onReady: () => { menu.refresh(); if (G.screenSpec) showScreen(G.screenSpec); } });
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
   addEventListener('pointerdown', () => sfx.ensure(), { once: true });
   addEventListener('keydown', () => sfx.ensure(), { once: true });
@@ -94,11 +95,41 @@ function buildRoom() {
 }
 function placeBoard() {
   if (!G.view) return;
-  G.view.setBoard(new THREE.Vector3(T.x, T.y, T.z), T.yaw, T.scale);
+  G.view.setBoard(new THREE.Vector3(T.x, T.y, T.z), T.yaw, T.scale, T.q);
   floor.visible = !(xr && T.scale >= 4);
-  stand.position.set(T.x, T.y / 2 - 0.1, T.z); stand.scale.set(1, (T.y + 0.0) / 0.8, 1); stand.visible = T.scale <= 1.7;
-  stand.scale.set(1.0, 1, 1); stand.position.y = (T.y - 0.5) / 2; stand.scale.y = (T.y - 0.5) / 0.8;
+  const pillar = !T.q && T.scale <= 1.7 && T.y > 0.6;          // the pedestal only makes sense for a level table well above the floor
+  stand.visible = pillar; stand.position.set(T.x, (T.y - 0.5) / 2, T.z); stand.scale.set(1, (T.y - 0.5) / 0.8, 1);
 }
+const _Y = new THREE.Vector3(0, 1, 0);
+T.fullQ = () => { const q = new THREE.Quaternion().setFromAxisAngle(_Y, T.yaw); return T.q ? T.q.clone().multiply(q) : q; };
+T.placeSo = (P, A) => {                                          // move the board so map point P (cells) sits at world point A
+  const k = CELL * T.scale, h = G.S.map.heightAt(clamp(P.x, 0, N - 0.01), clamp(P.z, 0, N - 0.01));
+  const v = new THREE.Vector3((P.x - N / 2) * k, h * k, (P.z - N / 2) * k).applyQuaternion(T.fullQ());
+  T.x = A.x - v.x; T.y = A.y - v.y; T.z = A.z - v.z;
+};
+// Table placement follows the BODY: relative to the headset's current pose (seated, standing or lying), never a fixed floor height.
+function placeFromHead() {
+  camera.updateMatrixWorld(true);
+  const f = headFrame(camera), eye = f.eye.clone(), fl = new THREE.Vector3(f.flat.x, 0, f.flat.z);
+  if (fl.lengthSq() < 1e-6) fl.set(0, 0, -1); fl.normalize();
+  const over = f.forward.y > 0.57, wasOver = T.mode === 'over';           // looking up past ~35 deg: overhead slab
+  if (over) {
+    T.mode = 'over'; if (T.scale > 0.5 || !wasOver) T.scale = 0.25;
+    const n = f.forward.clone().negate(), u = f.up.clone(), z = u.sub(n.clone().multiplyScalar(u.dot(n))).negate();
+    if (z.lengthSq() < 1e-6) z.copy(fl).negate(); z.normalize();
+    const x = new THREE.Vector3().crossVectors(n, z).normalize();
+    T.q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, n, z)); T.yaw = 0;
+    const c = eye.addScaledVector(f.forward, 0.55 + T.off.dist).addScaledVector(f.up, T.off.h);
+    T.A.copy(c); T.x = c.x; T.y = c.y; T.z = c.z;
+  } else {
+    T.mode = 'level'; if (T.scale >= 4 || wasOver) T.scale = 1; T.q = null; T.yaw = f.yaw;
+    const near = 0.5 + T.off.dist, y = eye.y - 0.42 + T.off.h, c = eye.clone().addScaledVector(fl, near + 1.8 * T.scale);
+    T.x = c.x; T.y = y; T.z = c.z; T.A.copy(eye).addScaledVector(fl, 0.8 + T.off.dist); T.A.y = y;
+  }
+  T.base = { q: T.q, A: T.A.clone() };
+  placeBoard(); if (vr) { vr.scaleIdx = null; vr.placeStrip(); vr.dirty = true; }
+}
+T.placeFromHead = placeFromHead;
 
 // ---------------------------------------------------------------- match lifecycle
 function newMatch({ idle = false, diff = P.diff, tutorial = false, seed = null } = {}) {
@@ -172,27 +203,33 @@ function menuRows() {
     { label: 'Map click (VR)', visible: inXR, cells: [['Send units', 'send'], ['Jump view', 'view']].map(([t, v]) => ({ text: t, active: () => C.miniMode === v, action: () => { C.miniMode = v; P.miniMode = v; saveP(); } })) },
     sectionRow('Table'),
     { label: 'Rotate', visible: inXR, cells: [{ text: '◀ 45°', action: () => tableStep('rot', -1) }, { text: '45° ▶', action: () => tableStep('rot', 1) }] },
-    { label: 'Height', visible: inXR, cells: [{ text: 'Lower', action: () => tableStep('h', -1) }, { text: 'Raise', action: () => tableStep('h', 1) }] },
+    { label: 'Distance', visible: inXR, cells: [{ text: 'Closer', action: () => tableStep('dist', -1) }, { text: 'Farther', action: () => tableStep('dist', 1) }] },
+    { label: 'Height', visible: inXR, cells: [{ text: 'Lower', action: () => tableStep('h', -1) }, { text: 'Higher', action: () => tableStep('h', 1) }] },
     { label: 'Scale', visible: inXR, cells: [{ text: 'Smaller', action: () => tableStep('s', -1) }, { text: () => '×' + T.scale, active: () => false }, { text: 'Larger', action: () => tableStep('s', 1) }] },
-    { visible: inXR, cells: [{ text: 'Move table to me', action: () => tableStep('home', 0), tone: 'accent' }] },
+    { visible: inXR, cells: [{ text: 'Re-place table to my pose (or hold right stick-click)', action: () => tableStep('home', 0), tone: 'accent', w: 2 }] },
     ...comfort.rows({ movement: false }),
   ];
 }
 
 // ---------------------------------------------------------------- VR table handling (all changes are stepped + faded)
 function tableStep(kind, dir) {
+  if (kind === 's') { vr.scaleStep(dir); return; }
   const apply = () => {
     if (kind === 'rot') T.yaw += dir * Math.PI / 4;
-    else if (kind === 'h') T.y = clamp(T.y + dir * 0.05, 0.4, 1.3);
-    else if (kind === 'home') { T.x = 0; T.z = -2.1; T.yaw = 0; T.y = T.scale >= 4 ? 0 : 0.85; if (T.scale > 1) { const c = vr.viewCentre ? null : null; } }
+    else if (kind === 'home') { placeFromHead(); return; }
+    else {
+      if (kind === 'dist') T.off.dist = clamp(T.off.dist + dir * 0.05, -0.3, 0.7); else if (kind === 'h') T.off.h = clamp(T.off.h + dir * 0.05, -0.3, 0.4);
+      try { localStorage.setItem('oortia-rts-table', JSON.stringify(T.off)); } catch (e) { /* private mode */ }
+      placeFromHead(); return;
+    }
     placeBoard(); vr.placeStrip();
   };
-  if (kind === 's') { vr.scaleStep(dir); return; }
   if (renderer.xr.isPresenting) comfort.fade(apply); else apply();
 }
 function vrJump(x, z) { vr.jumpTo(x, z); }
-function onXRStart() { sfx.ensure(); T.x = 0; T.z = -2.1; T.y = 0.85; T.scale = 1; T.yaw = 0; placeBoard(); vr.enter(); }
-function onXREnd() { vr.exit(); T.x = 0; T.z = -2.1; T.y = 0.85; T.scale = 1; T.yaw = 0; placeBoard(); if (G.screenSpec) hud.screen(G.screenSpec); }
+function resetTable() { T.x = 0; T.z = -2.1; T.y = 0.85; T.scale = 1; T.yaw = 0; T.q = null; T.mode = 'level'; T.base = null; T.A.set(0, 0.85, -1.2); }
+function onXRStart() { sfx.ensure(); resetTable(); placeBoard(); vr.enter(); }          // vr.enter() auto-places the table from the headset pose a few frames later
+function onXREnd() { vr.exit(); resetTable(); placeBoard(); if (G.screenSpec) hud.screen(G.screenSpec); }
 
 // ---------------------------------------------------------------- frame
 const evBuf = [];

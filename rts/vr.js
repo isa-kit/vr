@@ -8,14 +8,15 @@
 //    panel (X/Y are the shared Oortia menu buttons). Nothing here ever moves the player; table changes are faded steps.
 // All interaction maths is plain 3D (ray vs plane / sphere / terrain), so it is exercised headlessly in the #debug test hooks.
 import * as THREE from 'three';
-import { UT, BT, N } from './sim.js?v=rts4';
-import { CELL } from './gfx.js?v=rts4';
+import { headFrame } from '../shared/app.js?v=app3';
+import { UT, BT, N } from './sim.js?v=rts6';
+import { CELL } from './gfx.js?v=rts6';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const PW = 512, PH = 760, PANEL_W = 0.2, PANEL_H = PANEL_W * PH / PW;
 const FRONT = new THREE.Vector3(0, 0, -1.15);                  // world point (x, y filled in, z) that "view here" brings to the player
 
-export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView, getS, getMini, T, SCALE_STEPS, placeBoard, isXR, G, showSpec, onReady }) {
+export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C, getView, getS, getMini, T, SCALE_STEPS, placeBoard, isXR, G, showSpec, onReady, placeTable }) {
   const VR = { page: 'map', hand: 'left', brush: false, ready: false, hover: [null, null], dirty: true };
   const _o = new THREE.Vector3(), _d = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _m = new THREE.Matrix4();
 
@@ -57,7 +58,7 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
   const mapP = makePanel(PANEL_W, PANEL_H, PW, PH);
   let mapRect = { x: 16, y: 62, w: 480, h: 480 }, redrawAt = 0, miniDrag = null;
   const rot = () => 0;                                          // map orientation follows the board: see viewZone()
-  function mapRot() { return -T.yaw; }
+  function mapRot() { return T.q ? 0 : -T.yaw; }
   VR.mapRot = mapRot;
   function drawMapPanel(now) {
     const S = getS(), P = mapP, c = P.ctx, mini = getMini(), t = C.team, hov = VR.hoverBtn;
@@ -106,11 +107,11 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
   // the zone of the table you can comfortably reach/see (drawn as the "current view" on the map)
   function viewZone() {
     const V = getView(); if (!V) return null;
-    const tb = V.toLocal(_v.set(0, T.y, FRONT.z)), rad = clamp(0.85 / (CELL * T.scale), 2.5, 40), pts = [];
+    const tb = V.toLocal(T.A), rad = clamp(0.85 / (CELL * T.scale), 2.5, 40), pts = [];
     for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; pts.push({ x: clamp(tb.x + Math.cos(a) * rad, 0, N), z: clamp(tb.z + Math.sin(a) * rad, 0, N) }); }
     return pts;
   }
-  VR.viewCentre = () => { const V = getView(); const l = V.toLocal(_v.set(0, T.y, T.scale >= 4 ? -0.5 : FRONT.z)); return { x: l.x, z: l.z }; };
+  VR.viewCentre = () => { const V = getView(); const l = V.toLocal(T.A); return { x: l.x, z: l.z }; };
 
   // ---------------------------------------------------------------- world panel (clear-space reminder, title, pause, victory, tutorial)
   const wP = makePanel(0.95, 0.6, 1024, 648, false);
@@ -131,10 +132,14 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
     if (spec && isXR()) { VR.needPlace = 3; VR.dirty = true; }
   };
   function placeFloating(mesh, dist, dy) {          // in front of the head once, then left alone (never head-locked)
-    camera.getWorldPosition(_o); camera.getWorldDirection(_d); _d.y = 0; if (_d.lengthSq() < 1e-4) _d.set(0, 0, -1); _d.normalize();
-    mesh.position.set(_o.x + _d.x * dist, Math.max(0.8, _o.y - 0.08 + dy), _o.z + _d.z * dist);
-    dolly.updateWorldMatrix(true, false); if (mesh.parent !== scene) scene.add(mesh);
-    mesh.lookAt(_o.x, mesh.position.y + 0.02, _o.z);
+    camera.updateMatrixWorld(true); const f = headFrame(camera);
+    if (f.forward.y > 0.57) {                       // lying on your back: along the gaze, top toward the top of the head
+      mesh.position.copy(f.eye).addScaledVector(f.forward, 0.9); mesh.up.copy(f.up); mesh.lookAt(f.eye); mesh.up.set(0, 1, 0); return;
+    }
+    _d.set(f.flat.x, 0, f.flat.z).normalize();
+    mesh.position.set(f.eye.x + _d.x * dist, f.eye.y - 0.08 + dy, f.eye.z + _d.z * dist);
+    if (mesh.parent !== scene) scene.add(mesh);
+    mesh.lookAt(f.eye.x, mesh.position.y + 0.02, f.eye.z);
   }
 
   // status strip (ore / pop / toast) floating beyond the table, always readable, world-fixed
@@ -153,9 +158,16 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
     let fs = 38; c.font = `600 ${fs}px system-ui, sans-serif`; while (c.measureText(line).width > 950 && fs > 22) { fs -= 2; c.font = `600 ${fs}px system-ui, sans-serif`; }
     c.fillText(line, 36, 142); sP.tex.needsUpdate = true;
   }
-  function placeStrip() {
-    const far = T.scale <= 1.6, z = far ? Math.min(-3.1, T.z - 1.75 * T.scale) : -2.7, yy = far ? T.y + 0.55 : 1.4;
-    sP.mesh.position.set(0, yy, z); sP.mesh.lookAt(0, yy - 0.15, 0.6);
+  function placeStrip() {                                    // status strip: beyond the table's far side, relative to the body
+    camera.updateMatrixWorld(true); const f = headFrame(camera);
+    if (T.q) {                                               // overhead slab: just past its head-side edge
+      const top = _v.set(0, 0, -1).applyQuaternion(T.q), n = _w.set(0, 1, 0).applyQuaternion(T.q);
+      sP.mesh.scale.set(0.8, 0.16, 1); sP.mesh.position.copy(T.A).addScaledVector(top, 1.8 * T.scale + 0.12).addScaledVector(n, 0.04);
+      sP.mesh.up.copy(n); sP.mesh.lookAt(f.eye); sP.mesh.up.set(0, 1, 0);
+    } else {
+      const fl = _v.set(f.flat.x, 0, f.flat.z).normalize(); sP.mesh.scale.set(1.6, 0.32, 1);
+      sP.mesh.position.copy(f.eye).addScaledVector(fl, 2.3); sP.mesh.position.y = f.eye.y + 0.22; sP.mesh.lookAt(f.eye.x, sP.mesh.position.y - 0.1, f.eye.z);
+    }
   }
   VR.placeStrip = placeStrip;
 
@@ -257,11 +269,17 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
   };
 
   // control groups on the right controller's A / B (hold to assign, tap to recall); left stick flick = groups 3 / 4
-  const btn = { a: { down: 0, held: false }, b: { down: 0, held: false } }, stickLatch = { l: false, r: false };
+  const btn = { a: { down: 0, held: false }, b: { down: 0, held: false }, t: { down: 0, held: false } }, stickLatch = { l: false, r: false };
   function pollButtons(now) {
     const session = renderer.xr.getSession && renderer.xr.getSession(); if (!session) return;
     for (const src of session.inputSources) {
       const gp = src.gamepad; if (!gp) continue;
+      if (src.handedness === 'right') {                                          // thumbstick-click held 0.6 s = re-place the table to my pose
+        const p = !!(gp.buttons[3] && gp.buttons[3].pressed), s = btn.t;
+        if (p && !s.down) { s.down = now; s.held = false; }
+        else if (p && !s.held && now - s.down > 600) { s.held = true; comfort.fade(() => { if (placeTable) placeTable(); }); const c = menu.controllers.find((q) => q.userData.hand === 'right'); if (c) menu.hapticPulse(c); }
+        else if (!p) s.down = 0;
+      }
       if (src.handedness === 'right') for (const [k, idx, g] of [['a', 4, 1], ['b', 5, 2]]) {
         const p = !!(gp.buttons[idx] && gp.buttons[idx].pressed), s = btn[k];
         if (p && !s.down) { s.down = now; s.held = false; }
@@ -277,34 +295,25 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
   }
 
   // ---------------------------------------------------------------- view jump (stepped + faded; the player never moves)
-  VR.jumpTo = (x, z) => {
-    const apply = () => {
-      const R = T.yaw, c = Math.cos(R), s = Math.sin(R), k = CELL * T.scale, dx = (x - N / 2) * k, dz = (z - N / 2) * k;
-      // root.pos + Ry(yaw) * (P - centre) * k  must equal FRONT point
-      const rx = c * dx + s * dz, rz = -s * dx + c * dz;
-      T.x = 0 - rx; T.z = FRONT.z - rz; placeBoard(); VR.placeStrip();
-    };
-    comfort.fade(apply);
-  };
+  VR.jumpTo = (x, z) => { comfort.fade(() => { T.placeSo({ x, z }, T.A); placeBoard(); VR.placeStrip(); }); };
   VR.scaleStep = (dir) => {
-    const i = VR.scaleIdx ?? SCALE_STEPS.indexOf(T.scale), j = clamp((i < 0 ? 1 : i) + dir, 0, SCALE_STEPS.length - 1); if (j === i) return;
+    const i = VR.scaleIdx ?? SCALE_STEPS.indexOf(T.scale), j = clamp((i < 0 ? 2 : i) + dir, 0, SCALE_STEPS.length - 1); if (j === i) return;
     VR.scaleIdx = j;
-    const apply = () => {
-      const V = getView(), P = VR.viewCentre(), prev = T.scale; T.scale = SCALE_STEPS[j];
-      T.y = T.scale >= 4 ? 0.0 : 0.85;                                           // ground view: stand IN the world
-      const R = T.yaw, c = Math.cos(R), s = Math.sin(R), k = CELL * T.scale, dx = (P.x - N / 2) * k, dz = (P.z - N / 2) * k;
-      const fz = T.scale >= 4 ? -0.5 : FRONT.z;
-      T.x = -(c * dx + s * dz); T.z = fz - (-s * dx + c * dz); placeBoard(); VR.placeStrip();
-    };
-    comfort.fade(apply);
+    comfort.fade(() => {
+      const P = VR.viewCentre(); T.scale = SCALE_STEPS[j];
+      if (T.scale >= 4) {                                                          // ground view: stand IN the world, below the eyes
+        camera.updateMatrixWorld(true); const e = camera.getWorldPosition(new THREE.Vector3()); T.q = null; T.A.set(e.x, e.y - 1.0, e.z);
+      } else if (T.base) { T.q = T.base.q; T.A.copy(T.base.A); }
+      T.placeSo(P, T.A); placeBoard(); VR.placeStrip();
+    });
   };
 
   // ---------------------------------------------------------------- per frame
   let strip = 0;
   VR.enter = () => {
     VR.ready = false; VR.scaleIdx = null; mapP.mesh.visible = true; sP.mesh.visible = true; scene.add(sP.mesh);
-    VR.placeStrip(); VR.dirty = true; VR.sDirty = true;
-    VR.showSpec({ title: 'Before you start', lines: ['Clear about 2 metres of floor around you and stand at the ring on the floor, at the edge of the table.', 'You are never moved by the game: walk around the table, or use the menu to rotate, raise and scale it.', 'Pull a trigger to select; hold grip and sweep your hand to brush-select; the map on your left controller shows everything.'], buttons: [{ text: "I'm ready", action: () => { VR.ready = true; VR.showSpec(null); if (onReady) onReady(); }, big: true }] });
+    VR.placeStrip(); VR.dirty = true; VR.sDirty = true; VR.needTable = 4;                  // place the table from the headset pose once it is valid
+    VR.showSpec({ title: 'Before you start', lines: ['Clear some room around you. Sitting, standing or lying back all work: the table is placed relative to your headset. If it ever feels wrong, hold the right thumbstick-click for a moment to re-place it.', 'You are never moved by the game: walk around the table, or use the menu to rotate, raise and scale it.', 'Pull a trigger to select; hold grip and sweep your hand to brush-select; the map on your left controller shows everything.'], buttons: [{ text: "I'm ready", action: () => { VR.ready = true; VR.showSpec(null); if (onReady) onReady(); }, big: true }] });
   };
   VR.exit = () => { VR.scaleIdx = null; mapP.mesh.visible = false; sP.mesh.visible = false; wP.mesh.visible = false; getView() && (getView().setBrush(null), getView().setDragShape(null), getView().setAim && getView().setAim(null), getView().setGhost(null)); press[0] = press[1] = null; };
   menu.onSelectStart((c, hand, idx) => { if (isXR()) VR.triggerDown(idx); });
@@ -321,6 +330,7 @@ export function createVR({ renderer, scene, camera, dolly, menu, comfort, sfx, C
     mapP.mesh.position.set(0, PANEL_H * 0.5 + 0.03, -0.02);
     camera.getWorldPosition(_o); mapP.mesh.lookAt(_o);                          // faces the head; stays with the hand
     mapP.mesh.visible = true;
+    if (VR.needTable > 0 && --VR.needTable === 0 && placeTable) placeTable();
     if (VR.needPlace > 0 && --VR.needPlace === 0) placeFloating(wP.mesh, 1.15, 0.0);
     pollButtons(now);
     // pointing

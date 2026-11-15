@@ -3,9 +3,9 @@
 // whole army costs a couple of dozen draw calls. A fog-of-war texture darkens every world material via onBeforeCompile.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeNoise, rng } from '../procgen/noise.js?v=rts4';
-import { createRocks } from '../procgen/rocks.js?v=rts4';
-import { UT, BT, N, K, WL } from './sim.js?v=rts4';
+import { makeNoise, rng } from '../procgen/noise.js?v=rts6';
+import { createRocks } from '../procgen/rocks.js?v=rts6';
+import { UT, BT, N, K, WL } from './sim.js?v=rts6';
 
 export const TEAM_COL = [0x2f94ff, 0xff5a2a];
 export const CELL = 3.6 / N;                       // metres per map cell at table scale 1
@@ -406,10 +406,13 @@ export function createView({ scene, S, renderer, quality = 'high' }) {
   };
 
   // ---------------- board placement + picking
-  V.setBoard = (pos, yaw, s) => {
-    root.position.copy(pos); root.rotation.y = yaw; root.scale.setScalar(CELL * s); root.updateMatrixWorld(true);
-    const k = Math.max(1, s * 0.8);
-    sun.target.position.copy(pos); sun.position.set(pos.x + 2.2 * k, pos.y + 4.2 * k, pos.z + 1.6 * k);
+  V.setBoard = (pos, yaw, s, baseQ = null) => {       // baseQ: optional tilt (overhead slab); the world stays upright, only the slab tilts
+    root.position.copy(pos);
+    if (baseQ) root.quaternion.copy(baseQ).multiply(_q.setFromAxisAngle(_p.set(0, 1, 0), yaw)); else { root.quaternion.identity(); root.rotation.y = yaw; }
+    root.scale.setScalar(CELL * s); root.updateMatrixWorld(true);
+    const k = Math.max(1, s * 0.8), nrm = _p.set(0, 1, 0).applyQuaternion(root.quaternion);
+    sun.target.position.copy(pos);
+    if (baseQ) sun.position.set(pos.x + nrm.x * 4 + 1, pos.y + nrm.y * 4, pos.z + nrm.z * 4 + 1); else sun.position.set(pos.x + 2.2 * k, pos.y + 4.2 * k, pos.z + 1.6 * k);
     const ext = Math.min(30, 2.4 * s + 0.8); sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 0.5; sc.far = 14 * k + 6; sc.updateProjectionMatrix();
     sun.target.updateMatrixWorld();
   };

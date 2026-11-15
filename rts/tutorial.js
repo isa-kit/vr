@@ -1,7 +1,7 @@
 // ============================ rts/tutorial.js — a short guided match: select, move, gather, train, mini map, attack, destroy ============================
 // Runs on a small sandbox sim (your base, a ready Barracks, one red outpost). Each step watches real commands/events, so it
 // completes when you actually do the thing. Text adapts to the device (desktop, phone, VR). A Skip button prevents soft-locks.
-import { BT } from './sim.js?v=rts4';
+import { BT } from './sim.js?v=rts6';
 
 export function createTutorial({ G, C, hud, getVR, isTouch, isXR, showScreen, newMatch, showTitle }) {
   const TU = { on: false, step: 0, steps: [], flags: {}, doneAt: 0 };
