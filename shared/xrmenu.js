@@ -274,16 +274,19 @@ export function createXRMenu(opts) {
   const clampS = (v) => Math.min(2.5, Math.max(0.5, v));
   let savedOff = null, menuScale = 1;
   try { const j = JSON.parse(localStorage.getItem('oortia-menu-pose') || 'null');
-    if (j) { if ([j.x, j.y, j.z].every(Number.isFinite)) savedOff = { x: j.x, y: j.y, z: j.z }; if (Number.isFinite(j.s)) menuScale = clampS(j.s); } } catch (e) { /* ignore */ }
+    if (j) { if ([j.x, j.y, j.z].every(Number.isFinite)) { savedOff = { x: j.x, y: j.y, z: j.z }; if (Array.isArray(j.q) && j.q.length === 4 && j.q.every(Number.isFinite)) savedOff.q = j.q; } if (Number.isFinite(j.s)) menuScale = clampS(j.s); } } catch (e) { /* ignore */ }
   const savePose = () => { try { localStorage.setItem('oortia-menu-pose', JSON.stringify({ ...(savedOff || {}), s: menuScale })); } catch (e) { /* ignore */ } };
   let pageNo = 0, pageCount = 1;
-  const MAX_PX = { wrist: 660, float: 1000 };
+  const MAX_PX = { wrist: 700, float: 1000 };
   const pagerRow = { cells: [
     { text: '\u25C0', tone: 'accent', action: () => { pageNo = (pageNo + pageCount - 1) % pageCount; } },
     { text: () => 'Page ' + (pageNo + 1) + ' / ' + pageCount, w: 2 },
     { text: '\u25B6', tone: 'accent', action: () => { pageNo = (pageNo + 1) % pageCount; } }] };
-  const panelW = () => (menuMode === 'wrist' ? PANEL_W : PANEL_W * 2.0 * menuScale);
-  const setMenuMode = (m) => { menuMode = m; try { localStorage.setItem('oortia-menu-style', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; if (m === 'wheel') open = false; refresh(); };
+  const panelW = () => (menuMode === 'wrist' ? WRIST_W : PANEL_W * 2.0 * menuScale);
+  const STYLE_NAME = { wheel: 'Wheel', float: 'Dashboard', wrist: 'Wrist' };
+  const STYLE_HOW = { wheel: 'Hold X for the wheel', float: 'Tap X to open it', wrist: 'Look at your left wrist' };
+  const setMenuMode = (m) => { const was = menuMode; menuMode = m; wristPinned = false; wristA = 0; panel.material.opacity = 1;
+    if (m !== was && renderer.xr.isPresenting) toast(STYLE_NAME[m] + ' menu', STYLE_HOW[m]); try { localStorage.setItem('oortia-menu-style', m); } catch (e) { /* ignore */ } panelH = 0; placed = false; if (m === 'wheel') open = false; refresh(); };
   let view = 'top', viewName = '', keepView = false;
   let placed = false;
   let quitArmed = false, quitTimer = 0;
@@ -328,9 +331,10 @@ export function createXRMenu(opts) {
 
   const inVR = () => renderer.xr.isPresenting;
   const styleTile = (text, m) => ({ text, active: () => menuMode === m, action: () => setMenuMode(m) });
+  // the permanent three-way switch at the top of every VR panel: one click changes the style
+  const switchRow = { h: 104, cells: [styleTile('Wheel', 'wheel'), styleTile('Dashboard', 'float'), styleTile('Wrist', 'wrist')] };
   const styleRows = () => [
-    { h: TILE_H, cells: [styleTile('Wheel', 'wheel'), styleTile('Dashboard', 'float')] },
-    { h: TILE_H, cells: [styleTile('Wrist', 'wrist')] },
+    { cells: [{ text: () => STYLE_HOW[menuMode] }] },
     { ...stepperRow('Size', () => Math.round(menuScale * 100) + '%',
         () => { menuScale = clampS(menuScale / 1.15); applyScale(); savePose(); },
         () => { menuScale = clampS(menuScale * 1.15); applyScale(); savePose(); }, { repeat: true }),
@@ -454,7 +458,7 @@ export function createXRMenu(opts) {
     const it = [];
     if (opts.pause) it.push({ text: opts.pause.text || 'Pause', run: opts.pause.action, active: opts.pause.active });
     it.push({ text: 'Recenter', run: () => recenterAct() });
-    it.push({ text: 'Menu style', panel: true, run: () => { view = 'style'; viewName = 'Menu style'; pageNo = 0; } });
+    it.push({ text: 'Menu style', panel: true, sub: 'style', run: () => { view = 'style'; viewName = 'Menu style'; pageNo = 0; } });
     it.push({ text: quitCell.text, tone: 'danger', run: quitCell.action });
     const flat = flatten([appRows]); let tabs = 0;
     for (const r of flat) if (isTabRow(r) && !(r.visible && !r.visible())) for (const c of r.cells) {
@@ -467,12 +471,12 @@ export function createXRMenu(opts) {
   }
   const backRow = { h: 100, cells: [{ text: '\u25C0  Back', tone: 'accent', action: () => { view = 'top'; pageNo = 0; } }] };
   function vrContent() {
-    if (view === 'style') return { pin: [backRow], rows: styleRows() };
-    if (view === 'tab') return { pin: [backRow], rows: flatten([appRows]).filter((r) => !isTabRow(r)) };
+    if (view === 'style') return { pin: [switchRow, backRow], rows: styleRows() };
+    if (view === 'tab') return { pin: [switchRow, backRow], rows: flatten([appRows]).filter((r) => !isTabRow(r)) };
     const tiles = topItems().map((i) => ({ text: i.text, tone: i.tone, active: i.active, action: () => i.run() }));
     const rows = [];
     for (let k = 0; k < tiles.length; k += 2) rows.push({ h: TILE_H, cells: tiles.slice(k, k + 2) });
-    return { pin: [], rows };
+    return { pin: [switchRow], rows };
   }
   const panelTitle = () => (view === 'top' ? title : viewName);
   function pagedRows() {
@@ -538,6 +542,7 @@ export function createXRMenu(opts) {
   // ---------- grabbable panels: grip while the ray is on a panel (or its handle bar) to carry it ----------
   const grabTargets = [], _rl = { x: 0, y: 0 };
   const _gi = new THREE.Matrix4(), _go = new THREE.Vector3(), _gd = new THREE.Vector3(), _glo = new THREE.Vector3(), _gz = new THREE.Vector3(), _gp = new THREE.Vector3();
+  const _gq = new THREE.Quaternion(), _gq2 = new THREE.Quaternion(), _gc = new THREE.Vector3(), GRAB_TOL = 0.05;
   const _hq = new THREE.Quaternion(), _hp = new THREE.Vector3(), _he = new THREE.Euler(), _hup = new THREE.Vector3();
   function headFrame() {                       // head position + yaw/pitch frame (roll removed)
     camera.updateWorldMatrix(true, false); camera.getWorldPosition(_hp); camera.getWorldQuaternion(_hq);
@@ -566,19 +571,25 @@ export function createXRMenu(opts) {
   function grabHit(t, c) {
     if (!t.visible()) return null;
     layoutHandle(t);
-    const d = grabHitMesh(t.mesh, c, t.top);
-    return d;
+    return grabHitMesh(t.mesh, c, t.top, GRAB_TOL);
   }
-  function grabHitMesh(m, c, top = 0.5) {
+  // tol (metres): extra margin outside the edge; with a margin, a hand held AT the panel also counts (no ray needed)
+  function grabHitMesh(m, c, top = 0.5, tol = 0) {
     m.updateWorldMatrix(true, false); c.updateWorldMatrix(true, false);
     _gi.copy(m.matrixWorld).invert();
     _m.identity().extractRotation(c.matrixWorld);
     _go.setFromMatrixPosition(c.matrixWorld); _gd.set(0, 0, -1).applyMatrix4(_m).normalize();
     _glo.copy(_go).applyMatrix4(_gi); _gz.copy(_gd).applyMatrix4(_gi); _gd.set(0, 0, 0).applyMatrix4(_gi); _gz.sub(_gd);
+    let tx = 0, ty = 0;
+    if (tol) {
+      tx = tol / Math.max(1e-4, _gc.setFromMatrixColumn(m.matrixWorld, 0).length()); ty = tol / Math.max(1e-4, _gc.setFromMatrixColumn(m.matrixWorld, 1).length());
+      const near = Math.abs(_glo.z) * _gc.setFromMatrixColumn(m.matrixWorld, 2).length();
+      if (near < 0.1 && Math.abs(_glo.x) <= 0.5 + tx && _glo.y >= -0.5 - ty && _glo.y <= top + ty) { _rl.x = _glo.x; _rl.y = _glo.y; return Math.max(0.03, near); }
+    }
     if (Math.abs(_gz.z) < 1e-6) return null;
     const d = -_glo.z / _gz.z; if (d <= 0.02) return null;
     const x = _glo.x + _gz.x * d, y = _glo.y + _gz.y * d;
-    if (Math.abs(x) > 0.5 || y < -0.5 || y > top) return null;
+    if (Math.abs(x) > 0.5 + tx || y < -0.5 - ty || y > top + ty) return null;
     _rl.x = x; _rl.y = y;
     return d;
   }
@@ -588,28 +599,27 @@ export function createXRMenu(opts) {
     for (const t of grabTargets) { const d = grabHit(t, c); if (d !== null && d < bd) { best = t; bd = d; } }
     if (!best) return false;
     const m = best.mesh;
-    if (best.main && menuMode === 'wrist') {              // detach the wrist panel into float mode where it is
-      m.getWorldPosition(_gp); const wp = _gp.clone();
-      setMenuMode('float'); placed = true;
-      dolly.add(m); dolly.updateMatrixWorld(true); m.position.copy(dolly.worldToLocal(wp));
-    }
     c.updateWorldMatrix(true, false); m.updateWorldMatrix(true, false);
     m.getWorldPosition(_gp);
     c.userData.grab = { t: best, off: _gp.clone().sub(_go.setFromMatrixPosition(c.matrixWorld)) };   // world offset hand -> panel: no lever-arm swing
+    rebaseTwist(c);                                       // ...and the panel turns with the hand from here on (like holding a tablet)
     haptic(c);
     if (best.onGrab) best.onGrab();
     return true;
   }
+  function rebaseTwist(c) { const g = c.userData.grab; g.hq0 = c.getWorldQuaternion(new THREE.Quaternion()).invert(); g.pq0 = g.t.mesh.getWorldQuaternion(new THREE.Quaternion()); }
+  function setWorldQuat(m, q) { m.parent.updateWorldMatrix(true, false); m.quaternion.copy(m.parent.getWorldQuaternion(_gq2).invert().multiply(q)); }
   function releaseGrab(c) {
     const g = c.userData.grab; if (!g) return;
     c.userData.grab = null;
     // keep a remaining second hand continuous
     const other = ctrls.find((o) => o.userData.grab && o.userData.grab.t === g.t);
-    if (other) { g.t.mesh.getWorldPosition(_gp); other.updateWorldMatrix(true, false); other.userData.grab.off = _gp.clone().sub(_go.setFromMatrixPosition(other.matrixWorld)); g.t.pair = null; }
+    if (other) { g.t.mesh.getWorldPosition(_gp); other.updateWorldMatrix(true, false); other.userData.grab.off = _gp.clone().sub(_go.setFromMatrixPosition(other.matrixWorld)); rebaseTwist(other); g.t.pair = null; }
     else if (g.t.main && menuMode !== 'wrist') {                      // remember the pose relative to the head, pitch included
       headFrame(); g.t.mesh.getWorldPosition(_gp); _gp.sub(_hp).applyQuaternion(_q.copy(_hq).invert());
       const L = _gp.length(); if (L > 3) _gp.multiplyScalar(3 / L); else if (L < 0.35) _gp.multiplyScalar(0.35 / Math.max(L, 1e-4));
-      savedOff = { x: _gp.x, y: _gp.y, z: _gp.z }; savePose();
+      const rq = _q.copy(_hq).invert().multiply(g.t.mesh.getWorldQuaternion(_gq));                   // ...and its orientation: it never snaps back to face you
+      savedOff = { x: _gp.x, y: _gp.y, z: _gp.z, q: [rq.x, rq.y, rq.z, rq.w] }; savePose();
     }
     if (g.t.onRelease) g.t.onRelease();
   }
@@ -635,7 +645,7 @@ export function createXRMenu(opts) {
       }
       const m = t.mesh; m.parent.updateWorldMatrix(true, false);
       m.position.copy(m.parent.worldToLocal(_gp));
-      faceHead(m);
+      if (gs.length === 1) { const g = gs[0].userData.grab; setWorldQuat(m, gs[0].getWorldQuaternion(_gq).multiply(g.hq0).multiply(g.pq0)); }   // twist / tilt with the hand; two hands = resize only
       for (const c of gs) c.userData.grabHover = t;
     }
     for (const c of ctrls) {
@@ -653,11 +663,12 @@ export function createXRMenu(opts) {
       t.handle.material.color.setHex(grabbed ? 0xffd27f : 0xffffff);
     }
   }
-  const mainTarget = addGrabTarget(panel, { main: true, scalable: true, visible: () => open && panel.visible });
-  function resetPanelPos() { savedOff = null; menuScale = 1; savePose(); applyScale(); if (menuMode !== 'wrist') placed = false; refresh(); }
+  const mainTarget = addGrabTarget(panel, { main: true, scalable: true, visible: () => open && panel.visible && menuMode !== 'wrist' });
+  function resetPanelPos() { savedOff = null; panel.material.opacity = 1; menuScale = 1; savePose(); applyScale(); if (menuMode !== 'wrist') placed = false; refresh(); }
   function applyScale() { panel.scale.set(panelW(), panelW() * (layout.H / PW), 1); }
 
   function onSelect(c, down) {
+    if (down && wheelSticky) { c.userData.swallow = true; chooseSticky(c); return; }
     if (down) {
       if (open && panel.visible) {
         const h = hitCell(c);
@@ -679,6 +690,7 @@ export function createXRMenu(opts) {
   }
 
   const btnPrev = { left: [], right: [], none: [] };
+  const RECENTER_HOLD_MS = 600; let rcHold = null;
 
   function update() {
     if (!renderer.xr.isPresenting) return;
@@ -696,33 +708,35 @@ export function createXRMenu(opts) {
       for (const idx of [4, 5]) {            // X/Y on the left, A/B on the right
         const p = !!(gp.buttons[idx] && gp.buttons[idx].pressed);
         if (p && !prev[idx]) {
-          if (hand === 'left') { if (menuMode === 'wheel' && !open) wheelHold = { idx, t0: performance.now(), shown: false }; else toggle(); }
+          if (hand === 'left') { if (wheelSticky) chooseSticky(null); else if (menuMode === 'wheel' && !open) wheelHold = { idx, t0: performance.now(), shown: false }; else toggle(); }
           for (const f of btnDown) f(hand, idx);
         } else if (!p && prev[idx] && hand === 'left' && wheelHold && wheelHold.idx === idx) endWheel();
         prev[idx] = p;
+      }
+      // the standard Recenter gesture (STANDARD.md): hold the RIGHT thumbstick click ~0.6 s
+      if (hand === 'right' && opts.stickRecenter !== false && opts.recenter) {
+        const p = !!(gp.buttons[3] && gp.buttons[3].pressed), now = performance.now();
+        if (!p) rcHold = null;
+        else if (!rcHold) rcHold = { t0: now, done: false };
+        else if (!rcHold.done && now - rcHold.t0 > RECENTER_HOLD_MS) { rcHold.done = true; const c = ctrls.find((k) => k.userData.hand === 'right'); if (c) haptic(c); recenterAct(); }
       }
     }
     if (wheelHold) updateWheel();
     // hand tracking (no gamepad on the left source): keep the menu open so it stays reachable
     const lsrc = [...session.inputSources].find((s) => s.handedness === 'left');
-    if (lsrc && !lsrc.gamepad && !open) { open = true; refresh(); }
+    if (lsrc && !lsrc.gamepad) { if (menuMode === 'wrist') wristPinned = true; else if (!open) { open = true; refresh(); } }
 
     const holder = leftCtrl();
     if (hint.parent !== holder) holder.add(hint);
     panel.visible = open;
-    if (menuMode === 'wrist') {                       // wrist panel follows the left controller and faces the head
-      if (panel.parent !== holder) holder.add(panel);
-      if (open) {
-        panel.position.set(0, 0.03 + (panelW() * (layout.H / PW)) * 0.42, -0.09);   // tablet held in front of the hand, tilted to the eyes
-        camera.getWorldPosition(_eye);
-        panel.lookAt(_eye);
-      }
-    } else {                                          // floating: placed ~1.3 m ahead, below the eye line, then left alone (never head-locked)
+    if (menuMode === 'wrist') updateWrist(holder);
+    else {                                          // floating: placed ~1.3 m ahead, below the eye line, then left alone (never head-locked)
       if (panel.parent !== dolly) dolly.add(panel);
       if (open && !placed) placeFloating();
       if (!open) placed = false;
     }
-    updateGrabs();
+    updateGrabs(); updateToast();
+    if (wheelSticky) updateSticky();
     hint.visible = !open && performance.now() < hintUntil;
     if (hint.visible) { hint.position.set(0, 0.11, 0); camera.getWorldPosition(_eye); hint.lookAt(_eye); }
 
@@ -741,13 +755,63 @@ export function createXRMenu(opts) {
     if (changed) redrawPanel();
   }
 
+  // ---------- wrist style: a WATCH. It lies flat on the back of the left forearm, just behind the controller, and is
+  // only there when you turn that wrist toward your face (fades in under ~40 degrees, out beyond). X / Y pins it on.
+  const WRIST_W = 0.17, WRIST_Q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)));   // grip space, left hand: text runs toward the hand, face points out of the back of the wrist
+  let wristPinned = false, wristA = 0, wristAway = 0, _lastWT = 0;
+  const _wn = new THREE.Vector3(), _wp = new THREE.Vector3();
+  function updateWrist(holder) {
+    const now = performance.now(), dt = Math.min(0.1, (now - (_lastWT || now)) / 1000); _lastWT = now;
+    const grip = grips[Math.max(0, ctrls.indexOf(holder))];
+    if (panel.parent !== grip) grip.add(panel);
+    const mirror = holder.userData.hand === 'right' ? -1 : 1;
+    panel.position.set(-0.045 * mirror, 0.06 + WRIST_W / 2, 0.005); panel.quaternion.copy(WRIST_Q);
+    if (mirror < 0) panel.rotateZ(Math.PI);
+    panel.updateWorldMatrix(true, false);
+    _wn.set(0, 0, 1).transformDirection(panel.matrixWorld); panel.getWorldPosition(_wp);
+    camera.getWorldPosition(_eye).sub(_wp).normalize();
+    const cos = _wn.dot(_eye), want = wristPinned ? 1 : THREE.MathUtils.smoothstep(cos, 0.643, 0.766);   // 50 deg .. 40 deg
+    wristA += (want - wristA) * Math.min(1, dt * 10);
+    const show = wristA > 0.06;
+    if (show && !open) { if (now - wristAway > 5000) { view = 'top'; pageNo = 0; } open = true; refresh(); }
+    else if (!show && open) { open = false; wristAway = now; refresh(); }
+    panel.visible = show; panel.material.opacity = Math.min(1, wristA);
+  }
+  // ---------- toast: a short note in front of you (style changes say how to open the menu) ----------
+  const tcv = document.createElement('canvas'); tcv.width = 768; tcv.height = 208;
+  const ttex = new THREE.CanvasTexture(tcv); ttex.colorSpace = THREE.SRGBColorSpace;
+  const toastM = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.168), new THREE.MeshBasicMaterial({ map: ttex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+  toastM.renderOrder = 1003; toastM.visible = false; toastM.frustumCulled = false;
+  let toastUntil = 0;
+  function toast(head, sub, secs = 2) {
+    const g = tcv.getContext('2d'); g.clearRect(0, 0, 768, 208);
+    g.fillStyle = 'rgba(12,15,28,0.9)'; rr(g, 4, 4, 760, 200, 44); g.fill();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#ffe9c2'; g.font = '700 56px system-ui, sans-serif'; g.fillText(String(head), 384, sub ? 70 : 104, 720);
+    if (sub) { g.fillStyle = '#eef1ff'; g.font = '600 40px system-ui, sans-serif'; g.fillText(String(sub), 384, 142, 720); }
+    ttex.needsUpdate = true; toastUntil = performance.now() + secs * 1000;
+    if (!renderer.xr.isPresenting) return;
+    headFrame(); _gp.set(0, -0.1, -1.0).applyQuaternion(_hq).add(_hp);
+    if (toastM.parent !== dolly) dolly.add(toastM);
+    dolly.updateMatrixWorld(true); toastM.position.copy(dolly.worldToLocal(_gp)); setWorldQuat(toastM, _hq);
+    toastM.visible = true;
+  }
+  function updateToast() {
+    if (!toastM.visible) return;
+    const left = toastUntil - performance.now();
+    if (left <= -300) { toastM.visible = false; return; }
+    toastM.material.opacity = left > 0 ? 1 : 1 + left / 300;
+  }
+
   function placeFloating() {                   // at the remembered HEAD-relative spot (or just below the gaze), from the CURRENT head pose
     placed = true; headFrame();
     const o = savedOff || { x: 0, y: -0.2, z: -1.2 };
     _gp.set(o.x, o.y, o.z).applyQuaternion(_hq).add(_hp);
     dolly.updateMatrixWorld(true);
     panel.position.copy(dolly.worldToLocal(_gp));
-    applyScale(); faceHead(panel);
+    applyScale();
+    if (o.q) setWorldQuat(panel, _gq.copy(_hq).multiply(_q.fromArray(o.q))); else faceHead(panel);
   }
   // ---------- wheel (radial) quick menu: hold X/Y, point or push the stick, release to choose; a short tap still toggles the panel ----------
   const WHEEL_M = 0.34, WCV = 512;
@@ -755,7 +819,7 @@ export function createXRMenu(opts) {
   const wctx = wcv.getContext('2d'), wtex = new THREE.CanvasTexture(wcv); wtex.colorSpace = THREE.SRGBColorSpace;
   const wheel = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: wtex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
   wheel.renderOrder = 1002; wheel.visible = false; wheel.frustumCulled = false; wheel.scale.setScalar(WHEEL_M);
-  let wheelHold = null, wheelSel = -1, wheelItems = [];
+  let wheelHold = null, wheelSel = -1, wheelItems = [], wheelSticky = null;
   const recenterAct = () => { if (!opts.recenter) return; if (opts.fade && renderer.xr.isPresenting) opts.fade(opts.recenter); else opts.recenter(); };
   function buildWheel() {
     let it = topItems();
@@ -775,7 +839,7 @@ export function createXRMenu(opts) {
       g.fillText(String(val(it.text)), C + Math.cos(th) * (R + r0) / 2, C + Math.sin(th) * (R + r0) / 2, 120);
     }
     g.beginPath(); g.arc(C, C, r0 - 8, 0, 7); g.fillStyle = 'rgba(12,15,28,0.9)'; g.fill();
-    g.fillStyle = '#ffe9c2'; g.font = '600 22px system-ui, sans-serif'; g.fillText(wheelSel >= 0 ? 'Release' : 'Point', C, C);
+    g.fillStyle = '#ffe9c2'; g.font = '600 22px system-ui, sans-serif'; g.fillText(wheelSticky ? (wheelSel >= 0 ? 'Trigger' : 'Point') : wheelSel >= 0 ? 'Release' : 'Point', C, C);
     wtex.needsUpdate = true;
   }
   function wheelPick(c) {
@@ -810,11 +874,28 @@ export function createXRMenu(opts) {
   function endWheel() {
     const h = wheelHold; wheelHold = null;
     if (!h.shown) { toggle(); return; }                // short tap: the normal panel
-    const it = wheelItems[wheelSel]; wheel.visible = false; wheelSel = -1;
+    const it = wheelItems[wheelSel];
+    if (it && it.sub === 'style') {                    // "Menu style" opens the three styles as wedges: point at one, then trigger (or X)
+      wheelItems = ['wheel', 'float', 'wrist'].map((m) => ({ text: STYLE_NAME[m], active: () => menuMode === m, run: () => setMenuMode(m) }));
+      wheelSel = -1; wheelSticky = { until: performance.now() + 8000 }; drawWheel(); return;
+    }
+    wheel.visible = false; wheelSel = -1;
     if (it && it.run) { it.run(); if (it.panel) openAtView(); refresh(); }
   }
-  function toggle() { setOpen(!open); }
+  function stickyPick() { let s = -1; for (const c of [leftCtrl(), ...ctrls]) { s = wheelPick(c); if (s >= 0) break; } return s; }
+  function updateSticky() {
+    if (performance.now() > wheelSticky.until) { closeSticky(); return; }
+    const s = stickyPick(); if (s !== wheelSel) { wheelSel = s; drawWheel(); }
+  }
+  function closeSticky() { wheelSticky = null; wheel.visible = false; wheelSel = -1; }
+  function chooseSticky(c) {
+    let s = c ? wheelPick(c) : -1; if (s < 0) s = wheelSel;
+    const it = wheelItems[s]; closeSticky();
+    if (it) { if (c) haptic(c); it.run(); refresh(); }
+  }
+  function toggle() { if (menuMode === 'wrist' && renderer.xr.isPresenting) { wristPinned = !wristPinned; return; } setOpen(!open); }
   function setOpen(v) {
+    if (menuMode === 'wrist' && renderer.xr.isPresenting) wristPinned = !!v;
     if (v && !open && !keepView) { view = 'top'; pageNo = 0; }
     open = !!v;
     if (open && !renderer.xr.isPresenting && document.pointerLockElement) document.exitPointerLock();
@@ -975,7 +1056,7 @@ export function createXRMenu(opts) {
     if (opts.onSessionStart) opts.onSessionStart();
   });
   renderer.xr.addEventListener('sessionend', () => {
-    open = false; passthrough = false; wheelHold = null; wheel.visible = false;
+    open = false; passthrough = false; wheelHold = null; wheelSticky = null; wheel.visible = false; toastM.visible = false; wristPinned = false; wristA = 0; panel.material.opacity = 1; rcHold = null;
     if (opts.setBackdrop) opts.setBackdrop(true);
     if (enterBtn) enterBtn.style.display = '';
     panel.visible = false; hint.visible = false;
@@ -992,6 +1073,8 @@ export function createXRMenu(opts) {
     openView: (v) => { view = v === 'style' ? 'style' : v === 'settings' ? 'tab' : 'top'; viewName = v === 'style' ? 'Menu style' : 'Settings'; pageNo = 0; keepView = true; setOpen(true); keepView = false; refresh(); },
     open: () => setOpen(true), close: () => setOpen(false), isOpen: () => open,
     controllers: ctrls,
+    toast,                                  // (headline, subline, seconds) — a short note in front of the player (VR)
+    style: () => menuMode, setStyle: (m) => setMenuMode(m),
     rays: ctrls.map((c) => c.userData.ray),
     // run fn with the wrist menu / hint hidden (e.g. while rendering a magnifier view)
     withoutUI(fn) {
